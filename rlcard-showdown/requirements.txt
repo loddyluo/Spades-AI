@@ -1,0 +1,11 @@
+rlcard[torch]
+Django
+tqdm
+django-cors-headers
+flask==1.1
+itsdangerous<2.0
+Werkzeug<2.0
+flask-cors
+onnx
+onnxruntime
+
