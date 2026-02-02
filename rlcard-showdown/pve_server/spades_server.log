@@ -5,3 +5,4 @@ nohup: ignoring input
    Use a production WSGI server instead.
  * Debug mode: off
  * Running on http://0.0.0.0:5001/ (Press CTRL+C to quit)
+127.0.0.1 - - [02/Feb/2026 14:55:37] "[37mPOST /reset HTTP/1.1[0m" 200 -

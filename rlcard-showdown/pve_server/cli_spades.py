@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import json
 import sys
 import urllib.request
@@ -13,6 +14,16 @@ SPADES_DECK = [f"{s}{r}" for s in SPADES_SUITS for r in SPADES_RANKS]
 SPADES_DECK_INDEX = {card: idx for idx, card in enumerate(SPADES_DECK)}
 RANK_ORDER_DESC = {rank: idx for idx, rank in enumerate(['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'])}
 SUIT_ORDER = {suit: idx for idx, suit in enumerate(SPADES_SUITS)}
+
+
+def sort_spades_cards(cards):
+    return sorted(
+        cards,
+        key=lambda c: (
+            SUIT_ORDER.get(c[0], 99),
+            RANK_ORDER_DESC.get(c[1], 99),
+        ),
+    )
 
 
 def action_id_to_label(action_id):
@@ -48,10 +59,10 @@ def label_to_action_id(label):
     return None
 
 
-def http_post_json(url, payload):
+def http_post_json(url, payload, timeout=10):
     data = json.dumps(payload).encode('utf-8')
     req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode('utf-8'))
 
 
@@ -65,6 +76,7 @@ def print_state(state, human_player):
     phase = state.get('phase')
     current_player = state.get('current_player')
     bids = obs.get('bids', [])
+    bid_types = obs.get('bid_types', [])
     tricks = obs.get('tricks_won', [])
     spades_broken = obs.get('spades_broken')
     current_trick = obs.get('current_trick', [])
@@ -72,18 +84,24 @@ def print_state(state, human_player):
     hand_sizes = state.get('hand_sizes', [])
 
     if hand:
-        hand = sorted(
-            hand,
-            key=lambda c: (
-                SUIT_ORDER.get(c[0], 99),
-                RANK_ORDER_DESC.get(c[1], 99),
-            ),
-        )
+        hand = sort_spades_cards(hand)
 
     print('\n=== Spades PvE ===')
     print(f"Phase: {phase}")
     print(f"Current Player: {current_player}{' (You)' if current_player == human_player else ''}")
-    print(f"Bids: {bids}")
+    def format_bid(idx):
+        bid = bids[idx] if idx < len(bids) else None
+        btype = bid_types[idx] if idx < len(bid_types) else None
+        if bid is None:
+            return '-'
+        if btype == 'blind_nil':
+            return 'Blind Nil'
+        if btype == 'nil':
+            return 'Nil'
+        return str(bid)
+
+    bid_display = [format_bid(i) for i in range(4)]
+    print(f"Bids: {bid_display}")
     print(f"Tricks: {tricks}")
     print(f"Spades Broken: {'Yes' if spades_broken else 'No'}")
 
@@ -129,6 +147,7 @@ def choose_action_interactive(legal_actions, phase, hand):
 
     if phase == 'play':
         legal_cards = [label for _, label in labels if len(label) == 2]
+        legal_cards = sort_spades_cards(legal_cards)
         print(f"Legal Cards: {' '.join(legal_cards)}")
         raw = input('> 输入牌面(如 SA) 或编号: ').strip().upper()
         if raw.isdigit():
@@ -153,19 +172,46 @@ def main():
     parser.add_argument('--server', default='http://127.0.0.1:5001', help='PvE server base url')
     parser.add_argument('--human', type=int, default=0, help='Human player index (0-3)')
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
+    parser.add_argument('--ai-checkpoint', type=str, default=None, help='Path to DQN checkpoint for AI agents')
+    
     parser.add_argument('--auto', type=int, default=0, help='Auto-play N steps (for smoke test)')
     parser.add_argument('--auto-exit', action='store_true', help='Exit after auto steps without prompting')
     parser.add_argument('--delay', type=float, default=0.2, help='Delay between auto steps')
     args = parser.parse_args()
 
     base = args.server.rstrip('/')
+    ai_checkpoint = args.ai_checkpoint
+    if ai_checkpoint:
+        if not os.path.isabs(ai_checkpoint):
+            search_dir = os.path.abspath(os.path.dirname(__file__))
+            repo_root = None
+            for _ in range(6):
+                if os.path.exists(os.path.join(search_dir, 'experiments')):
+                    repo_root = search_dir
+                    break
+                search_dir = os.path.dirname(search_dir)
+            if repo_root is None:
+                repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+            ai_checkpoint = os.path.abspath(os.path.join(repo_root, ai_checkpoint))
+        else:
+            ai_checkpoint = os.path.abspath(ai_checkpoint)
+
+    reset_payload = {
+        'game': 'spades',
+        'seed': args.seed,
+        'human_player': args.human,
+        'ai_checkpoint': ai_checkpoint,
+    }
     try:
-        state = http_post_json(f"{base}/reset", {
-            'game': 'spades',
-            'seed': args.seed,
-            'human_player': args.human,
-        })
-    except urllib.error.URLError as e:
+        state = http_post_json(f"{base}/reset", reset_payload, timeout=60)
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = e.read().decode('utf-8')
+        except Exception:
+            err_body = ''
+        print(f"Failed to connect to server: {e} {err_body}")
+        sys.exit(1)
+    except (urllib.error.URLError, TimeoutError) as e:
         print(f"Failed to connect to server: {e}")
         sys.exit(1)
 

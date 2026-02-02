@@ -24,7 +24,8 @@ python3 run_spades.py
 
 ```bash
 cd rlcard-showdown/pve_server
-python3 cli_spades.py --server http://127.0.0.1:5001
+python3 cli_spades.py --server http://127.0.0.1:5001 \
+	--ai-checkpoint "../../Spades-AI/experiments/spades_selfplay_dqn/checkpoint_dqn.pt"
 ```
 
 ### 可选参数
@@ -34,6 +35,8 @@ python3 cli_spades.py --server http://127.0.0.1:5001
 - `--auto 5`：自动走 N 步（用于冒烟测试）
 - `--auto-exit`：自动步数完成后退出
 - `--delay 0.2`：自动步之间的间隔
+- `--ai-checkpoint PATH`：指定 DQN checkpoint（AI 使用）
+- `--opponent-checkpoint PATH`：指定对手团队 DQN checkpoint（默认与 AI 相同）
 
 示例（冒烟测试）：
 

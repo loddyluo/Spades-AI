@@ -7,7 +7,8 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import rlcard
-from rlcard.agents import RandomAgent
+import torch
+from rlcard.agents import DQNAgent
 
 
 def _spades_rank_value(rank):
@@ -46,6 +47,7 @@ def _serialize_obs(raw_obs, current_trick):
     return {
         'hand': hand,
         'bids': raw_obs.get('bids', []),
+        'bid_types': raw_obs.get('bid_types', []),
         'tricks_won': raw_obs.get('tricks_won', []),
         'spades_broken': 1 if raw_obs.get('spades_broken') else 0,
         'current_trick': current_trick,
@@ -53,10 +55,11 @@ def _serialize_obs(raw_obs, current_trick):
 
 
 class SpadesSession:
-    def __init__(self, seed=None, human_player=0):
+    def __init__(self, seed=None, human_player=0, ai_checkpoint=None):
         self.env = rlcard.make('spades', config={'allow_raw_data': True, 'seed': seed})
         self.human_player = human_player
-        self.agents = [RandomAgent(num_actions=self.env.num_actions) for _ in range(self.env.num_players)]
+        self.ai_checkpoint = ai_checkpoint
+        self.agents = self._build_agents()
         self.env.set_agents(self.agents)
         self.current_state = None
         self.current_player = None
@@ -64,6 +67,24 @@ class SpadesSession:
         self.current_trick = [None for _ in range(self.env.num_players)]
         self.last_trick = None
         self.trick_id = 0
+
+    def _load_dqn_agent(self, checkpoint_path):
+        if not checkpoint_path or not os.path.exists(checkpoint_path):
+            return None
+        device = torch.device('cpu')
+        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        agent = DQNAgent.from_checkpoint(ckpt)
+        if hasattr(agent, 'set_device'):
+            agent.set_device(device)
+        return agent
+
+    def _build_agents(self):
+        ai_agent = self._load_dqn_agent(self.ai_checkpoint)
+        if ai_agent is None:
+            raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+
+        # Use the same trained checkpoint for all AI seats
+        return [ai_agent for _ in range(self.env.num_players)]
 
     def reset(self):
         self.current_state, self.current_player = self.env.reset()
@@ -117,6 +138,17 @@ class SpadesSession:
         raw_obs = self.current_state.get('raw_obs', {})
         phase = 'bidding' if raw_obs.get('phase', 0) == 0 else 'play'
         legal_actions = list(self.current_state.get('legal_actions', {}).keys())
+        bid_types = []
+        for p in self.env.game.players:
+            if p.bid is None:
+                bid_types.append(None)
+            elif p.is_blind_nil:
+                bid_types.append('blind_nil')
+            elif p.is_nil:
+                bid_types.append('nil')
+            else:
+                bid_types.append('bid')
+        raw_obs['bid_types'] = bid_types
         obs = _serialize_obs(raw_obs, self.current_trick)
         hand_sizes = [len(p.hand) for p in self.env.game.players]
 
@@ -153,9 +185,13 @@ class SpadesSessionManager:
     def __init__(self):
         self.sessions = {}
 
-    def create_session(self, seed=None, human_player=0):
+    def create_session(self, seed=None, human_player=0, ai_checkpoint=None):
         game_id = f"spades-{uuid.uuid4().hex[:8]}"
-        session = SpadesSession(seed=seed, human_player=human_player)
+        session = SpadesSession(
+            seed=seed,
+            human_player=human_player,
+            ai_checkpoint=ai_checkpoint,
+        )
         self.sessions[game_id] = session
         return game_id, session
 

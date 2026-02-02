@@ -1,4 +1,6 @@
 import os
+import json
+import time
 import torch
 import rlcard
 from rlcard.agents import RandomAgent, DQNAgent
@@ -11,13 +13,31 @@ from rlcard.utils import (
     plot_curve,
 )
 
+def _load_config():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    config_path = os.path.join(repo_root, 'model_config.yaml')
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    try:
+        import yaml  # optional dependency
+        return yaml.safe_load(content) or {}
+    except Exception:
+        # Accept JSON content in .yaml (valid YAML)
+        return json.loads(content)
+
+
 def train():
     # Configuration
+    config = _load_config()
     ENV_ID = 'spades'
-    SEED = 42
-    NUM_EPISODES = 2000
-    EVALUATE_EVERY = 100
-    SAVE_PATH = 'experiments/spades_selfplay_dqn'
+    SEED = config.get('training', {}).get('seed', 42)
+    NUM_EPISODES = config.get('training', {}).get('num_episodes', 2000)
+    MAX_HOURS = config.get('training', {}).get('max_hours')
+    max_seconds = MAX_HOURS * 3600 if MAX_HOURS is not None else None
+    EVALUATE_EVERY = config.get('training', {}).get('evaluate_every', 100)
+    SAVE_PATH = config.get('training', {}).get('save_path', 'experiments/spades_selfplay_dqn')
     
     # Check device
     device = get_device()
@@ -35,15 +55,22 @@ def train():
     # 3. Initialize the Shared Agent (DQN)
     # In Self-Play, we use ONE agent to play all 4 positions, 
     # sharing the experience to learn a general strategy.
+    mlp_layers = config.get('model', {}).get('mlp_layers', [256, 256])
+    replay_memory_size = config.get('agent', {}).get('replay_memory_size', 100000)
+    replay_memory_init_size = config.get('agent', {}).get('replay_memory_init_size', 1000)
+    batch_size = config.get('agent', {}).get('batch_size', 128)
+    save_every = config.get('agent', {}).get('save_every', 5000)
+
     agent = DQNAgent(
         num_actions=train_env.num_actions,
         state_shape=train_env.state_shape[0][0],
-        mlp_layers=[256, 256],  # 将 [128, 128] 改为 [256, 256] 以提升表达能力
+        mlp_layers=mlp_layers,
         device=device,          # 脚本会自动检测 GPU
         save_path=SAVE_PATH,
-        replay_memory_size=100000, # 增大缓存
-        batch_size=128,            # 增大 Batch Size 以利用 GPU 并行能力
-        save_every=5000
+        replay_memory_size=replay_memory_size,
+        replay_memory_init_size=replay_memory_init_size,
+        batch_size=batch_size,
+        save_every=save_every
     )
     
     # 4. Set Agents for Training (All 4 seats are the SAME agent instance)
@@ -57,33 +84,37 @@ def train():
     # Variable to keep track of the best model (or just previous checkpoint)
     # Since RLCard agent saving is done inside agent.save(), we need to manually handle loading for opponents.
     # We will save a "checkpoint_opponent.pth" periodically.
-    OPPONENT_UPDATE_EVERY = 500 # Update opponent every 500 episodes
+    OPPONENT_UPDATE_EVERY = config.get('training', {}).get('opponent_update_every', 500)
     
     # Initialize Opponent Agent (same structure as main agent)
     opponent_agent = DQNAgent(
         num_actions=train_env.num_actions,
         state_shape=train_env.state_shape[0][0],
-        mlp_layers=[256, 256],
+        mlp_layers=mlp_layers,
         device=device,
         save_path=None,
         replay_memory_size=100, # Minimal buffer for opponent as it doesn't train
-        batch_size=128
+        batch_size=batch_size
     )
 
     print("Start Self-Play training...")
+    start_time = time.time()
     with Logger(SAVE_PATH) as logger:
         for episode in range(NUM_EPISODES):
+            if max_seconds is not None and (time.time() - start_time) >= max_seconds:
+                print(f"Reached max_hours={MAX_HOURS}. Stopping training.")
+                break
             
             # Update Opponent Checkpoint Logic
             if episode % OPPONENT_UPDATE_EVERY == 0:
                 # Save current agent as a temporary checkpoint to be loaded as opponent
-                ckpt_path = os.path.join(SAVE_PATH, 'checkpoint_opponent.pth')
+                ckpt_path = os.path.join(SAVE_PATH, 'checkpoint_opponent.pt')
                 if not os.path.exists(SAVE_PATH):
                     os.makedirs(SAVE_PATH)
                 
-                # Use standard RLCard save/load
-                agent.save(ckpt_path)
-                opponent_agent.load(ckpt_path)
+                # Use RLCard DQN checkpoint save/load
+                agent.save_checkpoint(SAVE_PATH, filename='checkpoint_opponent.pt')
+                opponent_agent = DQNAgent.from_checkpoint(torch.load(ckpt_path, map_location=device, weights_only=False))
                 
                 # Update Evaluation Environment: 
                 # Team 0 (Agent): Current Learning Agent
@@ -108,7 +139,7 @@ def train():
             if episode % EVALUATE_EVERY == 0:
                 # Run tournament: Agent Team vs Opponent Team (Checkpoint)
                 # Returns average payoffs for each player
-                rewards = tournament(eval_env, num_eval_games=20)
+                rewards = tournament(eval_env, 20)
                 
                 # We log the reward of Player 0 (Our Agent)
                 # Since P0 and P2 are a team, their rewards should be identical

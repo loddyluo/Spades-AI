@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -14,7 +15,28 @@ def reset():
     body = request.get_json(force=True, silent=True) or {}
     seed = body.get('seed')
     human_player = body.get('human_player', 0)
-    game_id, session = sessions.create_session(seed=seed, human_player=human_player)
+    ai_checkpoint = body.get('ai_checkpoint')
+    if not ai_checkpoint:
+        return jsonify({'error': 'ai_checkpoint is required (no random agent fallback).'}), 400
+    # Resolve relative checkpoint path from repo root (find folder containing experiments/)
+    if not ai_checkpoint.startswith('/'):
+        search_dir = os.path.abspath(os.path.dirname(__file__))
+        repo_root = None
+        for _ in range(6):
+            if os.path.exists(os.path.join(search_dir, 'experiments')):
+                repo_root = search_dir
+                break
+            search_dir = os.path.dirname(search_dir)
+        if repo_root is None:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        ai_checkpoint = os.path.abspath(os.path.join(repo_root, ai_checkpoint))
+    if not os.path.exists(ai_checkpoint):
+        return jsonify({'error': f'ai_checkpoint not found: {ai_checkpoint}'}), 400
+    game_id, session = sessions.create_session(
+        seed=seed,
+        human_player=human_player,
+        ai_checkpoint=ai_checkpoint,
+    )
     payload = session.reset()
     payload['game_id'] = game_id
     return jsonify(payload)
