@@ -3,7 +3,7 @@ import Chip from '@material-ui/core/Chip';
 import React from 'react';
 import '../../assets/spades.scss';
 import PlaceHolderPlayer from '../../assets/images/Portrait/Player.png';
-import { computeHandCardsWidth, translateCardData } from '../../utils';
+import { computeHandCardsWidth, translateCardData, sortSpadesCards } from '../../utils';
 
 class SpadesGameBoard extends React.Component {
     computePlayerPortrait(playerId, playerIdx) {
@@ -50,10 +50,11 @@ class SpadesGameBoard extends React.Component {
                 </div>
             );
         }
+        const sortedCards = sortSpadesCards(cards);
         return (
             <div className={`playingCards loose ${cardSelectable ? 'selectable' : 'unselectable'}`}>
-                <ul className="hand" style={{ width: computeHandCardsWidth(cards.length, 10) }}>
-                    {cards.map((card) => {
+                <ul className="hand" style={{ width: computeHandCardsWidth(sortedCards.length, 10) }}>
+                    {sortedCards.map((card) => {
                         const [rankClass, suitClass, rankText, suitText] = translateCardData(card);
                         const isLegal = legalActionSet ? legalActionSet.has(card) : false;
                         return (
@@ -95,13 +96,25 @@ class SpadesGameBoard extends React.Component {
         const playerId = player ? player.id : playerIdx;
         const hand = this.props.hands[playerIdx] || [];
         const bids = this.props.bids || [];
+        const bidTypes = this.props.bidTypes || [];
         const tricks = this.props.tricksWon || [];
+        const handSizes = this.props.handSizes || [];
         const hideCards = this.props.hideOpponentHands && playerIdx !== this.props.mainPlayerId;
+        const bidLabel = (() => {
+            const bid = bids[playerIdx];
+            const btype = bidTypes[playerIdx];
+            if (bid === null || bid === undefined) return '-';
+            if (btype === 'blind_nil') return 'Blind Nil';
+            if (btype === 'nil') return 'Nil';
+            return bid;
+        })();
+        const isActive = this.props.currentPlayer === playerIdx;
         return (
-            <div className={`spades-seat ${positionClass}`}>
+            <div className={`spades-seat ${positionClass} ${isActive ? 'active' : ''}`}>
                 {this.computePlayerPortrait(playerId, playerIdx)}
-                <div className="spades-bid">Bid: {bids[playerIdx] !== null && bids[playerIdx] !== undefined ? bids[playerIdx] : '-'}</div>
+                <div className="spades-bid">Bid: {bidLabel}</div>
                 <div className="spades-trick-count">Tricks: {tricks[playerIdx] !== null && tricks[playerIdx] !== undefined ? tricks[playerIdx] : '-'}</div>
+                <div className="spades-hand-count">Cards: {handSizes[playerIdx] ?? hand.length}</div>
                 <div className="spades-hand">
                     {this.renderHand(
                         hand,
@@ -122,6 +135,8 @@ class SpadesGameBoard extends React.Component {
         const rightIdx = (mainPlayerId + 1) % 4;
         const bottomIdx = mainPlayerId;
         const currentTrick = this.props.currentTrick || [null, null, null, null];
+        const lastTrick = this.props.lastTrick;
+        const legalCards = this.props.legalCards || [];
 
         return (
             <div className="spades-wrapper">
@@ -137,9 +152,26 @@ class SpadesGameBoard extends React.Component {
                             ))}
                         </div>
                         <div className="spades-info">
-                            <div>Phase: {this.props.phase}</div>
-                            <div>Current Player: {this.props.currentPlayer}</div>
-                            <div>Spades Broken: {this.props.spadesBroken ? 'Yes' : 'No'}</div>
+                            <div className="spades-info-line">
+                                <span className="spades-info-label">Phase</span>
+                                <span className="spades-phase-badge">{this.props.phase}</span>
+                            </div>
+                            <div className="spades-info-line spades-current-player">Current Player: P{this.props.currentPlayer}</div>
+                            <div className="spades-info-line">
+                                <span className="spades-info-label">Spades Broken</span>
+                                <span className={`spades-broken-badge ${this.props.spadesBroken ? 'on' : 'off'}`}>
+                                    {this.props.spadesBroken ? 'Yes' : 'No'}
+                                </span>
+                            </div>
+                            {lastTrick ? (
+                                <div className="spades-last-trick">
+                                    <div>{`Trick ${lastTrick.trick_id}: ${lastTrick.display}`}</div>
+                                    <div>{`Winner: P${lastTrick.winner}`}</div>
+                                </div>
+                            ) : null}
+                            {legalCards.length > 0 ? (
+                                <div className="spades-legal">{`Legal: ${legalCards.join(' ')}`}</div>
+                            ) : null}
                         </div>
                     </div>
                 </div>

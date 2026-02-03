@@ -122,3 +122,48 @@ python3 run_spades.py
 ---
 
 如需可视化对弈或网页界面，请使用 [rlcard-showdown](rlcard-showdown) 目录下的前端与服务（文档见 [rlcard-showdown/docs](rlcard-showdown/docs)）。
+
+---
+
+## 8. 图形化人机对弈（Spades PvE GUI）
+
+以下步骤可直接打开网页界面与 AI 对弈（确保已完成第 1~3 步的 Python 环境与依赖安装）。
+
+### 8.1 启动 Spades PvE 后端（端口 5001）
+
+在一个终端中运行：
+
+```bash
+cd "Spades-AI/rlcard-showdown/pve_server"
+python3 run_spades.py
+```
+
+保持该终端运行不关闭。
+
+### 8.2 安装并启动前端（端口 3000）
+
+在**新的终端**中运行：
+
+```bash
+cd "Spades-AI/rlcard-showdown"
+npm install
+npm start
+```
+
+### 8.3 打开图形化对弈页面
+
+浏览器访问：
+
+```
+http://127.0.0.1:3000/pve/spades
+```
+
+页面顶部的 **AI Checkpoint** 输入框必须填写模型路径（本仓库已预置默认路径）：
+
+```
+experiments/spades_selfplay_dqn/checkpoint_dqn.pt
+```
+
+点击 **Start / Reset** 开始对局。
+
+> 说明：PvE 强制使用 checkpoint 模型，不会回退到随机 AI。

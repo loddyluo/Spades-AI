@@ -98,6 +98,15 @@ const useStyles = makeStyles((theme) => ({
             },
         },
     },
+    linkButton: {
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        color: '#3f51b5',
+        cursor: 'pointer',
+        font: 'inherit',
+        textDecoration: 'underline',
+    },
     active: {},
 }));
 
@@ -331,14 +340,15 @@ function MenuBar(props) {
                                         DQN model
                                     </Link>{' '}
                                     for Leduc Holdem or{' '}
-                                    <a
-                                        href="#"
+                                    <button
+                                        type="button"
+                                        className={classes.linkButton}
                                         onClick={() => {
                                             setDownloadChannelDialogOpen(true);
                                         }}
                                     >
                                         DMC model
-                                    </a>{' '}
+                                    </button>{' '}
                                     for Doudizhu to test and learn about model upload functionality.
                                 </Typography>
                             </CardContent>

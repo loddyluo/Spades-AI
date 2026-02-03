@@ -648,6 +648,7 @@ function PvEDoudizhuDemoView() {
 
     useEffect(() => {
         if (syncGameStatus === 'playing') gameStateTimer();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [considerationTime]);
 
     useEffect(() => {
@@ -659,10 +660,12 @@ function PvEDoudizhuDemoView() {
                 setPredictionRes({ prediction: [], hands: [] });
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gameState.currentPlayer]);
 
     useEffect(() => {
         if (gameStatus === 'playing') startGame();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gameStatus]);
 
     const handleMainPlayerAct = (type) => {
@@ -725,6 +728,9 @@ function PvEDoudizhuDemoView() {
                         showClose: true,
                     });
                 }
+                break;
+            }
+            default: {
                 break;
             }
         }
@@ -875,7 +881,7 @@ function PvEDoudizhuDemoView() {
         i18n.changeLanguage(newLocale);
         setLocale(newLocale);
         localStorage.setItem('LOCALE', newLocale);
-    }, []);
+    }, [i18n]);
 
     return (
         <div>
@@ -1106,18 +1112,18 @@ function PvEDoudizhuDemoView() {
                         <>
                             <p style={{ margin: '4px' }}>
                                 Too slow? Run the demo locally and check out more analysis tools (e.g., replays) with{' '}
-                                <a href="https://github.com/datamllab/rlcard-showdown" target="_blank">
+                                <a href="https://github.com/datamllab/rlcard-showdown" target="_blank" rel="noopener noreferrer">
                                     RLCard-Showdown
                                 </a>
                                 !
                             </p>
                             <p style={{ margin: '4px', marginTop: '15px' }}>
                                 This demo is based on{' '}
-                                <a href="https://github.com/datamllab/rlcard" target="_blank">
+                                <a href="https://github.com/datamllab/rlcard" target="_blank" rel="noopener noreferrer">
                                     RLCard
                                 </a>{' '}
                                 and{' '}
-                                <a href="https://github.com/kwai/DouZero" target="_blank">
+                                <a href="https://github.com/kwai/DouZero" target="_blank" rel="noopener noreferrer">
                                     DouZero
                                 </a>
                                 . If you find these projects useful, please cite:
@@ -1127,18 +1133,18 @@ function PvEDoudizhuDemoView() {
                         <>
                             <p style={{ margin: '4px' }}>
                                 运行太慢？使用{' '}
-                                <a href="https://github.com/datamllab/rlcard-showdown" target="_blank">
+                                <a href="https://github.com/datamllab/rlcard-showdown" target="_blank" rel="noopener noreferrer">
                                     RLCard-Showdown
                                 </a>{' '}
                                 在本地运行该演示以及更多分析工具（如录像回放）!
                             </p>
                             <p style={{ margin: '4px', marginTop: '15px' }}>
                                 本演示基于{' '}
-                                <a href="https://github.com/datamllab/rlcard" target="_blank">
+                                <a href="https://github.com/datamllab/rlcard" target="_blank" rel="noopener noreferrer">
                                     RLCard
                                 </a>{' '}
                                 和{' '}
-                                <a href="https://github.com/kwai/DouZero" target="_blank">
+                                <a href="https://github.com/kwai/DouZero" target="_blank" rel="noopener noreferrer">
                                     DouZero
                                 </a>{' '}
                                 项目。如果这些项目帮到您，请添加引用:

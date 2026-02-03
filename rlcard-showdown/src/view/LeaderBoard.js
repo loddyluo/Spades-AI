@@ -40,7 +40,6 @@ function LeaderBoard() {
     const [modelList, setModelList] = React.useState({});
     const [defaultModelList, setDefaultModelList] = React.useState([]);
     const [reloadMenu, setReloadMenu] = React.useState(0);
-    const [tournamentRound, setTournamentRound] = React.useState(200);
 
     // passing an empty array as second argument triggers the callback in useEffect
     // only after the initial render thus replicating `componentDidMount` lifecycle behaviour
@@ -254,8 +253,23 @@ const EnhancedTableToolbar = (props) => {
     const launchTournamentSuccessMessage = () => {
         return (
             <span>
-                Successfully launched tournament,<a href="javascript:window.location.reload(true)"> Click here </a>to
-                refresh page
+                Successfully launched tournament,
+                <button
+                    type="button"
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: '#3f51b5',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        margin: '0 4px',
+                    }}
+                    onClick={() => window.location.reload(true)}
+                >
+                    Click here
+                </button>
+                to refresh page
             </span>
         );
     };

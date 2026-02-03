@@ -232,6 +232,28 @@ export const spadesDeckIndex = spadesDeck.reduce((acc, card, idx) => {
     return acc;
 }, {});
 
+const spadesRankOrderDesc = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+const spadesRankOrderMap = spadesRankOrderDesc.reduce((acc, rank, idx) => {
+    acc[rank] = idx;
+    return acc;
+}, {});
+const spadesSuitOrderMap = spadesSuits.reduce((acc, suit, idx) => {
+    acc[suit] = idx;
+    return acc;
+}, {});
+
+export function sortSpadesCards(cards) {
+    const copy = cards.slice();
+    return copy.sort((a, b) => {
+        const suitA = spadesSuitOrderMap[a[0]] ?? 99;
+        const suitB = spadesSuitOrderMap[b[0]] ?? 99;
+        if (suitA !== suitB) return suitA - suitB;
+        const rankA = spadesRankOrderMap[a[1]] ?? 99;
+        const rankB = spadesRankOrderMap[b[1]] ?? 99;
+        return rankA - rankB;
+    });
+}
+
 export function spadesActionIdToLabel(actionId) {
     if (actionId >= 0 && actionId <= 51) return spadesDeck[actionId];
     if (actionId === 52) return 'pass';
