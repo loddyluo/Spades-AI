@@ -15,5 +15,27 @@
     "replay_memory_init_size": 2000,
     "batch_size": 256,
     "save_every": 5000
+  },
+  "nfsp": {
+    "hidden_layers_sizes": [512, 512, 256],
+    "q_mlp_layers": [512, 512, 256],
+    "reservoir_buffer_capacity": 20000,
+    "anticipatory_param": 0.1,
+    "batch_size": 256,
+    "train_every": 1,
+    "rl_learning_rate": 0.00005,
+    "sl_learning_rate": 0.005,
+    "min_buffer_size_to_learn": 100,
+    "q_replay_memory_size": 200000,
+    "q_replay_memory_init_size": 2000,
+    "q_update_target_estimator_every": 1000,
+    "q_discount_factor": 0.99,
+    "q_epsilon_start": 1.0,
+    "q_epsilon_end": 0.1,
+    "q_epsilon_decay_steps": 20000,
+    "q_batch_size": 256,
+    "q_train_every": 1,
+    "evaluate_with": "average_policy",
+    "save_every": 5000
   }
 }
