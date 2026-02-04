@@ -125,6 +125,17 @@ def train():
             # --- Training Step ---
             # Generate one episode of data (Agent plays against itself)
             trajectories, payoffs = train_env.run(is_training=True)
+            # Convert team scores to zero-sum team-difference rewards
+            # Team 0: players 0 & 2, Team 1: players 1 & 3
+            if len(payoffs) == 4:
+                team0_score = payoffs[0]
+                team1_score = payoffs[1]
+                payoffs = [
+                    team0_score - team1_score,
+                    team1_score - team0_score,
+                    team0_score - team1_score,
+                    team1_score - team0_score,
+                ]
 
             # Reorganize data
             trajectories = reorganize(trajectories, payoffs)
@@ -140,11 +151,18 @@ def train():
                 # Run tournament: Agent Team vs Opponent Team (Checkpoint)
                 # Returns average payoffs for each player
                 rewards = tournament(eval_env, 20)
-                
+                # Convert to team-difference evaluation reward
+                if len(rewards) == 4:
+                    team0_score = rewards[0]
+                    team1_score = rewards[1]
+                    eval_reward = team0_score - team1_score
+                else:
+                    eval_reward = rewards[0]
+
                 # We log the reward of Player 0 (Our Agent)
                 # Since P0 and P2 are a team, their rewards should be identical
-                logger.log_performance(episode, rewards[0])
-                print(f"Episode: {episode}, Agent Team Reward vs Previous Model: {rewards[0]}")
+                logger.log_performance(episode, eval_reward)
+                print(f"Episode: {episode}, Agent Team Reward vs Previous Model: {eval_reward}")
 
         # Save Plot & Model
         csv_path, fig_path = logger.csv_path, logger.fig_path

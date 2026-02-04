@@ -132,6 +132,17 @@ def train():
 
             # --- Training Step ---
             trajectories, payoffs = train_env.run(is_training=True)
+            # Convert team scores to zero-sum team-difference rewards
+            # Team 0: players 0 & 2, Team 1: players 1 & 3
+            if len(payoffs) == 4:
+                team0_score = payoffs[0]
+                team1_score = payoffs[1]
+                payoffs = [
+                    team0_score - team1_score,
+                    team1_score - team0_score,
+                    team0_score - team1_score,
+                    team1_score - team0_score,
+                ]
             trajectories = reorganize(trajectories, payoffs)
 
             # Feed transitions from ALL 4 players to the shared agent
@@ -142,8 +153,15 @@ def train():
             # --- Evaluation Step ---
             if episode % EVALUATE_EVERY == 0:
                 rewards = tournament(eval_env, 20)
-                logger.log_performance(episode, rewards[0])
-                print(f"Episode: {episode}, Agent Team Reward vs Previous Model: {rewards[0]}")
+                # Convert to team-difference evaluation reward
+                if len(rewards) == 4:
+                    team0_score = rewards[0]
+                    team1_score = rewards[1]
+                    eval_reward = team0_score - team1_score
+                else:
+                    eval_reward = rewards[0]
+                logger.log_performance(episode, eval_reward)
+                print(f"Episode: {episode}, Agent Team Reward vs Previous Model: {eval_reward}")
 
         csv_path, fig_path = logger.csv_path, logger.fig_path
         plot_curve(csv_path, fig_path, 'NFSP_SelfPlay')
