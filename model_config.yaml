@@ -7,6 +7,7 @@
     "seed": 42,
     "num_episodes": 200000,
     "evaluate_every": 100,
+    "reward_beta": 0.5,
     "opponent_update_every": 500,
     "save_path": "experiments/spades_selfplay_dqn"
   },
@@ -37,5 +38,33 @@
     "q_train_every": 1,
     "evaluate_with": "average_policy",
     "save_every": 5000
+  },
+  "dmc": {
+    "xpid": "spades_dmc",
+    "save_dir": "experiments/spades_dmc",
+    "load_model": false,
+    "cuda": "",
+    "save_interval": 30,
+    "num_actor_devices": 1,
+    "num_actors": 5,
+    "training_device": "0",
+    "total_frames": 5000000,
+    "exp_epsilon": 0.01,
+    "batch_size": 32,
+    "unroll_length": 100,
+    "num_buffers": 50,
+    "num_threads": 4,
+    "max_grad_norm": 40,
+    "learning_rate": 0.0001,
+    "alpha": 0.99,
+    "momentum": 0,
+    "epsilon": 0.00001
+  },
+  "cfr": {
+    "seed": 42,
+    "num_episodes": 5000,
+    "num_eval_games": 200,
+    "evaluate_every": 100,
+    "log_dir": "experiments/spades_cfr_result"
   }
 }

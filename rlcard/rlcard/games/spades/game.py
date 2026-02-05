@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 from rlcard.games.spades.dealer import SpadesDealer
 from rlcard.games.spades.player import SpadesPlayer
@@ -58,9 +59,7 @@ class SpadesGame:
 
     def step(self, action):
         if self.allow_step_back:
-            # Not fully implementing deepcopy for step_back in this initial version for brevity/complexity.
-            # But standard RLCard games usually do.
-            pass
+            self.history.append(self._snapshot())
 
         current_player = self.players[self.game_pointer]
         
@@ -141,6 +140,15 @@ class SpadesGame:
 
         return self.get_state(self.game_pointer), self.game_pointer
 
+    def step_back(self):
+        if not self.allow_step_back:
+            return False
+        if len(self.history) == 0:
+            return False
+        snapshot = self.history.pop()
+        self._restore(snapshot)
+        return True
+
     def get_state(self, player_id):
         ''' Return player's state
         '''
@@ -168,6 +176,34 @@ class SpadesGame:
         state['actions'] = self.get_legal_actions(player_id)
         
         return state
+
+    def _snapshot(self):
+        return {
+            'phase': self.phase,
+            'game_pointer': self.game_pointer,
+            'dealer_idx': self.dealer_idx,
+            'start_player_idx': self.start_player_idx,
+            'blind_option_passed': copy.deepcopy(self.blind_option_passed),
+            'bids_collected': self.bids_collected,
+            'tricks_played': self.tricks_played,
+            'spades_broken': self.spades_broken,
+            'players': copy.deepcopy(self.players),
+            'round': copy.deepcopy(self.round),
+            'np_random_state': self.np_random.get_state(),
+        }
+
+    def _restore(self, snapshot):
+        self.phase = snapshot['phase']
+        self.game_pointer = snapshot['game_pointer']
+        self.dealer_idx = snapshot['dealer_idx']
+        self.start_player_idx = snapshot['start_player_idx']
+        self.blind_option_passed = snapshot['blind_option_passed']
+        self.bids_collected = snapshot['bids_collected']
+        self.tricks_played = snapshot['tricks_played']
+        self.spades_broken = snapshot['spades_broken']
+        self.players = snapshot['players']
+        self.round = snapshot['round']
+        self.np_random.set_state(snapshot['np_random_state'])
 
     def get_legal_actions(self, player_id):
         actions = []

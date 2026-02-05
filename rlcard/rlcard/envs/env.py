@@ -102,6 +102,9 @@ class Env(object):
         if not self.game.step_back():
             return False
 
+        if self.action_recorder:
+            self.action_recorder.pop()
+
         player_id = self.get_player_id()
         state = self.get_state(player_id)
 

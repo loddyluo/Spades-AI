@@ -39,6 +39,7 @@ def train():
     max_seconds = MAX_HOURS * 3600 if MAX_HOURS is not None else None
     EVALUATE_EVERY = config.get('training', {}).get('evaluate_every', 100)
     SAVE_PATH = config.get('training', {}).get('save_path', 'experiments/spades_selfplay_nfsp')
+    REWARD_BETA = config.get('training', {}).get('reward_beta', 1.0)
     OPPONENT_UPDATE_EVERY = config.get('training', {}).get('opponent_update_every', 500)
 
     nfsp_cfg = config.get('nfsp', {})
@@ -138,10 +139,10 @@ def train():
                 team0_score = payoffs[0]
                 team1_score = payoffs[1]
                 payoffs = [
-                    team0_score - team1_score,
-                    team1_score - team0_score,
-                    team0_score - team1_score,
-                    team1_score - team0_score,
+                    team0_score - REWARD_BETA * team1_score,
+                    team1_score - REWARD_BETA * team0_score,
+                    team0_score - REWARD_BETA * team1_score,
+                    team1_score - REWARD_BETA * team0_score,
                 ]
             trajectories = reorganize(trajectories, payoffs)
 
