@@ -8,6 +8,7 @@ if ROOT_DIR not in sys.path:
 
 import rlcard
 import torch
+from rlcard.utils import get_device
 from rlcard.utils.agent_utils import load_agent_from_checkpoint
 
 
@@ -73,9 +74,17 @@ class SpadesSession:
     def _load_agent(self, checkpoint_path):
         if not checkpoint_path or not os.path.exists(checkpoint_path):
             return None
-        device = torch.device('cpu')
-        agent, _ = load_agent_from_checkpoint(checkpoint_path, device=device)
-        return agent
+        device = get_device()
+        try:
+            agent, _ = load_agent_from_checkpoint(checkpoint_path, device=device)
+            return agent
+        except RuntimeError as exc:
+            msg = str(exc).lower()
+            if 'cuda' not in msg:
+                raise
+            cpu_device = torch.device('cpu')
+            agent, _ = load_agent_from_checkpoint(checkpoint_path, device=cpu_device)
+            return agent
 
     def _build_agents(self):
         team0_path = self.ai_checkpoint_team0 or self.ai_checkpoint

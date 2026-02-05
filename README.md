@@ -60,7 +60,7 @@ source .venv/bin/activate
 ```bash
 python3 rlcard-showdown/pve_server/cli_spades.py \
   --server http://127.0.0.1:5001 \
-  --ai-checkpoint "experiments/spades_selfplay_dqn/checkpoint_dqn.pt"
+  --ai-checkpoint "experiments/spades_selfplay_nfsp_4h/checkpoint_nfsp.pt"
 ```
 
 > 说明：PvE 不再使用随机 AI。三个对手全部使用你提供的 checkpoint（类型会自动识别）。
@@ -71,7 +71,7 @@ python3 rlcard-showdown/pve_server/cli_spades.py \
 python3 rlcard-showdown/pve_server/cli_spades.py \
   --server http://127.0.0.1:5001 \
   --ai-checkpoint-team0 "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
-  --ai-checkpoint-team1 "experiments/spades_selfplay_nfsp/checkpoint_nfsp.pt"
+  --ai-checkpoint-team1 "experiments/spades_selfplay_nfsp_4h/checkpoint_nfsp.pt"
 ```
 
 ---

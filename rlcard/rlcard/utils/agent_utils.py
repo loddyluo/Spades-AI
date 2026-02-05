@@ -19,10 +19,31 @@ def detect_agent_type_from_checkpoint(checkpoint):
     raise ValueError('Unable to detect agent type from checkpoint.')
 
 
+def _override_checkpoint_device(checkpoint, device):
+    if device is None:
+        return checkpoint
+    checkpoint = dict(checkpoint)
+    checkpoint['device'] = device
+    if 'q_estimator' in checkpoint:
+        q_estimator = dict(checkpoint['q_estimator'])
+        q_estimator['device'] = device
+        checkpoint['q_estimator'] = q_estimator
+    if 'rl_agent' in checkpoint:
+        rl_agent = dict(checkpoint['rl_agent'])
+        rl_agent['device'] = device
+        if 'q_estimator' in rl_agent:
+            q_estimator = dict(rl_agent['q_estimator'])
+            q_estimator['device'] = device
+            rl_agent['q_estimator'] = q_estimator
+        checkpoint['rl_agent'] = rl_agent
+    return checkpoint
+
+
 def load_agent_from_checkpoint(ckpt_path, device=None, agent_type_override=None):
     if not os.path.exists(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
     checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
+    checkpoint = _override_checkpoint_device(checkpoint, device)
     agent_type = agent_type_override or detect_agent_type_from_checkpoint(checkpoint)
     if agent_type == 'dqn':
         agent = DQNAgent.from_checkpoint(checkpoint)
