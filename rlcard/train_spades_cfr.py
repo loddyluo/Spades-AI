@@ -33,6 +33,7 @@ def train():
     config = _load_config()
     cfr_cfg = config.get('cfr', {})
     seed = cfr_cfg.get('seed', config.get('training', {}).get('seed', 42))
+    reward_beta = config.get('training', {}).get('reward_beta', 1.0)
 
     log_dir = cfr_cfg.get('log_dir', 'experiments/spades_cfr_result')
     num_episodes = cfr_cfg.get('num_episodes', 5000)
@@ -41,10 +42,10 @@ def train():
 
     set_seed(seed)
 
-    env = rlcard.make('spades', config={'seed': seed, 'allow_step_back': True})
+    env = rlcard.make('spades', config={'seed': seed, 'allow_step_back': True, 'reward_beta': reward_beta})
     _ensure_step_back_supported(env)
 
-    eval_env = rlcard.make('spades', config={'seed': seed})
+    eval_env = rlcard.make('spades', config={'seed': seed, 'reward_beta': reward_beta})
 
     agent = CFRAgent(env, os.path.join(log_dir, 'cfr_model'))
     agent.load()
@@ -62,10 +63,7 @@ def train():
             if episode % evaluate_every == 0:
                 agent.save()
                 rewards = tournament(eval_env, num_eval_games)
-                if len(rewards) == 4:
-                    eval_reward = rewards[0] - rewards[1]
-                else:
-                    eval_reward = rewards[0]
+                eval_reward = rewards[0]
                 logger.log_performance(episode, eval_reward)
                 print(f'Episode: {episode}, Team Reward vs Random: {eval_reward}')
 

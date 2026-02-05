@@ -1,6 +1,7 @@
 import os
 import json
 import rlcard
+import torch
 from rlcard.agents.dmc_agent import DMCTrainer
 from rlcard.utils import set_seed
 
@@ -24,18 +25,25 @@ def train():
     env_id = 'spades'
 
     seed = config.get('training', {}).get('seed', 42)
+    reward_beta = config.get('training', {}).get('reward_beta', 1.0)
     dmc_cfg = config.get('dmc', {})
 
     xpid = dmc_cfg.get('xpid', 'spades_dmc')
     save_dir = dmc_cfg.get('save_dir', 'experiments/spades_dmc')
     load_model = dmc_cfg.get('load_model', False)
     cuda = dmc_cfg.get('cuda', '')
+    if cuda == '':
+        cuda = '0' if torch.cuda.is_available() else ''
 
     if cuda:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(cuda)
 
+    training_device = dmc_cfg.get('training_device', '0')
+    if cuda == '':
+        training_device = 'cpu'
+
     set_seed(seed)
-    env = rlcard.make(env_id, config={'seed': seed})
+    env = rlcard.make(env_id, config={'seed': seed, 'reward_beta': reward_beta})
 
     trainer = DMCTrainer(
         env,
@@ -46,7 +54,7 @@ def train():
         save_interval=dmc_cfg.get('save_interval', 30),
         num_actor_devices=dmc_cfg.get('num_actor_devices', 1),
         num_actors=dmc_cfg.get('num_actors', 5),
-        training_device=dmc_cfg.get('training_device', '0'),
+        training_device=training_device,
         total_frames=dmc_cfg.get('total_frames', 5000000),
         exp_epsilon=dmc_cfg.get('exp_epsilon', 0.01),
         batch_size=dmc_cfg.get('batch_size', 32),

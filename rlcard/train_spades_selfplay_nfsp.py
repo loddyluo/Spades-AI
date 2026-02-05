@@ -51,10 +51,10 @@ def train():
     set_seed(SEED)
 
     # 1. Make Training Environment
-    train_env = rlcard.make(ENV_ID, config={'seed': SEED})
+    train_env = rlcard.make(ENV_ID, config={'seed': SEED, 'reward_beta': REWARD_BETA})
 
     # 2. Make Evaluation Environment
-    eval_env = rlcard.make(ENV_ID, config={'seed': SEED})
+    eval_env = rlcard.make(ENV_ID, config={'seed': SEED, 'reward_beta': REWARD_BETA})
 
     # 3. Initialize NFSP Agent
     hidden_layers_sizes = nfsp_cfg.get('hidden_layers_sizes', [256, 256])
@@ -105,6 +105,14 @@ def train():
         save_path=None,
     )
 
+    def _evaluate_raw_diff(env, num_games):
+        total_diff = 0.0
+        for _ in range(num_games):
+            env.run(is_training=False)
+            raw_scores = env.game.judger.judge_game(env.game.players)
+            total_diff += raw_scores[0] - raw_scores[1]
+        return total_diff / float(num_games)
+
     print("Start NFSP Self-Play training...")
     start_time = time.time()
     with Logger(SAVE_PATH) as logger:
@@ -133,17 +141,6 @@ def train():
 
             # --- Training Step ---
             trajectories, payoffs = train_env.run(is_training=True)
-            # Convert team scores to zero-sum team-difference rewards
-            # Team 0: players 0 & 2, Team 1: players 1 & 3
-            if len(payoffs) == 4:
-                team0_score = payoffs[0]
-                team1_score = payoffs[1]
-                payoffs = [
-                    team0_score - REWARD_BETA * team1_score,
-                    team1_score - REWARD_BETA * team0_score,
-                    team0_score - REWARD_BETA * team1_score,
-                    team1_score - REWARD_BETA * team0_score,
-                ]
             trajectories = reorganize(trajectories, payoffs)
 
             # Feed transitions from ALL 4 players to the shared agent
@@ -153,14 +150,7 @@ def train():
 
             # --- Evaluation Step ---
             if episode % EVALUATE_EVERY == 0:
-                rewards = tournament(eval_env, 20)
-                # Convert to team-difference evaluation reward
-                if len(rewards) == 4:
-                    team0_score = rewards[0]
-                    team1_score = rewards[1]
-                    eval_reward = team0_score - team1_score
-                else:
-                    eval_reward = rewards[0]
+                eval_reward = _evaluate_raw_diff(eval_env, 20)
                 logger.log_performance(episode, eval_reward)
                 print(f"Episode: {episode}, Agent Team Reward vs Previous Model: {eval_reward}")
 

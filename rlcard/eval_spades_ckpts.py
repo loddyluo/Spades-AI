@@ -38,20 +38,15 @@ def main():
 
     env.set_agents([team0_agent, team1_agent, team0_agent, team1_agent])
 
-    rewards = tournament(env, args.num_games)
-    team0_score = 0.0
-    team1_score = 0.0
-    if len(rewards) == 4:
-        team0_score = rewards[0]
-        team1_score = rewards[1]
-        avg_diff = team0_score - team1_score
-    else:
-        avg_diff = rewards[0]
+    total_diff = 0.0
+    for _ in range(args.num_games):
+        env.run(is_training=False)
+        raw_scores = env.game.judger.judge_game(env.game.players)
+        total_diff += raw_scores[0] - raw_scores[1]
+    avg_value = total_diff / float(args.num_games)
 
     print("Evaluation complete")
-    print(f"Team0 avg score: {team0_score:.6f}")
-    print(f"Team1 avg score: {team1_score:.6f}")
-    print(f"Avg score diff (Team0 - Team1): {avg_diff:.6f}")
+    print(f"Avg score diff (Team0 - Team1): {avg_value:.6f}")
 
 
 if __name__ == "__main__":

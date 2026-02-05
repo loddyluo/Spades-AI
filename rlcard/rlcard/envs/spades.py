@@ -9,6 +9,7 @@ class SpadesEnv(Env):
         self.name = 'spades'
         self.game = Game()
         super().__init__(config)
+        self.reward_beta = config.get('reward_beta', 1.0)
         
         # Calculate action map
         self.actions = []
@@ -115,4 +116,10 @@ class SpadesEnv(Env):
         return self.game.get_legal_actions(self.game.game_pointer)
 
     def get_payoffs(self):
-        return np.array(self.game.judger.judge_game(self.game.players))
+        raw_payoffs = self.game.judger.judge_game(self.game.players)
+        if len(raw_payoffs) == 4:
+            team0_score = raw_payoffs[0]
+            team1_score = raw_payoffs[1]
+            value = team0_score - self.reward_beta * team1_score
+            return np.array([value, value, value, value])
+        return np.array(raw_payoffs)
