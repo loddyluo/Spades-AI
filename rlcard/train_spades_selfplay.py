@@ -38,7 +38,10 @@ def train():
     max_seconds = MAX_HOURS * 3600 if MAX_HOURS is not None else None
     EVALUATE_EVERY = config.get('training', {}).get('evaluate_every', 100)
     REWARD_BETA = config.get('training', {}).get('reward_beta', 1.0)
-    SAVE_PATH = config.get('training', {}).get('save_path', 'experiments/spades_selfplay_dqn')
+    SAVE_PATH = config.get('dqn', {}).get(
+        'save_path',
+        config.get('training', {}).get('save_path', 'experiments/spades_selfplay_dqn'),
+    )
     
     # Check device
     device = get_device()

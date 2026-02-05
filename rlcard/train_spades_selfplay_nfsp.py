@@ -38,7 +38,10 @@ def train():
     MAX_HOURS = config.get('training', {}).get('max_hours')
     max_seconds = MAX_HOURS * 3600 if MAX_HOURS is not None else None
     EVALUATE_EVERY = config.get('training', {}).get('evaluate_every', 100)
-    SAVE_PATH = config.get('training', {}).get('save_path', 'experiments/spades_selfplay_nfsp')
+    SAVE_PATH = config.get('nfsp', {}).get(
+        'save_path',
+        config.get('training', {}).get('save_path', 'experiments/spades_selfplay_nfsp'),
+    )
     REWARD_BETA = config.get('training', {}).get('reward_beta', 1.0)
     OPPONENT_UPDATE_EVERY = config.get('training', {}).get('opponent_update_every', 500)
 

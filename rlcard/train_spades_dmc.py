@@ -32,7 +32,7 @@ def train():
     save_dir = dmc_cfg.get('save_dir', 'experiments/spades_dmc')
     load_model = dmc_cfg.get('load_model', False)
     cuda = dmc_cfg.get('cuda', '')
-    if cuda == '':
+    if cuda in ['', 'auto']:
         cuda = '0' if torch.cuda.is_available() else ''
 
     if cuda:
