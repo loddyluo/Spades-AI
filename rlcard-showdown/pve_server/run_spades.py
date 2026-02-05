@@ -16,10 +16,16 @@ def reset():
     seed = body.get('seed')
     human_player = body.get('human_player', 0)
     ai_checkpoint = body.get('ai_checkpoint')
-    if not ai_checkpoint:
+    ai_checkpoint_team0 = body.get('ai_checkpoint_team0')
+    ai_checkpoint_team1 = body.get('ai_checkpoint_team1')
+    if not ai_checkpoint and not ai_checkpoint_team0 and not ai_checkpoint_team1:
         return jsonify({'error': 'ai_checkpoint is required (no random agent fallback).'}), 400
     # Resolve relative checkpoint path from repo root (find folder containing experiments/)
-    if not ai_checkpoint.startswith('/'):
+    def resolve_checkpoint_path(path):
+        if not path:
+            return None
+        if path.startswith('/'):
+            return os.path.abspath(path)
         search_dir = os.path.abspath(os.path.dirname(__file__))
         repo_root = None
         for _ in range(6):
@@ -29,13 +35,28 @@ def reset():
             search_dir = os.path.dirname(search_dir)
         if repo_root is None:
             repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-        ai_checkpoint = os.path.abspath(os.path.join(repo_root, ai_checkpoint))
-    if not os.path.exists(ai_checkpoint):
-        return jsonify({'error': f'ai_checkpoint not found: {ai_checkpoint}'}), 400
+        return os.path.abspath(os.path.join(repo_root, path))
+
+    ai_checkpoint = resolve_checkpoint_path(ai_checkpoint)
+    ai_checkpoint_team0 = resolve_checkpoint_path(ai_checkpoint_team0)
+    ai_checkpoint_team1 = resolve_checkpoint_path(ai_checkpoint_team1)
+
+    if ai_checkpoint:
+        if not os.path.exists(ai_checkpoint):
+            return jsonify({'error': f'ai_checkpoint not found: {ai_checkpoint}'}), 400
+    if ai_checkpoint_team0:
+        if not os.path.exists(ai_checkpoint_team0):
+            return jsonify({'error': f'ai_checkpoint_team0 not found: {ai_checkpoint_team0}'}), 400
+    if ai_checkpoint_team1:
+        if not os.path.exists(ai_checkpoint_team1):
+            return jsonify({'error': f'ai_checkpoint_team1 not found: {ai_checkpoint_team1}'}), 400
+
     game_id, session = sessions.create_session(
         seed=seed,
         human_player=human_player,
         ai_checkpoint=ai_checkpoint,
+        ai_checkpoint_team0=ai_checkpoint_team0,
+        ai_checkpoint_team1=ai_checkpoint_team1,
     )
     payload = session.reset()
     payload['game_id'] = game_id

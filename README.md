@@ -55,7 +55,7 @@ cd "Spades-AI"
 source .venv/bin/activate
 ```
 
-运行终端 PvE 客户端（必须指定训练得到的 checkpoint）：
+运行终端 PvE 客户端（必须指定训练得到的 checkpoint，自动识别 DQN/NFSP）：
 
 ```bash
 python3 rlcard-showdown/pve_server/cli_spades.py \
@@ -63,7 +63,16 @@ python3 rlcard-showdown/pve_server/cli_spades.py \
   --ai-checkpoint "experiments/spades_selfplay_dqn/checkpoint_dqn.pt"
 ```
 
-> 说明：PVE 不再使用随机 AI。三个对手全部使用你提供的 `checkpoint_dqn.pt`。
+> 说明：PvE 不再使用随机 AI。三个对手全部使用你提供的 checkpoint（类型会自动识别）。
+
+如需混合对局（Team0 vs Team1，P0/P2 对 P1/P3），使用以下参数：
+
+```bash
+python3 rlcard-showdown/pve_server/cli_spades.py \
+  --server http://127.0.0.1:5001 \
+  --ai-checkpoint-team0 "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
+  --ai-checkpoint-team1 "experiments/spades_selfplay_nfsp/checkpoint_nfsp.pt"
+```
 
 ---
 
@@ -158,7 +167,7 @@ npm start
 http://127.0.0.1:3000/pve/spades
 ```
 
-页面顶部的 **AI Checkpoint** 输入框必须填写模型路径（本仓库已预置默认路径）：
+页面顶部的 **AI Checkpoint (All Seats)** 输入框必须填写模型路径（本仓库已预置默认路径）：
 
 ```
 experiments/spades_selfplay_dqn/checkpoint_dqn.pt
@@ -167,3 +176,23 @@ experiments/spades_selfplay_dqn/checkpoint_dqn.pt
 点击 **Start / Reset** 开始对局。
 
 > 说明：PvE 强制使用 checkpoint 模型，不会回退到随机 AI。
+
+如需混合对局（Team0 vs Team1），可填写：
+
+- **Team0 Checkpoint (P0,P2)**
+- **Team1 Checkpoint (P1,P3)**
+
+两队分别加载不同 checkpoint（DQN/NFSP 自动识别）。
+
+---
+
+## 9. EVE：Checkpoint 对战评估（自动识别 DQN/NFSP）
+
+使用以下脚本对两个 checkpoint 进行 1000 局对局评估，输出平均分差：
+
+```bash
+python3 rlcard/eval_spades_ckpts.py \
+  --ckpt-team0 "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
+  --ckpt-team1 "experiments/spades_selfplay_nfsp/checkpoint_nfsp.pt" \
+  --num-games 1000
+```

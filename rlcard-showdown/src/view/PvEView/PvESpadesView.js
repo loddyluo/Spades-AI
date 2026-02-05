@@ -35,14 +35,19 @@ function PvESpadesView() {
     });
 
     const [checkpointPath, setCheckpointPath] = useState('experiments/spades_selfplay_dqn/checkpoint_dqn.pt');
-    const isCheckpointValid = checkpointPath.trim().length > 0;
+    const [checkpointTeam0, setCheckpointTeam0] = useState('');
+    const [checkpointTeam1, setCheckpointTeam1] = useState('');
+    const isCheckpointValid = checkpointPath.trim().length > 0
+        || (checkpointTeam0.trim().length > 0 && checkpointTeam1.trim().length > 0);
 
     const resetGame = useCallback(async () => {
         try {
             const res = await axios.post(`${spadesDemoUrl}/reset`, {
                 game: 'spades',
                 human_player: 0,
-                ai_checkpoint: checkpointPath,
+                ai_checkpoint: checkpointPath.trim() ? checkpointPath : null,
+                ai_checkpoint_team0: checkpointTeam0.trim() ? checkpointTeam0 : null,
+                ai_checkpoint_team1: checkpointTeam1.trim() ? checkpointTeam1 : null,
             });
             setGameId(res.data.game_id);
             setGameState(res.data);
@@ -51,7 +56,7 @@ function PvESpadesView() {
             const message = err?.response?.data?.error || 'Failed to start game. Check checkpoint path.';
             alert(message);
         }
-    }, [checkpointPath]);
+    }, [checkpointPath, checkpointTeam0, checkpointTeam1]);
 
     useEffect(() => {
         resetGame();
@@ -128,7 +133,7 @@ function PvESpadesView() {
         <div className="spades-pve-root">
             <div className="spades-action-buttons">
                 <div className="spades-checkpoint">
-                    <label className="spades-checkpoint-label">AI Checkpoint</label>
+                    <label className="spades-checkpoint-label">AI Checkpoint (All Seats)</label>
                     <input
                         type="text"
                         value={checkpointPath}
@@ -139,6 +144,30 @@ function PvESpadesView() {
                         {isCheckpointValid
                             ? 'Example: experiments/spades_selfplay_dqn/checkpoint_dqn.pt'
                             : 'Checkpoint path is required.'}
+                    </div>
+                </div>
+                <div className="spades-checkpoint">
+                    <label className="spades-checkpoint-label">Team0 Checkpoint (P0,P2)</label>
+                    <input
+                        type="text"
+                        value={checkpointTeam0}
+                        onChange={(e) => setCheckpointTeam0(e.target.value)}
+                        className="spades-checkpoint-input"
+                    />
+                    <div className="spades-checkpoint-help">
+                        Optional override for Team0 (auto-detects DQN/NFSP).
+                    </div>
+                </div>
+                <div className="spades-checkpoint">
+                    <label className="spades-checkpoint-label">Team1 Checkpoint (P1,P3)</label>
+                    <input
+                        type="text"
+                        value={checkpointTeam1}
+                        onChange={(e) => setCheckpointTeam1(e.target.value)}
+                        className="spades-checkpoint-input"
+                    />
+                    <div className="spades-checkpoint-help">
+                        Optional override for Team1 (auto-detects DQN/NFSP).
                     </div>
                 </div>
                 <Button variant="contained" color="primary" onClick={resetGame} disabled={!isCheckpointValid}>

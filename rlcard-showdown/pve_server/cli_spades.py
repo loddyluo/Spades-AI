@@ -172,7 +172,9 @@ def main():
     parser.add_argument('--server', default='http://127.0.0.1:5001', help='PvE server base url')
     parser.add_argument('--human', type=int, default=0, help='Human player index (0-3)')
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
-    parser.add_argument('--ai-checkpoint', type=str, default=None, help='Path to DQN checkpoint for AI agents')
+    parser.add_argument('--ai-checkpoint', type=str, default=None, help='Path to AI checkpoint for all seats')
+    parser.add_argument('--ai-checkpoint-team0', type=str, default=None, help='Path to AI checkpoint for Team0 (P0,P2)')
+    parser.add_argument('--ai-checkpoint-team1', type=str, default=None, help='Path to AI checkpoint for Team1 (P1,P3)')
     
     parser.add_argument('--auto', type=int, default=0, help='Auto-play N steps (for smoke test)')
     parser.add_argument('--auto-exit', action='store_true', help='Exit after auto steps without prompting')
@@ -180,27 +182,33 @@ def main():
     args = parser.parse_args()
 
     base = args.server.rstrip('/')
-    ai_checkpoint = args.ai_checkpoint
-    if ai_checkpoint:
-        if not os.path.isabs(ai_checkpoint):
-            search_dir = os.path.abspath(os.path.dirname(__file__))
-            repo_root = None
-            for _ in range(6):
-                if os.path.exists(os.path.join(search_dir, 'experiments')):
-                    repo_root = search_dir
-                    break
-                search_dir = os.path.dirname(search_dir)
-            if repo_root is None:
-                repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-            ai_checkpoint = os.path.abspath(os.path.join(repo_root, ai_checkpoint))
-        else:
-            ai_checkpoint = os.path.abspath(ai_checkpoint)
+    def resolve_checkpoint_path(path):
+        if not path:
+            return None
+        if os.path.isabs(path):
+            return os.path.abspath(path)
+        search_dir = os.path.abspath(os.path.dirname(__file__))
+        repo_root = None
+        for _ in range(6):
+            if os.path.exists(os.path.join(search_dir, 'experiments')):
+                repo_root = search_dir
+                break
+            search_dir = os.path.dirname(search_dir)
+        if repo_root is None:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        return os.path.abspath(os.path.join(repo_root, path))
+
+    ai_checkpoint = resolve_checkpoint_path(args.ai_checkpoint)
+    ai_checkpoint_team0 = resolve_checkpoint_path(args.ai_checkpoint_team0)
+    ai_checkpoint_team1 = resolve_checkpoint_path(args.ai_checkpoint_team1)
 
     reset_payload = {
         'game': 'spades',
         'seed': args.seed,
         'human_player': args.human,
         'ai_checkpoint': ai_checkpoint,
+        'ai_checkpoint_team0': ai_checkpoint_team0,
+        'ai_checkpoint_team1': ai_checkpoint_team1,
     }
     try:
         state = http_post_json(f"{base}/reset", reset_payload, timeout=60)

@@ -8,7 +8,7 @@ if ROOT_DIR not in sys.path:
 
 import rlcard
 import torch
-from rlcard.agents import DQNAgent
+from rlcard.utils.agent_utils import load_agent_from_checkpoint
 
 
 def _spades_rank_value(rank):
@@ -55,10 +55,12 @@ def _serialize_obs(raw_obs, current_trick):
 
 
 class SpadesSession:
-    def __init__(self, seed=None, human_player=0, ai_checkpoint=None):
+    def __init__(self, seed=None, human_player=0, ai_checkpoint=None, ai_checkpoint_team0=None, ai_checkpoint_team1=None):
         self.env = rlcard.make('spades', config={'allow_raw_data': True, 'seed': seed})
         self.human_player = human_player
         self.ai_checkpoint = ai_checkpoint
+        self.ai_checkpoint_team0 = ai_checkpoint_team0
+        self.ai_checkpoint_team1 = ai_checkpoint_team1
         self.agents = self._build_agents()
         self.env.set_agents(self.agents)
         self.current_state = None
@@ -68,23 +70,30 @@ class SpadesSession:
         self.last_trick = None
         self.trick_id = 0
 
-    def _load_dqn_agent(self, checkpoint_path):
+    def _load_agent(self, checkpoint_path):
         if not checkpoint_path or not os.path.exists(checkpoint_path):
             return None
         device = torch.device('cpu')
-        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        agent = DQNAgent.from_checkpoint(ckpt)
-        if hasattr(agent, 'set_device'):
-            agent.set_device(device)
+        agent, _ = load_agent_from_checkpoint(checkpoint_path, device=device)
         return agent
 
     def _build_agents(self):
-        ai_agent = self._load_dqn_agent(self.ai_checkpoint)
-        if ai_agent is None:
+        team0_path = self.ai_checkpoint_team0 or self.ai_checkpoint
+        team1_path = self.ai_checkpoint_team1 or self.ai_checkpoint
+        if not team0_path or not team1_path:
             raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
 
-        # Use the same trained checkpoint for all AI seats
-        return [ai_agent for _ in range(self.env.num_players)]
+        if team0_path == team1_path:
+            ai_agent = self._load_agent(team0_path)
+            if ai_agent is None:
+                raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+            return [ai_agent for _ in range(self.env.num_players)]
+
+        team0_agent = self._load_agent(team0_path)
+        team1_agent = self._load_agent(team1_path)
+        if team0_agent is None or team1_agent is None:
+            raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+        return [team0_agent, team1_agent, team0_agent, team1_agent]
 
     def reset(self):
         self.current_state, self.current_player = self.env.reset()
@@ -185,12 +194,14 @@ class SpadesSessionManager:
     def __init__(self):
         self.sessions = {}
 
-    def create_session(self, seed=None, human_player=0, ai_checkpoint=None):
+    def create_session(self, seed=None, human_player=0, ai_checkpoint=None, ai_checkpoint_team0=None, ai_checkpoint_team1=None):
         game_id = f"spades-{uuid.uuid4().hex[:8]}"
         session = SpadesSession(
             seed=seed,
             human_player=human_player,
             ai_checkpoint=ai_checkpoint,
+            ai_checkpoint_team0=ai_checkpoint_team0,
+            ai_checkpoint_team1=ai_checkpoint_team1,
         )
         self.sessions[game_id] = session
         return game_id, session
