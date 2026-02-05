@@ -265,11 +265,7 @@ def main():
                 break
             restart = input('Restart? (y/N): ').strip().lower()
             if restart == 'y':
-                state = http_post_json(f"{base}/reset", {
-                    'game': 'spades',
-                    'seed': args.seed,
-                    'human_player': args.human,
-                })
+                state = http_post_json(f"{base}/reset", reset_payload)
                 game_id = state.get('game_id')
                 continue
             break
