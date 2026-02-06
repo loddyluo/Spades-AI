@@ -55,7 +55,7 @@ cd "Spades-AI"
 source .venv/bin/activate
 ```
 
-运行终端 PvE 客户端（必须指定训练得到的 checkpoint，自动识别 DQN/NFSP）：
+运行终端 PvE 客户端（必须指定训练得到的 checkpoint，自动识别 DQN/NFSP/DMC/CFR）：
 
 ```bash
 python3 rlcard-showdown/pve_server/cli_spades.py \
@@ -72,6 +72,14 @@ python3 rlcard-showdown/pve_server/cli_spades.py \
   --server http://127.0.0.1:5001 \
   --ai-checkpoint-team0 "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
   --ai-checkpoint-team1 "experiments/spades_selfplay_nfsp_4h/checkpoint_nfsp.pt"
+```
+
+如果使用 DMC，请传入包含 `model.tar` 的目录（自动识别）：
+
+```bash
+python3 rlcard-showdown/pve_server/cli_spades.py \
+  --server http://127.0.0.1:5001 \
+  --ai-checkpoint "experiments/spades_dmc_0.5_12h/spades_dmc"
 ```
 
 ---
@@ -123,10 +131,16 @@ python3 run_spades.py
 
 - 脚本位置：
   - [rlcard/train_spades_selfplay.py](rlcard/train_spades_selfplay.py)
+  - [rlcard/train_spades_selfplay_nfsp.py](rlcard/train_spades_selfplay_nfsp.py)
+  - [rlcard/train_spades_dmc.py](rlcard/train_spades_dmc.py)
+  - [rlcard/train_spades_cfr.py](rlcard/train_spades_cfr.py)
 
 训练完成后会生成新的 checkpoint 到：
 
 - [experiments/spades_selfplay_dqn](experiments/spades_selfplay_dqn)
+- [experiments/spades_selfplay_nfsp_0.5_12h](experiments/spades_selfplay_nfsp_0.5_12h)
+- [experiments/spades_dmc_0.5_12h/spades_dmc](experiments/spades_dmc_0.5_12h/spades_dmc)
+- [experiments/spades_cfr_result_0.5_12h/cfr_model](experiments/spades_cfr_result_0.5_12h/cfr_model)
 
 ---
 
@@ -182,11 +196,11 @@ experiments/spades_selfplay_dqn/checkpoint_dqn.pt
 - **Team0 Checkpoint (P0,P2)**
 - **Team1 Checkpoint (P1,P3)**
 
-两队分别加载不同 checkpoint（DQN/NFSP 自动识别）。
+两队分别加载不同 checkpoint（DQN/NFSP/DMC/CFR 自动识别）。
 
 ---
 
-## 9. EVE：Checkpoint 对战评估（自动识别 DQN/NFSP）
+## 9. EVE：Checkpoint 对战评估（自动识别 DQN/NFSP/DMC/CFR）
 
 使用以下脚本对两个 checkpoint 进行 1000 局对局评估，输出平均分差：
 

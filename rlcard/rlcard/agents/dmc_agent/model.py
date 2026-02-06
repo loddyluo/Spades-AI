@@ -130,16 +130,30 @@ class DMCModel:
         exp_epsilon=0.01,
         device=0
     ):
+        self.shared_model = False
         self.agents = []
-        for player_id in range(len(state_shape)):
+        same_state = all(state_shape[0] == shape for shape in state_shape)
+        same_action = all(action_shape[0] == shape for shape in action_shape)
+        if same_state and same_action:
             agent = DMCAgent(
-                state_shape[player_id],
-                action_shape[player_id],
+                state_shape[0],
+                action_shape[0],
                 mlp_layers,
                 exp_epsilon,
                 device,
             )
-            self.agents.append(agent)
+            self.agents = [agent for _ in range(len(state_shape))]
+            self.shared_model = True
+        else:
+            for player_id in range(len(state_shape)):
+                agent = DMCAgent(
+                    state_shape[player_id],
+                    action_shape[player_id],
+                    mlp_layers,
+                    exp_epsilon,
+                    device,
+                )
+                self.agents.append(agent)
 
     def share_memory(self):
         for agent in self.agents:

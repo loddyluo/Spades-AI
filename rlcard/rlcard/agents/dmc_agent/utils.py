@@ -81,17 +81,27 @@ def create_optimizers(
     momentum,
     epsilon,
     alpha,
-    learner_model
+    learner_model,
+    shared_model=False
 ):
     optimizers = []
-    for player_id in range(num_players):
+    if shared_model:
         optimizer = torch.optim.RMSprop(
-            learner_model.parameters(player_id),
+            learner_model.parameters(0),
             lr=learning_rate,
             momentum=momentum,
             eps=epsilon,
             alpha=alpha)
-        optimizers.append(optimizer)
+        optimizers = [optimizer for _ in range(num_players)]
+    else:
+        for player_id in range(num_players):
+            optimizer = torch.optim.RMSprop(
+                learner_model.parameters(player_id),
+                lr=learning_rate,
+                momentum=momentum,
+                eps=epsilon,
+                alpha=alpha)
+            optimizers.append(optimizer)
     return optimizers
 
 def act(

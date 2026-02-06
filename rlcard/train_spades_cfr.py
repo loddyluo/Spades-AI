@@ -39,6 +39,8 @@ def train():
     num_episodes = cfr_cfg.get('num_episodes', 5000)
     num_eval_games = cfr_cfg.get('num_eval_games', 200)
     evaluate_every = cfr_cfg.get('evaluate_every', 100)
+    max_nodes_per_iter = cfr_cfg.get('max_nodes_per_iter')
+    max_seconds_per_iter = cfr_cfg.get('max_seconds_per_iter')
 
     set_seed(seed)
 
@@ -47,7 +49,12 @@ def train():
 
     eval_env = rlcard.make('spades', config={'seed': seed, 'reward_beta': reward_beta})
 
-    agent = CFRAgent(env, os.path.join(log_dir, 'cfr_model'))
+    agent = CFRAgent(
+        env,
+        os.path.join(log_dir, 'cfr_model'),
+        max_nodes_per_iter=max_nodes_per_iter,
+        max_seconds_per_iter=max_seconds_per_iter,
+    )
     agent.load()
 
     eval_env.set_agents([

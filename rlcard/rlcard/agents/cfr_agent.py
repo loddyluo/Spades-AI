@@ -1,5 +1,7 @@
-import numpy as np
 import collections
+import time
+
+import numpy as np
 
 import os
 import pickle
@@ -10,7 +12,7 @@ class CFRAgent():
     ''' Implement CFR (chance sampling) algorithm
     '''
 
-    def __init__(self, env, model_path='./cfr_model'):
+    def __init__(self, env, model_path='./cfr_model', max_nodes_per_iter=None, max_seconds_per_iter=None):
         ''' Initilize Agent
 
         Args:
@@ -19,6 +21,11 @@ class CFRAgent():
         self.use_raw = False
         self.env = env
         self.model_path = model_path
+        self.max_nodes_per_iter = max_nodes_per_iter
+        self.max_seconds_per_iter = max_seconds_per_iter
+        self._budget_hit = False
+        self._node_count = 0
+        self._start_time = 0.0
 
         # A policy is a dict state_str -> action probabilities
         self.policy = collections.defaultdict(list)
@@ -37,8 +44,13 @@ class CFRAgent():
         # The regrets are recorded in traversal
         for player_id in range(self.env.num_players):
             self.env.reset()
+            self._budget_hit = False
+            self._node_count = 0
+            self._start_time = time.time()
             probs = np.ones(self.env.num_players)
             self.traverse_tree(probs, player_id)
+            if self._budget_hit:
+                break
 
         # Update policy
         self.update_policy()
@@ -53,6 +65,11 @@ class CFRAgent():
         Returns:
             state_utilities (list): The expected utilities for all the players
         '''
+        self._node_count += 1
+        if self._budget_exceeded():
+            self._budget_hit = True
+            return np.zeros(self.env.num_players)
+
         if self.env.is_over():
             return self.env.get_payoffs()
 
@@ -96,6 +113,14 @@ class CFRAgent():
             self.regrets[obs][action] += regret
             self.average_policy[obs][action] += self.iteration * player_prob * action_prob
         return state_utility
+
+    def _budget_exceeded(self):
+        if self.max_nodes_per_iter is not None and self._node_count >= self.max_nodes_per_iter:
+            return True
+        if self.max_seconds_per_iter is not None:
+            if (time.time() - self._start_time) >= self.max_seconds_per_iter:
+                return True
+        return False
 
     def update_policy(self):
         ''' Update policy based on the current regrets

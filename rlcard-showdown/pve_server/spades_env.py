@@ -76,14 +76,14 @@ class SpadesSession:
             return None
         device = get_device()
         try:
-            agent, _ = load_agent_from_checkpoint(checkpoint_path, device=device)
+            agent, _ = load_agent_from_checkpoint(checkpoint_path, device=device, env=self.env)
             return agent
         except RuntimeError as exc:
             msg = str(exc).lower()
             if 'cuda' not in msg:
                 raise
             cpu_device = torch.device('cpu')
-            agent, _ = load_agent_from_checkpoint(checkpoint_path, device=cpu_device)
+            agent, _ = load_agent_from_checkpoint(checkpoint_path, device=cpu_device, env=self.env)
             return agent
 
     def _build_agents(self):
@@ -96,12 +96,22 @@ class SpadesSession:
             ai_agent = self._load_agent(team0_path)
             if ai_agent is None:
                 raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+            if isinstance(ai_agent, list):
+                if len(ai_agent) != self.env.num_players:
+                    raise ValueError('DMC agent list length must match number of players.')
+                return ai_agent
             return [ai_agent for _ in range(self.env.num_players)]
 
         team0_agent = self._load_agent(team0_path)
         team1_agent = self._load_agent(team1_path)
         if team0_agent is None or team1_agent is None:
             raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+        if isinstance(team0_agent, list) or isinstance(team1_agent, list):
+            if not isinstance(team0_agent, list) or not isinstance(team1_agent, list):
+                raise ValueError('DMC checkpoints must be provided for both teams when using separate checkpoints.')
+            if len(team0_agent) != self.env.num_players or len(team1_agent) != self.env.num_players:
+                raise ValueError('DMC agent list length must match number of players.')
+            return [team0_agent[0], team1_agent[1], team0_agent[2], team1_agent[3]]
         return [team0_agent, team1_agent, team0_agent, team1_agent]
 
     def reset(self):

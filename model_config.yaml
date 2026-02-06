@@ -68,6 +68,8 @@
     "num_episodes": 5000,
     "num_eval_games": 200,
     "evaluate_every": 100,
+    "max_nodes_per_iter": 200000,
+    "max_seconds_per_iter": 10,
     "log_dir": "experiments/spades_cfr_result_0.5_12h"
   }
 }

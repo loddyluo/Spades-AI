@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import os
 import threading
 import time
@@ -234,6 +235,8 @@ class DMCTrainer:
         # Learner model for training
         learner_model = self.model_func(self.training_device)
 
+        shared_model = getattr(learner_model, 'shared_model', False)
+
         # Create optimizers
         optimizers = create_optimizers(
             self.num_players,
@@ -242,6 +245,7 @@ class DMCTrainer:
             self.epsilon,
             self.alpha,
             learner_model,
+            shared_model=shared_model,
         )
 
         # Stat Keys
@@ -315,7 +319,11 @@ class DMCTrainer:
 
         threads = []
         locks = {device: [threading.Lock() for _ in range(self.num_players)] for device in self.device_iterator}
-        position_locks = [threading.Lock() for _ in range(self.num_players)]
+        if shared_model:
+            shared_lock = threading.Lock()
+            position_locks = [shared_lock for _ in range(self.num_players)]
+        else:
+            position_locks = [threading.Lock() for _ in range(self.num_players)]
 
         for device in self.device_iterator:
             for i in range(self.num_threads):
@@ -347,6 +355,17 @@ class DMCTrainer:
             for position in range(self.num_players):
                 model_weights_dir = os.path.expandvars(os.path.expanduser(
                     '%s/%s/%s' % (self.savedir, self.xpid, str(position)+'_'+str(frames)+'.pth')))
+                weights_glob = os.path.join(
+                    os.path.dirname(model_weights_dir),
+                    f"{position}_*.pth*",
+                )
+                for old_path in glob.glob(weights_glob):
+                    if old_path == model_weights_dir:
+                        continue
+                    try:
+                        os.remove(old_path)
+                    except OSError:
+                        pass
                 save_torch_sharded(
                     learner_model.get_agent(position),
                     model_weights_dir

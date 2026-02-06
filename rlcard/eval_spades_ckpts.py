@@ -29,14 +29,23 @@ def main():
         args.ckpt_team0,
         device=device,
         agent_type_override=args.agent_type,
+        env=env,
     )
     team1_agent, _ = load_agent_from_checkpoint(
         args.ckpt_team1,
         device=device,
         agent_type_override=args.agent_type,
+        env=env,
     )
 
-    env.set_agents([team0_agent, team1_agent, team0_agent, team1_agent])
+    if isinstance(team0_agent, list) or isinstance(team1_agent, list):
+        if not isinstance(team0_agent, list) or not isinstance(team1_agent, list):
+            raise ValueError('DMC checkpoints must be provided for both teams when using separate checkpoints.')
+        if len(team0_agent) != env.num_players or len(team1_agent) != env.num_players:
+            raise ValueError('DMC agent list length must match number of players.')
+        env.set_agents([team0_agent[0], team1_agent[1], team0_agent[2], team1_agent[3]])
+    else:
+        env.set_agents([team0_agent, team1_agent, team0_agent, team1_agent])
 
     total_diff = 0.0
     for _ in range(args.num_games):
