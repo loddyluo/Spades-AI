@@ -34,6 +34,7 @@ def train():
     cfr_cfg = config.get('cfr', {})
     seed = cfr_cfg.get('seed', config.get('training', {}).get('seed', 42))
     reward_beta = config.get('training', {}).get('reward_beta', 1.0)
+    enable_blind_nil = config.get('training', {}).get('game_enable_blind_nil', True)
 
     log_dir = cfr_cfg.get('log_dir', 'experiments/spades_cfr_result')
     num_episodes = cfr_cfg.get('num_episodes', 5000)
@@ -44,10 +45,21 @@ def train():
 
     set_seed(seed)
 
-    env = rlcard.make('spades', config={'seed': seed, 'allow_step_back': True, 'reward_beta': reward_beta})
+    env = rlcard.make(
+        'spades',
+        config={
+            'seed': seed,
+            'allow_step_back': True,
+            'reward_beta': reward_beta,
+            'game_enable_blind_nil': enable_blind_nil,
+        },
+    )
     _ensure_step_back_supported(env)
 
-    eval_env = rlcard.make('spades', config={'seed': seed, 'reward_beta': reward_beta})
+    eval_env = rlcard.make(
+        'spades',
+        config={'seed': seed, 'reward_beta': reward_beta, 'game_enable_blind_nil': enable_blind_nil},
+    )
 
     agent = CFRAgent(
         env,

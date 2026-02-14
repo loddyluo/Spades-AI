@@ -175,6 +175,7 @@ def main():
     parser.add_argument('--ai-checkpoint', type=str, default=None, help='Path to AI checkpoint for all seats')
     parser.add_argument('--ai-checkpoint-team0', type=str, default=None, help='Path to AI checkpoint for Team0 (P0,P2)')
     parser.add_argument('--ai-checkpoint-team1', type=str, default=None, help='Path to AI checkpoint for Team1 (P1,P3)')
+    parser.add_argument('--disable-blind-nil', action='store_true', help='Disable blind-nil phase and always show hand')
     
     parser.add_argument('--auto', type=int, default=0, help='Auto-play N steps (for smoke test)')
     parser.add_argument('--auto-exit', action='store_true', help='Exit after auto steps without prompting')
@@ -209,6 +210,7 @@ def main():
         'ai_checkpoint': ai_checkpoint,
         'ai_checkpoint_team0': ai_checkpoint_team0,
         'ai_checkpoint_team1': ai_checkpoint_team1,
+        'game_enable_blind_nil': not args.disable_blind_nil,
     }
     try:
         state = http_post_json(f"{base}/reset", reset_payload, timeout=60)

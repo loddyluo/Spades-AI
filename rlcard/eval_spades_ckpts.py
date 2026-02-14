@@ -16,6 +16,11 @@ def main():
         default=None,
         help="Optional agent type override for both checkpoints",
     )
+    parser.add_argument(
+        "--disable-blind-nil",
+        action="store_true",
+        help="Disable blind-nil phase and always show hand",
+    )
     parser.add_argument("--num-games", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -23,7 +28,10 @@ def main():
     device = get_device()
     set_seed(args.seed)
 
-    env = rlcard.make("spades", config={"seed": args.seed})
+    env = rlcard.make(
+        "spades",
+        config={"seed": args.seed, "game_enable_blind_nil": not args.disable_blind_nil},
+    )
 
     team0_agent, _ = load_agent_from_checkpoint(
         args.ckpt_team0,

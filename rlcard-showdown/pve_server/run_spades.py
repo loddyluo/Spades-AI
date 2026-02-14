@@ -18,6 +18,7 @@ def reset():
     ai_checkpoint = body.get('ai_checkpoint')
     ai_checkpoint_team0 = body.get('ai_checkpoint_team0')
     ai_checkpoint_team1 = body.get('ai_checkpoint_team1')
+    enable_blind_nil = body.get('game_enable_blind_nil', True)
     if not ai_checkpoint and not ai_checkpoint_team0 and not ai_checkpoint_team1:
         return jsonify({'error': 'ai_checkpoint is required (no random agent fallback).'}), 400
     # Resolve relative checkpoint path from repo root (find folder containing experiments/)
@@ -57,6 +58,7 @@ def reset():
         ai_checkpoint=ai_checkpoint,
         ai_checkpoint_team0=ai_checkpoint_team0,
         ai_checkpoint_team1=ai_checkpoint_team1,
+        enable_blind_nil=enable_blind_nil,
     )
     payload = session.reset()
     payload['game_id'] = game_id

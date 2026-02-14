@@ -82,6 +82,15 @@ python3 rlcard-showdown/pve_server/cli_spades.py \
   --ai-checkpoint "experiments/spades_dmc_0.5_12h/spades_dmc"
 ```
 
+如果你希望跳过 blind-nil 阶段（直接进入“看牌叫牌”），添加：
+
+```bash
+python3 rlcard-showdown/pve_server/cli_spades.py \
+  --server http://127.0.0.1:5001 \
+  --ai-checkpoint "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
+  --disable-blind-nil
+```
+
 ---
 
 ## 5. 终端玩法说明
@@ -142,6 +151,12 @@ python3 run_spades.py
 - [experiments/spades_dmc_0.5_12h/spades_dmc](experiments/spades_dmc_0.5_12h/spades_dmc)
 - [experiments/spades_cfr_result_0.5_12h/cfr_model](experiments/spades_cfr_result_0.5_12h/cfr_model)
 
+训练配置项中可切换是否保留盲零阶段：
+
+- 在 [model_config.yaml](model_config.yaml) 里设置 `training.game_enable_blind_nil`：
+  - `true`：保留 blind_nil 选择阶段（叫牌前可选择盲零）
+  - `false`：直接进入“看牌叫牌”阶段（始终显示手牌）
+
 ---
 
 如需可视化对弈或网页界面，请使用 [rlcard-showdown](rlcard-showdown) 目录下的前端与服务（文档见 [rlcard-showdown/docs](rlcard-showdown/docs)）。
@@ -198,6 +213,8 @@ experiments/spades_selfplay_dqn/checkpoint_dqn.pt
 
 两队分别加载不同 checkpoint（DQN/NFSP/DMC/CFR 自动识别）。
 
+如需跳过 blind-nil 阶段，请取消勾选 **Enable blind-nil phase before bidding**。
+
 ---
 
 ## 9. EVE：Checkpoint 对战评估（自动识别 DQN/NFSP/DMC/CFR）
@@ -209,4 +226,14 @@ python3 rlcard/eval_spades_ckpts.py \
   --ckpt-team0 "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
   --ckpt-team1 "experiments/spades_selfplay_nfsp/checkpoint_nfsp.pt" \
   --num-games 1000
+```
+
+如需跳过 blind-nil 阶段，添加：
+
+```bash
+python3 rlcard/eval_spades_ckpts.py \
+  --ckpt-team0 "experiments/spades_selfplay_dqn/checkpoint_dqn.pt" \
+  --ckpt-team1 "experiments/spades_selfplay_nfsp/checkpoint_nfsp.pt" \
+  --num-games 1000 \
+  --disable-blind-nil
 ```

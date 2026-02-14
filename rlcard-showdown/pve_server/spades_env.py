@@ -38,12 +38,12 @@ def _spades_trick_winner(trick_order):
     return trick_order[winner_idx][0]
 
 
-def _serialize_obs(raw_obs, current_trick):
+def _serialize_obs(raw_obs, current_trick, enable_blind_nil=True):
     player_id = raw_obs.get('current_player')
     phase = raw_obs.get('phase', 0)
     blind_passed = raw_obs.get('blind_passed', [])
     hand = raw_obs.get('hand', [])
-    if phase == 0 and player_id is not None and player_id < len(blind_passed) and not blind_passed[player_id]:
+    if enable_blind_nil and phase == 0 and player_id is not None and player_id < len(blind_passed) and not blind_passed[player_id]:
         hand = []
     return {
         'hand': hand,
@@ -56,8 +56,12 @@ def _serialize_obs(raw_obs, current_trick):
 
 
 class SpadesSession:
-    def __init__(self, seed=None, human_player=0, ai_checkpoint=None, ai_checkpoint_team0=None, ai_checkpoint_team1=None):
-        self.env = rlcard.make('spades', config={'allow_raw_data': True, 'seed': seed})
+    def __init__(self, seed=None, human_player=0, ai_checkpoint=None, ai_checkpoint_team0=None, ai_checkpoint_team1=None, enable_blind_nil=True):
+        self.enable_blind_nil = enable_blind_nil
+        self.env = rlcard.make(
+            'spades',
+            config={'allow_raw_data': True, 'seed': seed, 'game_enable_blind_nil': enable_blind_nil},
+        )
         self.human_player = human_player
         self.ai_checkpoint = ai_checkpoint
         self.ai_checkpoint_team0 = ai_checkpoint_team0
@@ -177,7 +181,7 @@ class SpadesSession:
             else:
                 bid_types.append('bid')
         raw_obs['bid_types'] = bid_types
-        obs = _serialize_obs(raw_obs, self.current_trick)
+        obs = _serialize_obs(raw_obs, self.current_trick, self.enable_blind_nil)
         hand_sizes = [len(p.hand) for p in self.env.game.players]
 
         result = None
@@ -213,7 +217,7 @@ class SpadesSessionManager:
     def __init__(self):
         self.sessions = {}
 
-    def create_session(self, seed=None, human_player=0, ai_checkpoint=None, ai_checkpoint_team0=None, ai_checkpoint_team1=None):
+    def create_session(self, seed=None, human_player=0, ai_checkpoint=None, ai_checkpoint_team0=None, ai_checkpoint_team1=None, enable_blind_nil=True):
         game_id = f"spades-{uuid.uuid4().hex[:8]}"
         session = SpadesSession(
             seed=seed,
@@ -221,6 +225,7 @@ class SpadesSessionManager:
             ai_checkpoint=ai_checkpoint,
             ai_checkpoint_team0=ai_checkpoint_team0,
             ai_checkpoint_team1=ai_checkpoint_team1,
+            enable_blind_nil=enable_blind_nil,
         )
         self.sessions[game_id] = session
         return game_id, session

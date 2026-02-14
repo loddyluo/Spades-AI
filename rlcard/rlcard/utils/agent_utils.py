@@ -1,8 +1,7 @@
 import os
 import torch
 
-from rlcard.agents import CFRAgent, DQNAgent, NFSPAgent
-from rlcard.agents.dmc_agent.model import DMCModel
+from rlcard.agents import DQNAgent, NFSPAgent
 from rlcard.utils import load_torch_sharded
 
 
@@ -45,6 +44,7 @@ def _resolve_dmc_action_shape(env):
 
 
 def _load_dmc_agents(checkpoint, env, device):
+    from rlcard.agents.dmc_agent.model import DMCModel
     if env is None:
         raise ValueError('DMC requires env to load checkpoint.')
     state_shape = env.state_shape
@@ -59,6 +59,7 @@ def _load_dmc_agents(checkpoint, env, device):
 
 
 def _load_cfr_agent(ckpt_dir, env):
+    from rlcard.agents import CFRAgent
     if env is None:
         raise ValueError('CFR requires env to load checkpoint.')
     agent = CFRAgent(env, ckpt_dir)
@@ -107,7 +108,10 @@ def load_agent_from_checkpoint(ckpt_path, device=None, agent_type_override=None,
         agent = _load_cfr_agent(ckpt_path, env)
         return agent, 'cfr'
     if _is_dmc_dir(ckpt_path):
-        checkpoint = load_torch_sharded(os.path.join(ckpt_path, 'model.tar'))
+        checkpoint = load_torch_sharded(
+            os.path.join(ckpt_path, 'model.tar'),
+            map_location=device,
+        )
         agent = _load_dmc_agents(checkpoint, env, device)
         return agent, 'dmc'
 

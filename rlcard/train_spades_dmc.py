@@ -27,6 +27,7 @@ def train():
     seed = config.get('training', {}).get('seed', 42)
     reward_beta = config.get('training', {}).get('reward_beta', 1.0)
     dmc_cfg = config.get('dmc', {})
+    enable_blind_nil = config.get('training', {}).get('game_enable_blind_nil', True)
 
     xpid = dmc_cfg.get('xpid', 'spades_dmc')
     save_dir = dmc_cfg.get('save_dir', 'experiments/spades_dmc')
@@ -43,7 +44,10 @@ def train():
         training_device = 'cpu'
 
     set_seed(seed)
-    env = rlcard.make(env_id, config={'seed': seed, 'reward_beta': reward_beta})
+    env = rlcard.make(
+        env_id,
+        config={'seed': seed, 'reward_beta': reward_beta, 'game_enable_blind_nil': enable_blind_nil},
+    )
 
     trainer = DMCTrainer(
         env,

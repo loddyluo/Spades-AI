@@ -7,9 +7,10 @@ from rlcard.games.base import Card
 class SpadesEnv(Env):
     def __init__(self, config):
         self.name = 'spades'
-        self.game = Game()
+        self.game = Game(enable_blind_nil=config.get('game_enable_blind_nil', True))
         super().__init__(config)
         self.reward_beta = config.get('reward_beta', 1.0)
+        self.enable_blind_nil = config.get('game_enable_blind_nil', True)
         
         # Calculate action map
         self.actions = []
@@ -48,7 +49,7 @@ class SpadesEnv(Env):
         # 1. Hand (0-51)
         # If Phase 0 (Bidding) and Blind Option not passed, MASK hand.
         player_id = state['current_player']
-        if state['phase'] == 0 and not state['blind_passed'][player_id]:
+        if self.enable_blind_nil and state['phase'] == 0 and not state['blind_passed'][player_id]:
             # Mask hand (keep zeros)
             pass 
         else:

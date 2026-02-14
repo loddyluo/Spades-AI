@@ -37,6 +37,7 @@ function PvESpadesView() {
     const [checkpointPath, setCheckpointPath] = useState('experiments/spades_selfplay_dqn/checkpoint_dqn.pt');
     const [checkpointTeam0, setCheckpointTeam0] = useState('');
     const [checkpointTeam1, setCheckpointTeam1] = useState('');
+    const [enableBlindNil, setEnableBlindNil] = useState(true);
     const isCheckpointValid = checkpointPath.trim().length > 0
         || (checkpointTeam0.trim().length > 0 && checkpointTeam1.trim().length > 0);
 
@@ -48,6 +49,7 @@ function PvESpadesView() {
                 ai_checkpoint: checkpointPath.trim() ? checkpointPath : null,
                 ai_checkpoint_team0: checkpointTeam0.trim() ? checkpointTeam0 : null,
                 ai_checkpoint_team1: checkpointTeam1.trim() ? checkpointTeam1 : null,
+                game_enable_blind_nil: enableBlindNil,
             });
             setGameId(res.data.game_id);
             setGameState(res.data);
@@ -56,7 +58,7 @@ function PvESpadesView() {
             const message = err?.response?.data?.error || 'Failed to start game. Check checkpoint path.';
             alert(message);
         }
-    }, [checkpointPath, checkpointTeam0, checkpointTeam1]);
+    }, [checkpointPath, checkpointTeam0, checkpointTeam1, enableBlindNil]);
 
     useEffect(() => {
         resetGame();
@@ -168,6 +170,19 @@ function PvESpadesView() {
                     />
                     <div className="spades-checkpoint-help">
                         Optional override for Team1 (auto-detects DQN/NFSP).
+                    </div>
+                </div>
+                <div className="spades-checkpoint">
+                    <label className="spades-checkpoint-label">Blind-Nil Phase</label>
+                    <div className="spades-checkpoint-help">
+                        <input
+                            type="checkbox"
+                            checked={enableBlindNil}
+                            onChange={(e) => setEnableBlindNil(e.target.checked)}
+                        />
+                        <span style={{ marginLeft: '8px' }}>
+                            Enable blind-nil phase before bidding
+                        </span>
                     </div>
                 </div>
                 <Button variant="contained" color="primary" onClick={resetGame} disabled={!isCheckpointValid}>

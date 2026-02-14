@@ -5,8 +5,9 @@ from rlcard.games.spades.player import SpadesPlayer
 from rlcard.games.spades.judger import SpadesJudger
 
 class SpadesGame:
-    def __init__(self, allow_step_back=False):
+    def __init__(self, allow_step_back=False, enable_blind_nil=True):
         self.allow_step_back = allow_step_back
+        self.enable_blind_nil = enable_blind_nil
         self.np_random = np.random.RandomState()
         self.num_players = 4
         self.dealer_idx = -1 # Will be incremented to 0 in first init_game if we want random first or 0.
@@ -47,6 +48,8 @@ class SpadesGame:
         # Tracking bidding status
         # For each player, we need to know if they passed the blind option
         self.blind_option_passed = [False] * self.num_players
+        if not self.enable_blind_nil:
+            self.blind_option_passed = [True] * self.num_players
         self.bids_collected = 0
         
         # Tracking play status
@@ -65,6 +68,22 @@ class SpadesGame:
         
         # Phase 0: Bidding (Blind or Normal)
         if self.phase == 0:
+            if not self.enable_blind_nil:
+                if action == 'nil' or action.startswith('bid_'):
+                    val = 0 if action == 'nil' else int(action.split('_')[1])
+                    current_player.bid = val
+                    if action == 'nil':
+                        current_player.is_nil = True
+                    self.bids_collected += 1
+                    self.game_pointer = (self.game_pointer + 1) % self.num_players
+                else:
+                    return self.get_state(self.game_pointer), self.game_pointer
+
+                if self.bids_collected == self.num_players:
+                    self.phase = 1
+                    self.game_pointer = self.start_player_idx
+                    self.round.start_new_trick(self.game_pointer)
+                return self.get_state(self.game_pointer), self.game_pointer
             if action == 'pass': # Pass Blind Nil
                 self.blind_option_passed[self.game_pointer] = True
                 # Game pointer does NOT move. Player must now bid.
@@ -210,6 +229,8 @@ class SpadesGame:
         player = self.players[player_id]
         
         if self.phase == 0:
+            if not self.enable_blind_nil:
+                return ['nil'] + [f'bid_{i}' for i in range(1, 14)]
             # Bidding
             if not self.blind_option_passed[player_id] and not player.bid is not None: 
                 # Has not passed blind option yet, and hasn't bid (bid is None)

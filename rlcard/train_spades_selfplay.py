@@ -42,6 +42,7 @@ def train():
         'save_path',
         config.get('training', {}).get('save_path', 'experiments/spades_selfplay_dqn'),
     )
+    ENABLE_BLIND_NIL = config.get('training', {}).get('game_enable_blind_nil', True)
     
     # Check device
     device = get_device()
@@ -50,11 +51,17 @@ def train():
     set_seed(SEED)
 
     # 1. Make Training Environment
-    train_env = rlcard.make(ENV_ID, config={'seed': SEED, 'reward_beta': REWARD_BETA})
+    train_env = rlcard.make(
+        ENV_ID,
+        config={'seed': SEED, 'reward_beta': REWARD_BETA, 'game_enable_blind_nil': ENABLE_BLIND_NIL},
+    )
     
     # 2. Make Evaluation Environment
     # We use a separate env for eval to avoid messing up agent assignment
-    eval_env = rlcard.make(ENV_ID, config={'seed': SEED, 'reward_beta': REWARD_BETA})
+    eval_env = rlcard.make(
+        ENV_ID,
+        config={'seed': SEED, 'reward_beta': REWARD_BETA, 'game_enable_blind_nil': ENABLE_BLIND_NIL},
+    )
 
     # 3. Initialize the Shared Agent (DQN)
     # In Self-Play, we use ONE agent to play all 4 positions, 
