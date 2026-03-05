@@ -217,6 +217,7 @@ We provide a complexity estimation for the games on several aspects. **InfoSet N
 | UNO ([wiki](https://en.wikipedia.org/wiki/Uno_\(card_game\)), [baike](https://baike.baidu.com/item/UNO%E7%89%8C/2249587))                                                                      |  10^163         | 10^10             | 10^1        | uno             | [doc](docs/games.md#uno), [example](examples/run_random.py)                                 |
 | Gin Rummy ([wiki](https://en.wikipedia.org/wiki/Gin_rummy), [baike](https://baike.baidu.com/item/%E9%87%91%E6%8B%89%E7%B1%B3/3471710))                                                         | 10^52           | -                 | -           | gin-rummy       | [doc](docs/games.md#gin-rummy), [example](examples/run_random.py)                           |
 | Bridge ([wiki](https://en.wikipedia.org/wiki/Bridge), [baike](https://baike.baidu.com/item/%E6%A1%A5%E7%89%8C/332030))                                                                         |                 | -                 | -           | bridge          | [doc](docs/games.md#bridge), [example](examples/run_random.py)                              |
+| Spades ([wiki](https://en.wikipedia.org/wiki/Spades_(card_game)))                                                                                                                              | 10^30+          | 10^10             | 10^1        | spades          | [example](train_spades_selfplay_drqn.py)                                                    |
 
 ## Supported Algorithms
 | Algorithm | example | reference |
@@ -225,6 +226,7 @@ We provide a complexity estimation for the games on several aspects. **InfoSet N
 | Deep Q-Learning (DQN)                    | [examples/run\_rl.py](examples/run_rl.py)   | [[paper]](https://arxiv.org/abs/1312.5602)                                                               |
 | Neural Fictitious Self-Play (NFSP)       | [examples/run\_rl.py](examples/run_rl.py)   | [[paper]](https://arxiv.org/abs/1603.01121)                                                              |
 | Counterfactual Regret Minimization (CFR) | [examples/run\_cfr.py](examples/run_cfr.py) | [[paper]](http://papers.nips.cc/paper/3306-regret-minimization-in-games-with-incomplete-information.pdf) |
+| Deep Recurrent Q-Network (DRQN)          | [train\_spades\_selfplay\_drqn.py](train_spades_selfplay_drqn.py) | [[paper]](https://arxiv.org/abs/1507.06527)                                              |
 
 ## Pre-trained and Rule-based Models
 We provide a [model zoo](rlcard/models) to serve as the baselines.
@@ -285,6 +287,57 @@ The purposes of the main modules are listed as below:
 
 ## More Documents
 For more documentation, please refer to the [Documents](docs/README.md) for general introductions. API documents are available at our [website](http://www.rlcard.org).
+
+## Spades AI Training
+This fork adds a full Spades (4-player partnership trick-taking) environment and multiple training pipelines. Configuration is centralized in `model_config.yaml` at the repository root.
+
+### Training Scripts
+| Script | Algorithm | Description |
+| :----- | :-------: | :---------- |
+| `train_spades_selfplay_drqn.py` | DRQN | **Recommended.** Multi-actor parallel DRQN with LSTM, opponent pool, reward shaping, and auto GPU memory scaling. |
+| `train_spades_selfplay.py` | DQN | Single-process DQN self-play with periodic opponent freezing. |
+| `train_spades_selfplay_nfsp.py` | NFSP | Neural Fictitious Self-Play. |
+| `train_spades_dmc.py` | DMC | Deep Monte-Carlo (multi-actor). |
+| `train_spades_cfr.py` | CFR | Counterfactual Regret Minimization (limited scalability for Spades). |
+
+### Quick Start (DRQN, recommended)
+```bash
+cd rlcard
+python3 train_spades_selfplay_drqn.py
+```
+The trainer will:
+1. Auto-detect GPU memory and CPU cores to set `batch_size` and `num_actors` (configurable via `gpu_fraction` in `model_config.yaml`).
+2. Spawn parallel actor processes that generate game data against a frozen opponent pool.
+3. Train an LSTM-based DRQN agent with Double DQN, per-trick reward shaping, and gradient clipping.
+4. Periodically evaluate against a random agent and log results to `eval_performance.csv`.
+5. Save checkpoints to the configured `save_path`.
+
+### State Representation (200-dim vector)
+| Indices | Dim | Feature |
+| :-----: | :-: | :------ |
+| 0-51 | 52 | Hand cards (one-hot) |
+| 52-55 | 4 | Bid values per player |
+| 56-59 | 4 | Tricks won per player |
+| 60 | 1 | Spades broken flag |
+| 61-112 | 52 | Current trick cards (one-hot) |
+| 113-164 | 52 | Played-cards history (one-hot) |
+| 165-168 | 4 | Nil flags per player |
+| 169-172 | 4 | Blind-nil flags per player |
+| 173-176 | 4 | Current player ID (one-hot) |
+| 177-180 | 4 | Trick card owners |
+| 181-184 | 4 | Hand sizes per player |
+| 185 | 1 | Phase (0=bid, 1=play) |
+| 186 | 1 | Trick number (0-13) |
+| 187-190 | 4 | Lead suit (one-hot) |
+| 191 | 1 | Is current player leading |
+| 192-199 | 8 | Reserved |
+
+### DRQN Architecture
+```
+Input(batch, seq_len, 200) -> BatchNorm -> Linear(200, 256) -> ReLU
+  -> LSTM(256, 256) -> Linear(256, 256) -> ReLU -> Linear(256, 68)
+```
+~661K parameters. Uses Double DQN with episode replay memory and per-trick reward shaping.
 
 ## Contributing
 Contribution to this project is greatly appreciated! Please create an issue for feedbacks/bugs. If you want to contribute codes, please refer to [Contributing Guide](./CONTRIBUTING.md). If you have any questions, please contact [Daochen Zha](https://github.com/daochenzha) with [daochen.zha@rice.edu](mailto:daochen.zha@rice.edu).

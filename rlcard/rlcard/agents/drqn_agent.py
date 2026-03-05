@@ -13,7 +13,7 @@ The three main components are:
 
 import os
 import random
-from collections import namedtuple
+from collections import deque, namedtuple
 from copy import deepcopy
 
 import numpy as np
@@ -114,6 +114,12 @@ class DRQNNetwork(nn.Module):
 
         q_values = self.head(last)  # (batch, num_actions)
         return q_values, hidden
+
+    def share_memory(self):
+        """Make parameters accessible across processes (for multi-actor training)."""
+        for param in self.parameters():
+            param.data.share_memory_()
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -258,12 +264,13 @@ class EpisodeMemory:
         self.max_episodes = max_episodes
         self.batch_size = batch_size
         self.seq_len = seq_len
-        self.episodes = []
+        self.episodes = deque(maxlen=max_episodes)
         self._current_episode = []
+        self._total_transitions = 0
 
     @property
     def total_transitions(self):
-        return sum(len(ep) for ep in self.episodes)
+        return self._total_transitions
 
     def start_episode(self):
         """Call before feeding transitions of a new episode."""
@@ -282,10 +289,12 @@ class EpisodeMemory:
     def _commit(self):
         if not self._current_episode:
             return
+        # If deque is full, the oldest episode will be evicted automatically
+        if len(self.episodes) == self.max_episodes:
+            self._total_transitions -= len(self.episodes[0])
         self.episodes.append(self._current_episode)
+        self._total_transitions += len(self._current_episode)
         self._current_episode = []
-        while len(self.episodes) > self.max_episodes:
-            self.episodes.pop(0)
 
     def can_sample(self):
         return len(self.episodes) >= 1 and self.total_transitions >= self.batch_size
@@ -360,7 +369,8 @@ class EpisodeMemory:
     @classmethod
     def from_checkpoint(cls, ckpt):
         inst = cls(ckpt['max_episodes'], ckpt['batch_size'], ckpt['seq_len'])
-        inst.episodes = ckpt.get('episodes', [])
+        inst.episodes = deque(ckpt.get('episodes', []), maxlen=inst.max_episodes)
+        inst._total_transitions = sum(len(ep) for ep in inst.episodes)
         return inst
 
 
@@ -625,3 +635,64 @@ class DRQNAgent:
         if not os.path.exists(path):
             os.makedirs(path)
         torch.save(self.checkpoint_attributes(), os.path.join(path, filename))
+
+
+# ---------------------------------------------------------------------------
+# Lightweight Actor Agent (inference only, for multi-actor training)
+# ---------------------------------------------------------------------------
+
+class DRQNActorAgent:
+    """Lightweight DRQN agent for actor processes — inference only.
+
+    Uses a shared DRQNNetwork (whose parameters live in shared memory) to
+    select actions via epsilon-greedy.  Does not own a replay buffer or
+    optimizer.
+    """
+
+    def __init__(self, qnet, num_actions, device='cpu', exp_epsilon=0.05):
+        self.use_raw = False
+        self.qnet = qnet
+        self.num_actions = num_actions
+        self.device = torch.device(device) if isinstance(device, str) else device
+        self.exp_epsilon = exp_epsilon
+        self.hidden_states = {}
+
+    def reset_hidden_states(self):
+        self.hidden_states = {}
+
+    def _predict(self, state):
+        player_id = state['raw_obs']['current_player']
+        obs = torch.from_numpy(state['obs']).float().unsqueeze(0).unsqueeze(0).to(self.device)
+        hidden = self.hidden_states.get(player_id)
+        with torch.no_grad():
+            q_values, new_hidden = self.qnet(obs, hidden)
+        self.hidden_states[player_id] = new_hidden
+        q_np = q_values[0].cpu().numpy()
+        masked = -np.inf * np.ones(self.num_actions, dtype=float)
+        legal = list(state['legal_actions'].keys())
+        masked[legal] = q_np[legal]
+        return masked
+
+    def step(self, state):
+        """Epsilon-greedy action selection."""
+        q_values = self._predict(state)
+        legal_actions = list(state['legal_actions'].keys())
+        if random.random() < self.exp_epsilon:
+            return random.choice(legal_actions)
+        best_action = np.argmax(q_values)
+        if best_action in legal_actions:
+            return best_action
+        return random.choice(legal_actions)
+
+    def eval_step(self, state):
+        """Greedy action selection."""
+        q_values = self._predict(state)
+        best_action = np.argmax(q_values)
+        info = {}
+        info['values'] = {
+            state['raw_legal_actions'][i]: float(
+                q_values[list(state['legal_actions'].keys())[i]]
+            )
+            for i in range(len(state['legal_actions']))
+        }
+        return best_action, info

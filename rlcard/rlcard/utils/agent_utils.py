@@ -62,6 +62,32 @@ def _load_dmc_agents(checkpoint, env, device):
     return model.get_agents()
 
 
+def _load_drqn_agent(checkpoint, device):
+    """Load a DRQNAgent from either the full agent checkpoint format or the
+    lightweight trainer checkpoint format (which only stores qnet weights)."""
+    if 'q_estimator' in checkpoint and 'memory' in checkpoint:
+        # Full DRQNAgent checkpoint
+        return DRQNAgent.from_checkpoint(checkpoint)
+
+    # Trainer-produced checkpoint: reconstruct a minimal DRQNAgent for inference
+    from rlcard.agents.drqn_agent import DRQNEstimator, EpisodeMemory
+    agent = DRQNAgent(
+        num_actions=checkpoint['num_actions'],
+        state_shape=checkpoint['state_shape'],
+        embed_dim=checkpoint.get('embed_dim', 256),
+        lstm_hidden_size=checkpoint.get('lstm_hidden_size', 256),
+        lstm_num_layers=checkpoint.get('lstm_num_layers', 1),
+        mlp_layers=checkpoint.get('mlp_layers', [256]),
+        learning_rate=checkpoint.get('learning_rate', 0.00003),
+        batch_size=checkpoint.get('batch_size', 256),
+        seq_len=checkpoint.get('seq_len', 16),
+        device=device,
+    )
+    agent.q_estimator.qnet.load_state_dict(checkpoint['qnet'])
+    agent.target_estimator.qnet.load_state_dict(checkpoint['qnet'])
+    return agent
+
+
 def _load_cfr_agent(ckpt_dir, env):
     from rlcard.agents import CFRAgent
     if env is None:
@@ -127,7 +153,7 @@ def load_agent_from_checkpoint(ckpt_path, device=None, agent_type_override=None,
     elif agent_type == 'nfsp':
         agent = NFSPAgent.from_checkpoint(checkpoint)
     elif agent_type == 'drqn':
-        agent = DRQNAgent.from_checkpoint(checkpoint)
+        agent = _load_drqn_agent(checkpoint, device)
     elif agent_type == 'dmc':
         agent = _load_dmc_agents(checkpoint, env, device)
     elif agent_type == 'cfr':

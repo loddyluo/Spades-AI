@@ -37,7 +37,10 @@ class SpadesEnv(Env):
         self.actions.append('nil') # 54
         for i in range(1, 14):
             self.actions.append(f'bid_{i}') # 55-67
-            
+
+        # O(1) lookup: action string -> action id
+        self.action2id = {a: i for i, a in enumerate(self.actions)}
+
         self.state_shape = [[200] for _ in range(self.num_players)]
         self.action_shape = [None for _ in range(self.num_players)]
 
@@ -57,7 +60,11 @@ class SpadesEnv(Env):
           [177-180]  4  Trick card owners — position i=1 if player i
                         has a card in the current trick (NEW)
           [181-184]  4  Hand size per player (NEW)
-          [185-199] 15  Reserved (zeros)
+          [185    ]  1  Phase indicator (0=bid, 1=play)
+          [186    ]  1  Trick number (0-13, sum of tricks_won)
+          [187-190]  4  Lead suit one-hot (S,H,D,C) during play
+          [191    ]  1  Is current player leading the trick
+          [192-199]  8  Reserved (zeros)
         '''
         obs_vec = np.zeros(200, dtype=np.int8)
 
@@ -118,11 +125,28 @@ class SpadesEnv(Env):
         for i, sz in enumerate(state.get('hand_sizes', [13] * 4)):
             obs_vec[offset + i] = sz
 
-        # Construct legal-action dict
+        # 12. Phase indicator (185)
+        obs_vec[185] = state['phase']
+
+        # 13. Trick number (186): total tricks completed so far
+        obs_vec[186] = sum(state['tricks_won'])
+
+        # 14. Lead suit one-hot (187-190): S=187, H=188, D=189, C=190
+        _suit_map = {'S': 0, 'H': 1, 'D': 2, 'C': 3}
+        if state['phase'] == 1 and len(state['trick']) > 0:
+            lead_suit = state['trick'][0][1][0]  # e.g. "SA" -> 'S'
+            if lead_suit in _suit_map:
+                obs_vec[187 + _suit_map[lead_suit]] = 1
+
+        # 15. Is current player leading the trick (191)
+        if state['phase'] == 1 and len(state['trick']) == 0:
+            obs_vec[191] = 1
+
+        # Construct legal-action dict (O(1) lookup)
         legal_actions = OrderedDict()
         for action_str in state['actions']:
-            if action_str in self.actions:
-                idx = self.actions.index(action_str)
+            idx = self.action2id.get(action_str)
+            if idx is not None:
                 legal_actions[idx] = None
 
         extracted_state = {

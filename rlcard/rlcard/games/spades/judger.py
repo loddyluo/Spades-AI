@@ -75,7 +75,7 @@ class SpadesJudger:
                 score -= (team_bid * 10)
             else:
                 overtricks = team_tricks - team_bid
-                # Rule: "Contract * 10 + Overtrick * (-9)"
+                # Custom rule: Contract * 10 + Overtrick * (-9)
                 score += (team_bid * 10) - (overtricks * 9)
         
         return score

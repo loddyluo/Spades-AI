@@ -3,13 +3,13 @@
     "mlp_layers": [512, 512, 256]
   },
   "training": {
-    "max_hours": 12,
+    "max_hours": 24,
     "seed": 42,
     "num_episodes": 200000,
-    "evaluate_every": 100,
+    "evaluate_every": 200,
     "reward_beta": 0.5,
-    "opponent_update_every": 500,
-    "game_enable_blind_nil": true
+    "opponent_update_every": 1000,
+    "game_enable_blind_nil": false
   },
   "dqn": {
     "save_path": "experiments/spades_selfplay_dqn_0.5_12h"
@@ -80,10 +80,21 @@
     "seq_len": 16,
     "embed_dim": 256,
     "mlp_layers": [256],
-    "max_episodes": 5000,
-    "replay_memory_init_size": 500,
-    "batch_size": 32,
-    "learning_rate": 0.00005,
-    "save_every": 5000
+    "max_episodes": 8000,
+    "batch_size": "auto",
+    "learning_rate": 0.00003,
+    "cuda": "auto",
+    "num_actors": "auto",
+    "gpu_fraction": 0.8,
+    "total_frames": 5000000,
+    "exp_epsilon": 0.05,
+    "sync_every": 100,
+    "train_steps_per_sync": 16,
+    "max_grad_norm": 40,
+    "update_target_every": 1000,
+    "discount_factor": 0.99,
+    "save_interval": 30,
+    "opponent_pool_size": 5,
+    "opponent_update_every": 1000
   }
 }
