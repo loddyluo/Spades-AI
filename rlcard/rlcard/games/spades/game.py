@@ -190,7 +190,10 @@ class SpadesGame:
         state['spades_broken'] = self.spades_broken
         state['tricks_won'] = [p.tricks for p in self.players]
         state['played_cards'] = [c.get_index() for c in self.round.played_cards]
-        
+        state['is_nil'] = [p.is_nil for p in self.players]
+        state['is_blind_nil'] = [p.is_blind_nil for p in self.players]
+        state['hand_sizes'] = [len(p.hand) for p in self.players]
+
         # Actions
         state['actions'] = self.get_legal_actions(player_id)
         

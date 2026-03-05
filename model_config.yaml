@@ -72,5 +72,18 @@
     "max_nodes_per_iter": 200000,
     "max_seconds_per_iter": 10,
     "log_dir": "experiments/spades_cfr_result_0.5_12h"
+  },
+  "drqn": {
+    "save_path": "experiments/spades_selfplay_drqn",
+    "lstm_hidden_size": 256,
+    "lstm_num_layers": 1,
+    "seq_len": 16,
+    "embed_dim": 256,
+    "mlp_layers": [256],
+    "max_episodes": 5000,
+    "replay_memory_init_size": 500,
+    "batch_size": 32,
+    "learning_rate": 0.00005,
+    "save_every": 5000
   }
 }

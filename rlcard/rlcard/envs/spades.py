@@ -42,60 +42,89 @@ class SpadesEnv(Env):
         self.action_shape = [None for _ in range(self.num_players)]
 
     def _extract_state(self, state):
-        ''' Extract observable state
+        ''' Extract observable state into a 200-dim int8 vector.
+
+        Layout (200 dimensions total):
+          [  0- 51] 52  Hand cards one-hot
+          [ 52- 55]  4  Bid values per player (-1 = not yet bid, 0-13)
+          [ 56- 59]  4  Tricks won per player
+          [ 60    ]  1  Spades broken flag
+          [ 61-112] 52  Current trick cards one-hot
+          [113-164] 52  Played-cards history one-hot (NEW)
+          [165-168]  4  is_nil flag per player (NEW)
+          [169-172]  4  is_blind_nil flag per player (NEW)
+          [173-176]  4  Current player id one-hot (NEW)
+          [177-180]  4  Trick card owners — position i=1 if player i
+                        has a card in the current trick (NEW)
+          [181-184]  4  Hand size per player (NEW)
+          [185-199] 15  Reserved (zeros)
         '''
-        obs_vec = np.zeros(200, dtype=np.int8) # Arbitrary large enough safe size
-        
-        # 1. Hand (0-51)
-        # If Phase 0 (Bidding) and Blind Option not passed, MASK hand.
+        obs_vec = np.zeros(200, dtype=np.int8)
+
         player_id = state['current_player']
+
+        # 1. Hand (0-51) — masked during blind-nil decision
         if self.enable_blind_nil and state['phase'] == 0 and not state['blind_passed'][player_id]:
-            # Mask hand (keep zeros)
-            pass 
+            pass  # keep zeros
         else:
-            current_hand = state['hand']
-            for card_str in current_hand:
+            for card_str in state['hand']:
                 if card_str in self.card2id:
                     obs_vec[self.card2id[card_str]] = 1
-        
-        # 2. Bids (52-67 reserved for bid info? No, can use values directly or one-hot)
-        # Bids: 4 players. Values 0-13, or -1 (None). 
-        # Using normalized values or one-hot? 
-        # Simple: 4 slots for bids. -1 if not bid yet.
-        # Let's use 52 + 4 indices.
+
+        # 2. Bids (52-55)
         offset = 52
         for i, bid in enumerate(state['bids']):
-            if bid is not None:
-                # Store as value (normalized? or raw?)
-                # Raw is fine for some models, but one-hot preferred? 
-                # Let's just put value for now as simple vector.
-                obs_vec[offset + i] = bid
-            else:
-                obs_vec[offset + i] = -1 # Or 14?
-        
-        # 3. Tricks won (4 slots)
-        offset += 4
+            obs_vec[offset + i] = bid if bid is not None else -1
+
+        # 3. Tricks won (56-59)
+        offset = 56
         for i, t in enumerate(state['tricks_won']):
             obs_vec[offset + i] = t
-            
-        # 4. Spades broken (1 slot)
-        offset += 4
-        obs_vec[offset] = 1 if state['spades_broken'] else 0
-        
-        # 5. Cards played in current trick (52 one-hot)
-        offset += 1
-        current_trick = state['trick']
-        for p, c_str in current_trick:
-             if c_str in self.card2id:
-                 obs_vec[offset + self.card2id[c_str]] = 1
-                 
-        # Construct dictionary
+
+        # 4. Spades broken (60)
+        obs_vec[60] = 1 if state['spades_broken'] else 0
+
+        # 5. Current trick cards one-hot (61-112)
+        offset = 61
+        for _pid, c_str in state['trick']:
+            if c_str in self.card2id:
+                obs_vec[offset + self.card2id[c_str]] = 1
+
+        # 6. Played-cards history one-hot (113-164)  — NEW
+        offset = 113
+        for card_str in state['played_cards']:
+            if card_str in self.card2id:
+                obs_vec[offset + self.card2id[card_str]] = 1
+
+        # 7. Nil flags per player (165-168)  — NEW
+        offset = 165
+        for i, v in enumerate(state.get('is_nil', [False] * 4)):
+            obs_vec[offset + i] = 1 if v else 0
+
+        # 8. Blind-nil flags per player (169-172)  — NEW
+        offset = 169
+        for i, v in enumerate(state.get('is_blind_nil', [False] * 4)):
+            obs_vec[offset + i] = 1 if v else 0
+
+        # 9. Current player id one-hot (173-176)  — NEW
+        obs_vec[173 + player_id] = 1
+
+        # 10. Trick card owners (177-180)  — NEW
+        for pid, _c_str in state['trick']:
+            obs_vec[177 + pid] = 1
+
+        # 11. Hand sizes per player (181-184)  — NEW
+        offset = 181
+        for i, sz in enumerate(state.get('hand_sizes', [13] * 4)):
+            obs_vec[offset + i] = sz
+
+        # Construct legal-action dict
         legal_actions = OrderedDict()
         for action_str in state['actions']:
             if action_str in self.actions:
                 idx = self.actions.index(action_str)
                 legal_actions[idx] = None
-                
+
         extracted_state = {
             'obs': obs_vec,
             'legal_actions': legal_actions,
@@ -121,6 +150,7 @@ class SpadesEnv(Env):
         if len(raw_payoffs) == 4:
             team0_score = raw_payoffs[0]
             team1_score = raw_payoffs[1]
-            value = team0_score - self.reward_beta * team1_score
-            return np.array([value, value, value, value])
+            value_team0 = team0_score - self.reward_beta * team1_score
+            value_team1 = team1_score - self.reward_beta * team0_score
+            return np.array([value_team0, value_team1, value_team0, value_team1])
         return np.array(raw_payoffs)

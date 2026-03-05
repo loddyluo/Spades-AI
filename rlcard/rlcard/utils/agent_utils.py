@@ -1,7 +1,7 @@
 import os
 import torch
 
-from rlcard.agents import DQNAgent, NFSPAgent
+from rlcard.agents import DQNAgent, NFSPAgent, DRQNAgent
 from rlcard.utils import load_torch_sharded
 
 
@@ -13,8 +13,12 @@ def detect_agent_type_from_checkpoint(checkpoint):
             return 'dqn'
         if agent_type in {'nfspagent', 'nfsp'}:
             return 'nfsp'
+        if agent_type in {'drqnagent', 'drqn'}:
+            return 'drqn'
     if 'policy_network' in checkpoint and 'rl_agent' in checkpoint:
         return 'nfsp'
+    if 'lstm_hidden_size' in checkpoint and 'q_estimator' in checkpoint:
+        return 'drqn'
     if 'q_estimator' in checkpoint and 'memory' in checkpoint:
         return 'dqn'
     if 'model_state_dict' in checkpoint and isinstance(checkpoint.get('model_state_dict'), list):
@@ -122,6 +126,8 @@ def load_agent_from_checkpoint(ckpt_path, device=None, agent_type_override=None,
         agent = DQNAgent.from_checkpoint(checkpoint)
     elif agent_type == 'nfsp':
         agent = NFSPAgent.from_checkpoint(checkpoint)
+    elif agent_type == 'drqn':
+        agent = DRQNAgent.from_checkpoint(checkpoint)
     elif agent_type == 'dmc':
         agent = _load_dmc_agents(checkpoint, env, device)
     elif agent_type == 'cfr':

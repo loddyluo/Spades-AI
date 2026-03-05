@@ -14,18 +14,36 @@ sessions = SpadesSessionManager()
 def reset():
     body = request.get_json(force=True, silent=True) or {}
     seed = body.get('seed')
+    if seed is not None:
+        try:
+            seed = int(seed)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'seed must be an integer'}), 400
+
     human_player = body.get('human_player', 0)
+    try:
+        human_player = int(human_player)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'human_player must be an integer in [0, 3]'}), 400
+    if human_player < 0 or human_player > 3:
+        return jsonify({'error': 'human_player must be an integer in [0, 3]'}), 400
+
     ai_checkpoint = body.get('ai_checkpoint')
     ai_checkpoint_team0 = body.get('ai_checkpoint_team0')
     ai_checkpoint_team1 = body.get('ai_checkpoint_team1')
-    enable_blind_nil = body.get('game_enable_blind_nil', True)
-    if not ai_checkpoint and not ai_checkpoint_team0 and not ai_checkpoint_team1:
-        return jsonify({'error': 'ai_checkpoint is required (no random agent fallback).'}), 400
+    enable_blind_nil = bool(body.get('game_enable_blind_nil', True))
+
+    has_all = bool(ai_checkpoint)
+    has_team0 = bool(ai_checkpoint_team0)
+    has_team1 = bool(ai_checkpoint_team1)
+    if not has_all and not (has_team0 and has_team1):
+        return jsonify({'error': 'Provide ai_checkpoint, or provide both ai_checkpoint_team0 and ai_checkpoint_team1.'}), 400
+
     # Resolve relative checkpoint path from repo root (find folder containing experiments/)
     def resolve_checkpoint_path(path):
         if not path:
             return None
-        if path.startswith('/'):
+        if os.path.isabs(path):
             return os.path.abspath(path)
         search_dir = os.path.abspath(os.path.dirname(__file__))
         repo_root = None
@@ -52,14 +70,18 @@ def reset():
         if not os.path.exists(ai_checkpoint_team1):
             return jsonify({'error': f'ai_checkpoint_team1 not found: {ai_checkpoint_team1}'}), 400
 
-    game_id, session = sessions.create_session(
-        seed=seed,
-        human_player=human_player,
-        ai_checkpoint=ai_checkpoint,
-        ai_checkpoint_team0=ai_checkpoint_team0,
-        ai_checkpoint_team1=ai_checkpoint_team1,
-        enable_blind_nil=enable_blind_nil,
-    )
+    try:
+        game_id, session = sessions.create_session(
+            seed=seed,
+            human_player=human_player,
+            ai_checkpoint=ai_checkpoint,
+            ai_checkpoint_team0=ai_checkpoint_team0,
+            ai_checkpoint_team1=ai_checkpoint_team1,
+            enable_blind_nil=enable_blind_nil,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
     payload = session.reset()
     payload['game_id'] = game_id
     return jsonify(payload)
@@ -84,7 +106,13 @@ def step():
     if session is None:
         return jsonify({'error': 'invalid game_id'}), 404
 
-    payload = session.step(action)
+    try:
+        payload = session.step(action)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 409
+
     payload['game_id'] = game_id
     return jsonify(payload)
 

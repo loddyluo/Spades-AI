@@ -143,6 +143,7 @@ python3 run_spades.py
   - [rlcard/train_spades_selfplay_nfsp.py](rlcard/train_spades_selfplay_nfsp.py)
   - [rlcard/train_spades_dmc.py](rlcard/train_spades_dmc.py)
   - [rlcard/train_spades_cfr.py](rlcard/train_spades_cfr.py)
+  - [rlcard/train_spades_selfplay_drqn.py](rlcard/train_spades_selfplay_drqn.py)
 
 训练完成后会生成新的 checkpoint 到：
 

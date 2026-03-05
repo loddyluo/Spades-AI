@@ -16,6 +16,7 @@ const defaultPlayerInfo = [
 function PvESpadesView() {
     const [gameId, setGameId] = useState(null);
     const [trickLog, setTrickLog] = useState([]);
+    const [errorMessage, setErrorMessage] = useState('');
     const [gameState, setGameState] = useState({
         phase: 'bidding',
         obs: {
@@ -34,31 +35,72 @@ function PvESpadesView() {
         trick: null,
     });
 
-    const [checkpointPath, setCheckpointPath] = useState('experiments/spades_selfplay_dqn/checkpoint_dqn.pt');
+    const [checkpointPath, setCheckpointPath] = useState('experiments/spades_selfplay_dqn_0.5_12h/checkpoint_dqn.pt');
     const [checkpointTeam0, setCheckpointTeam0] = useState('');
     const [checkpointTeam1, setCheckpointTeam1] = useState('');
     const [enableBlindNil, setEnableBlindNil] = useState(true);
-    const isCheckpointValid = checkpointPath.trim().length > 0
-        || (checkpointTeam0.trim().length > 0 && checkpointTeam1.trim().length > 0);
+    const hasAllSeatsCheckpoint = checkpointPath.trim().length > 0;
+    const hasTeamCheckpoints = checkpointTeam0.trim().length > 0 && checkpointTeam1.trim().length > 0;
+    const isCheckpointValid = hasAllSeatsCheckpoint || hasTeamCheckpoints;
+
+    const appendTrickFromResponse = useCallback((respData) => {
+        if (!respData?.trick) {
+            return;
+        }
+        const trick = respData.trick;
+        const lead = trick.lead;
+        const cards = trick.cards || [];
+        const map = {};
+        if (lead !== null && lead !== undefined) {
+            cards.forEach((card, idx) => {
+                map[(lead + idx) % 4] = card;
+            });
+        }
+        const display = [0, 1, 2, 3].map((pid) => `P${pid}:${map[pid] || '_'}`).join(' ');
+        setTrickLog((prev) => {
+            if (prev.length > 0 && prev[0].id === trick.trick_id) {
+                return prev;
+            }
+            return [{
+                id: trick.trick_id,
+                display,
+                winner: trick.winner,
+            }, ...prev];
+        });
+    }, []);
 
     const resetGame = useCallback(async () => {
+        if (!isCheckpointValid) {
+            setErrorMessage('Checkpoint path is required: fill AI Checkpoint or both Team0/Team1 checkpoints.');
+            return;
+        }
         try {
+            setErrorMessage('');
             const res = await axios.post(`${spadesDemoUrl}/reset`, {
                 game: 'spades',
                 human_player: 0,
-                ai_checkpoint: checkpointPath.trim() ? checkpointPath : null,
-                ai_checkpoint_team0: checkpointTeam0.trim() ? checkpointTeam0 : null,
-                ai_checkpoint_team1: checkpointTeam1.trim() ? checkpointTeam1 : null,
+                ai_checkpoint: hasAllSeatsCheckpoint ? checkpointPath.trim() : null,
+                ai_checkpoint_team0: checkpointTeam0.trim() ? checkpointTeam0.trim() : null,
+                ai_checkpoint_team1: checkpointTeam1.trim() ? checkpointTeam1.trim() : null,
                 game_enable_blind_nil: enableBlindNil,
             });
             setGameId(res.data.game_id);
             setGameState(res.data);
             setTrickLog([]);
+            appendTrickFromResponse(res.data);
         } catch (err) {
-            const message = err?.response?.data?.error || 'Failed to start game. Check checkpoint path.';
-            alert(message);
+            const message = err?.response?.data?.error || 'Failed to start game. Check checkpoint path and backend logs.';
+            setErrorMessage(message);
         }
-    }, [checkpointPath, checkpointTeam0, checkpointTeam1, enableBlindNil]);
+    }, [
+        appendTrickFromResponse,
+        checkpointPath,
+        checkpointTeam0,
+        checkpointTeam1,
+        enableBlindNil,
+        hasAllSeatsCheckpoint,
+        isCheckpointValid,
+    ]);
 
     useEffect(() => {
         resetGame();
@@ -66,27 +108,17 @@ function PvESpadesView() {
 
     const stepGame = async (actionId) => {
         if (!gameId) return;
-        const res = await axios.post(`${spadesDemoUrl}/step`, {
-            game_id: gameId,
-            action: actionId,
-        });
-        setGameState(res.data);
-        if (res.data.trick) {
-            const trick = res.data.trick;
-            const lead = trick.lead;
-            const cards = trick.cards || [];
-            const map = {};
-            if (lead !== null && lead !== undefined) {
-                cards.forEach((card, idx) => {
-                    map[(lead + idx) % 4] = card;
-                });
-            }
-            const display = [0, 1, 2, 3].map((pid) => `P${pid}:${map[pid] || '_'}`).join(' ');
-            setTrickLog((prev) => [{
-                id: trick.trick_id,
-                display,
-                winner: trick.winner,
-            }, ...prev]);
+        try {
+            setErrorMessage('');
+            const res = await axios.post(`${spadesDemoUrl}/step`, {
+                game_id: gameId,
+                action: actionId,
+            });
+            setGameState(res.data);
+            appendTrickFromResponse(res.data);
+        } catch (err) {
+            const message = err?.response?.data?.error || 'Failed to play action.';
+            setErrorMessage(message);
         }
     };
 
@@ -144,8 +176,8 @@ function PvESpadesView() {
                     />
                     <div className={`spades-checkpoint-help ${!isCheckpointValid ? 'is-invalid' : ''}`}>
                         {isCheckpointValid
-                            ? 'Example: experiments/spades_selfplay_dqn/checkpoint_dqn.pt'
-                            : 'Checkpoint path is required.'}
+                            ? 'Example: experiments/spades_selfplay_dqn_0.5_12h/checkpoint_dqn.pt'
+                            : 'Fill AI Checkpoint, or both Team0 and Team1 checkpoints.'}
                     </div>
                 </div>
                 <div className="spades-checkpoint">
@@ -157,7 +189,7 @@ function PvESpadesView() {
                         className="spades-checkpoint-input"
                     />
                     <div className="spades-checkpoint-help">
-                        Optional override for Team0 (auto-detects DQN/NFSP).
+                        Optional override for Team0 (auto-detects DQN/NFSP/DMC/CFR).
                     </div>
                 </div>
                 <div className="spades-checkpoint">
@@ -169,7 +201,7 @@ function PvESpadesView() {
                         className="spades-checkpoint-input"
                     />
                     <div className="spades-checkpoint-help">
-                        Optional override for Team1 (auto-detects DQN/NFSP).
+                        Optional override for Team1 (auto-detects DQN/NFSP/DMC/CFR).
                     </div>
                 </div>
                 <div className="spades-checkpoint">
@@ -189,6 +221,13 @@ function PvESpadesView() {
                     Start / Reset
                 </Button>
             </div>
+
+            {errorMessage ? (
+                <div className="spades-action-buttons">
+                    <div className="spades-checkpoint-help is-invalid">{errorMessage}</div>
+                </div>
+            ) : null}
+
             <div className="spades-panels-row">
                 <div className="spades-panel spades-panel--fixed">
                     <div className="spades-panel-title">Game Status</div>
@@ -323,7 +362,7 @@ function PvESpadesView() {
                             ))}
                         </ul>
                     ) : (
-                        <div className="spades-log-empty">No tricks yet.</div>
+                        <div className="spades-log-empty">No trick finished yet.</div>
                     )}
                 </div>
             </div>

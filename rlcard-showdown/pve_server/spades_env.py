@@ -24,7 +24,7 @@ def _spades_trick_winner(trick_order):
     lead_suit = trick_order[0][1][0]
     highest_trump = None
     highest_lead = None
-    for idx, (pid, card_str) in enumerate(trick_order):
+    for idx, (_, card_str) in enumerate(trick_order):
         suit = card_str[0]
         rank = card_str[1]
         val = _spades_rank_value(rank)
@@ -63,6 +63,9 @@ class SpadesSession:
             config={'allow_raw_data': True, 'seed': seed, 'game_enable_blind_nil': enable_blind_nil},
         )
         self.human_player = human_player
+        if self.human_player < 0 or self.human_player >= self.env.num_players:
+            raise ValueError(f'human_player must be in [0, {self.env.num_players - 1}]')
+
         self.ai_checkpoint = ai_checkpoint
         self.ai_checkpoint_team0 = ai_checkpoint_team0
         self.ai_checkpoint_team1 = ai_checkpoint_team1
@@ -94,12 +97,12 @@ class SpadesSession:
         team0_path = self.ai_checkpoint_team0 or self.ai_checkpoint
         team1_path = self.ai_checkpoint_team1 or self.ai_checkpoint
         if not team0_path or not team1_path:
-            raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+            raise ValueError('Provide ai_checkpoint, or provide both ai_checkpoint_team0 and ai_checkpoint_team1.')
 
         if team0_path == team1_path:
             ai_agent = self._load_agent(team0_path)
             if ai_agent is None:
-                raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+                raise ValueError('ai_checkpoint does not exist or cannot be loaded.')
             if isinstance(ai_agent, list):
                 if len(ai_agent) != self.env.num_players:
                     raise ValueError('DMC agent list length must match number of players.')
@@ -109,7 +112,7 @@ class SpadesSession:
         team0_agent = self._load_agent(team0_path)
         team1_agent = self._load_agent(team1_path)
         if team0_agent is None or team1_agent is None:
-            raise ValueError('ai_checkpoint is required for PvE; no random agent fallback is allowed.')
+            raise ValueError('ai_checkpoint does not exist or cannot be loaded for one of the teams.')
         if isinstance(team0_agent, list) or isinstance(team1_agent, list):
             if not isinstance(team0_agent, list) or not isinstance(team1_agent, list):
                 raise ValueError('DMC checkpoints must be provided for both teams when using separate checkpoints.')
@@ -127,12 +130,18 @@ class SpadesSession:
         self._advance_until_human()
         return self._build_response()
 
+    def _current_legal_actions(self):
+        return list(self.current_state.get('legal_actions', {}).keys())
+
     def _apply_action(self, action, use_raw=False):
         # Decode action string for trick tracking
         if use_raw:
             action_str = action
         else:
-            action_str = self.env._decode_action(action)
+            try:
+                action_str = self.env._decode_action(action)
+            except (TypeError, IndexError):
+                raise ValueError(f'invalid action id: {action}')
 
         if isinstance(action_str, str) and action_str in self.env.card2id:
             if len(self.pending_trick) == 0:
@@ -140,7 +149,10 @@ class SpadesSession:
             self.current_trick[self.current_player] = action_str
             self.pending_trick.append((self.current_player, action_str))
 
-        self.current_state, self.current_player = self.env.step(action, use_raw)
+        try:
+            self.current_state, self.current_player = self.env.step(action, use_raw)
+        except Exception as exc:
+            raise RuntimeError(f'failed to apply action {action}: {exc}') from exc
 
         if len(self.pending_trick) == self.env.num_players:
             winner = _spades_trick_winner(self.pending_trick)
@@ -156,10 +168,24 @@ class SpadesSession:
 
     def _advance_until_human(self):
         while not self.env.is_over() and self.current_player != self.human_player:
-            action, _ = self.env.agents[self.current_player].eval_step(self.current_state)
-            self._apply_action(action, self.env.agents[self.current_player].use_raw)
+            agent = self.env.agents[self.current_player]
+            action, _ = agent.eval_step(self.current_state)
+            if not agent.use_raw and action not in self._current_legal_actions():
+                raise RuntimeError(f'AI produced illegal action {action} for player {self.current_player}.')
+            self._apply_action(action, agent.use_raw)
 
     def step(self, action):
+        if self.current_state is None:
+            raise RuntimeError('game is not initialized')
+        if self.env.is_over():
+            raise RuntimeError('game is already over; call /reset to start a new game')
+        if self.current_player != self.human_player:
+            raise RuntimeError('not human turn')
+
+        legal_actions = self._current_legal_actions()
+        if action not in legal_actions:
+            raise ValueError(f'illegal action: {action}; legal actions: {legal_actions}')
+
         acting_player = self.current_player
         self._apply_action(action, False)
         if not self.env.is_over():
@@ -187,17 +213,23 @@ class SpadesSession:
         result = None
         reward = 0
         if self.env.is_over():
+            # Raw game scores for UI display.
+            judged_scores = self.env.game.judger.judge_game(self.env.game.players)
+            team_scores = [int(judged_scores[0]), int(judged_scores[1])]
+
+            # RL payoffs are still exposed for diagnostics.
             payoffs = self.env.get_payoffs()
             payoffs_list = [int(x) for x in payoffs.tolist()] if hasattr(payoffs, 'tolist') else [int(x) for x in payoffs]
             bids = [p.bid for p in self.env.game.players]
             tricks_won = [p.tricks for p in self.env.game.players]
             result = {
-                'team_scores': [payoffs_list[0], payoffs_list[1]],
+                'team_scores': team_scores,
                 'player_scores': payoffs_list,
                 'bids': bids,
                 'tricks_won': tricks_won,
             }
-            reward = payoffs_list[self.human_player]
+            human_team = 0 if self.human_player in (0, 2) else 1
+            reward = team_scores[human_team]
 
         return {
             'current_player': self.current_player,
