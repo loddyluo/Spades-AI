@@ -1,0 +1,28 @@
+# =============================================================================
+# Spades-AI requirements
+# NOTE: PyTorch is NOT listed here — it is handled by setup.sh separately
+#       to avoid conflicts with pre-installed GPU versions in cloud containers.
+# =============================================================================
+
+# --- Core -------------------------------------------------------------------
+numpy>=1.16.3
+termcolor
+
+# --- Training scripts -------------------------------------------------------
+pyyaml                      # model_config.yaml parsing
+matplotlib                  # training curve plotting
+
+# --- PvE server (Flask) -----------------------------------------------------
+flask>=2.0
+flask-cors
+
+# --- PvE server (Django, showdown backend) -----------------------------------
+Django>=3.2
+django-cors-headers
+
+# --- Inference (optional) ----------------------------------------------------
+onnx
+onnxruntime
+
+# --- Utilities ---------------------------------------------------------------
+tqdm
