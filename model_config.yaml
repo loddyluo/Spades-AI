@@ -86,7 +86,7 @@
     "cuda": "auto",
     "num_actors": "auto",
     "gpu_fraction": 0.8,
-    "total_frames": 5000000,
+    "total_frames": 50000000,
     "exp_epsilon": 0.05,
     "sync_every": 100,
     "train_steps_per_sync": 16,
@@ -94,7 +94,9 @@
     "update_target_every": 1000,
     "discount_factor": 0.99,
     "save_interval": 30,
-    "opponent_pool_size": 5,
-    "opponent_update_every": 1000
+    "opponent_pool_size": 10,
+    "opponent_update_every": 2000,
+    "eval_every_frames": 500000,
+    "epsilon_decay_games": 20000
   }
 }
