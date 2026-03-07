@@ -80,14 +80,14 @@ fi
 # 2. Install PyTorch
 # ──────────────────────────────────────────────────────────────────────────────
 echo "[2/4] Installing PyTorch ..."
-pip install --upgrade pip setuptools -q
+python -m pip install --upgrade pip setuptools -q
 
 if [ "$HAS_GPU" = true ]; then
     echo "       GPU detected, installing PyTorch + CUDA 12.4 via pip ..."
-    pip install torch --index-url https://download.pytorch.org/whl/cu124 -q
+    python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
 else
     echo "       No GPU, installing CPU PyTorch via pip ..."
-    pip install torch --index-url https://download.pytorch.org/whl/cpu -q
+    python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 fi
 
 python -c "
@@ -102,18 +102,18 @@ print(f'       PyTorch {torch.__version__}  CUDA={cuda}  GPU={dev}')
 # ──────────────────────────────────────────────────────────────────────────────
 echo "[3/4] Installing dependencies ..."
 
-pip install \
+python -m pip install \
     numpy termcolor pyyaml matplotlib tqdm \
     flask flask-cors Django django-cors-headers \
     -q
 
-pip install onnx onnxruntime -q 2>/dev/null || true
+python -m pip install onnx onnxruntime -q 2>/dev/null || true
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. Install rlcard (editable)
 # ──────────────────────────────────────────────────────────────────────────────
 echo "[4/4] Installing rlcard (editable) ..."
-pip install -e rlcard --no-deps -q
+python -m pip install -e rlcard --no-deps -q
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Done
