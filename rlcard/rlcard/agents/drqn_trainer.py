@@ -367,15 +367,16 @@ class DRQNTrainer:
             return
 
         device = self.training_device
-        torch.cuda.reset_peak_memory_stats(device)
+        device_idx = device.index if device.index is not None else 0
+        torch.cuda.reset_peak_memory_stats(device_idx)
         torch.cuda.empty_cache()
 
         # 1. Allocate models + optimizer (fixed overhead)
         learner_qnet = self._build_network().to(device)
         target_qnet = self._build_network().to(device)
         optimizer = torch.optim.Adam(learner_qnet.parameters(), lr=self.learning_rate)
-        torch.cuda.synchronize(device)
-        fixed_mem = torch.cuda.memory_allocated(device)
+        torch.cuda.synchronize(device_idx)
+        fixed_mem = torch.cuda.memory_allocated(device_idx)
 
         # 2. Profile: forward + backward with a small probe batch
         probe_batch = 32
@@ -384,7 +385,7 @@ class DRQNTrainer:
         dummy_a = torch.randint(0, self.num_actions, (probe_batch,), device=device)
         dummy_y = torch.randn(probe_batch, device=device)
 
-        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.reset_peak_memory_stats(device_idx)
         optimizer.zero_grad()
         learner_qnet.train()
         q_all, _ = learner_qnet(dummy_s)
@@ -392,10 +393,10 @@ class DRQNTrainer:
         loss = ((q - dummy_y) ** 2).mean()
         loss.backward()
         optimizer.step()
-        torch.cuda.synchronize(device)
+        torch.cuda.synchronize(device_idx)
         learner_qnet.eval()
 
-        peak_mem = torch.cuda.max_memory_allocated(device)
+        peak_mem = torch.cuda.max_memory_allocated(device_idx)
         batch_mem = peak_mem - fixed_mem
         per_sample_mem = max(batch_mem / probe_batch, 1)
 
@@ -405,7 +406,7 @@ class DRQNTrainer:
         torch.cuda.empty_cache()
 
         # 4. Compute optimal batch_size
-        _, total_mem = torch.cuda.mem_get_info(device)
+        _, total_mem = torch.cuda.mem_get_info(device_idx)
         target_mem = total_mem * self.gpu_fraction
         available_for_batch = target_mem - fixed_mem
         optimal_batch = int(available_for_batch / per_sample_mem)
