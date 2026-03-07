@@ -368,6 +368,9 @@ class DRQNTrainer:
 
         device = self.training_device
         device_idx = device.index if device.index is not None else 0
+        # Force CUDA context initialisation before querying memory stats
+        torch.cuda.set_device(device_idx)
+        torch.zeros(1, device=device)
         torch.cuda.reset_peak_memory_stats(device_idx)
         torch.cuda.empty_cache()
 
