@@ -75,6 +75,8 @@ def drqn_act(
     device,
     exp_epsilon,
     stop_event,
+    epsilon_start=0.5,
+    epsilon_decay_games=5000,
 ):
     """Actor process: run games endlessly, push episode data into *episode_queue*."""
     try:
@@ -84,13 +86,20 @@ def drqn_act(
 
         # Learning agent (Team 0: P0, P2)
         agent = DRQNActorAgent(shared_qnet, num_actions, device=device,
-                               exp_epsilon=exp_epsilon)
+                               exp_epsilon=epsilon_start)
         # Opponent agent (Team 1: P1, P3) — uses frozen weights from pool
         opp_agent = DRQNActorAgent(opponent_qnet, num_actions, device=device,
-                                   exp_epsilon=exp_epsilon)
+                                   exp_epsilon=epsilon_start)
         env.set_agents([agent, opp_agent, agent, opp_agent])
 
+        games_played = 0
         while not stop_event.is_set():
+            # Epsilon decay
+            frac = min(1.0, games_played / max(epsilon_decay_games, 1))
+            current_epsilon = epsilon_start + (exp_epsilon - epsilon_start) * frac
+            agent.exp_epsilon = current_epsilon
+            opp_agent.exp_epsilon = current_epsilon
+
             agent.reset_hidden_states()
             opp_agent.reset_hidden_states()
             trajectories, payoffs = env.run(is_training=True)
@@ -99,25 +108,100 @@ def drqn_act(
             # ---- Reward shaping: inject per-trick intermediate rewards ----
             _TRICK_REWARD = 1.0
             _NIL_BREAK_BONUS = 2.0
+            _NIL_TAKE_TRICK_PENALTY = -3.0
+
             for pid in range(env.num_players):
-                team_players = [pid % 2, pid % 2 + 2]
+                teammate_id = (pid + 2) % env.num_players
                 opp_players = [1 - pid % 2, 1 - pid % 2 + 2]
                 for i, ts in enumerate(trajectories[pid]):
                     if i < len(trajectories[pid]) - 1:  # non-terminal step
                         curr_tw = ts[0]['raw_obs']['tricks_won']
                         next_tw = ts[3]['raw_obs']['tricks_won']
-                        team_gain = sum(next_tw[p] - curr_tw[p]
-                                        for p in team_players)
-                        shaped = team_gain * _TRICK_REWARD
+
+                        pid_is_nil = (
+                            ts[0]['raw_obs'].get('is_nil', [False]*4)[pid]
+                            or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[pid])
+                        tm_is_nil = (
+                            ts[0]['raw_obs'].get('is_nil', [False]*4)[teammate_id]
+                            or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[teammate_id])
+
+                        shaped = 0.0
+                        if pid_is_nil:
+                            # Nil bidder: penalise own tricks
+                            my_gain = next_tw[pid] - curr_tw[pid]
+                            if my_gain > 0:
+                                shaped += my_gain * _NIL_TAKE_TRICK_PENALTY
+                            # Reward non-nil teammate's tricks
+                            if not tm_is_nil:
+                                shaped += (next_tw[teammate_id] - curr_tw[teammate_id]) * _TRICK_REWARD
+                        else:
+                            # Normal bidder: reward own tricks
+                            shaped += (next_tw[pid] - curr_tw[pid]) * _TRICK_REWARD
+                            # Reward non-nil teammate's tricks
+                            if not tm_is_nil:
+                                shaped += (next_tw[teammate_id] - curr_tw[teammate_id]) * _TRICK_REWARD
+
                         # Bonus for breaking opponent nil
                         for opp in opp_players:
                             opp_nil = (
                                 ts[0]['raw_obs'].get('is_nil', [False]*4)[opp]
-                                or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[opp]
-                            )
+                                or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[opp])
                             if opp_nil and curr_tw[opp] == 0 and next_tw[opp] > 0:
                                 shaped += _NIL_BREAK_BONUS
-                        ts[2] = shaped  # replace the default 0.0
+
+                        ts[2] = shaped
+
+            # ---- Bid-quality shaped reward ----
+            _BID_SHAPING_SCALE = 0.5
+
+            def _hand_strength(hand_cards):
+                """Simple hand-strength estimator (expected tricks)."""
+                strength = 0.0
+                suit_counts = {'S': 0, 'H': 0, 'D': 0, 'C': 0}
+                for c in hand_cards:
+                    suit, rank = c[0], c[1]
+                    suit_counts[suit] = suit_counts.get(suit, 0) + 1
+                    if rank == 'A':
+                        strength += 1.0
+                    elif rank == 'K':
+                        strength += 0.7
+                    elif rank == 'Q':
+                        strength += 0.4
+                    elif suit == 'S':
+                        strength += 0.3
+                for s in ['H', 'D', 'C']:
+                    if suit_counts.get(s, 0) == 0:
+                        strength += 0.5
+                return strength
+
+            for pid in [0, 2]:  # learning players only
+                for i, ts in enumerate(trajectories[pid]):
+                    raw_obs = ts[0]['raw_obs']
+                    if raw_obs['phase'] == 0 and raw_obs['bids'][pid] is None:
+                        action_str = env.actions[ts[1]] if ts[1] < len(env.actions) else None
+                        bid_reward = 0.0
+                        if action_str and action_str.startswith('bid_'):
+                            bid_val = int(action_str.split('_')[1])
+                            strength = _hand_strength(raw_obs.get('hand', []))
+                            diff = abs(bid_val - strength)
+                            if diff <= 1.0:
+                                bid_reward = _BID_SHAPING_SCALE * 1.0
+                            elif diff <= 2.0:
+                                bid_reward = _BID_SHAPING_SCALE * 0.3
+                            elif diff <= 3.0:
+                                bid_reward = _BID_SHAPING_SCALE * -0.3
+                            else:
+                                bid_reward = _BID_SHAPING_SCALE * -1.0
+                        elif action_str == 'nil':
+                            strength = _hand_strength(raw_obs.get('hand', []))
+                            if strength <= 2.0:
+                                bid_reward = _BID_SHAPING_SCALE * 1.0
+                            elif strength <= 4.0:
+                                bid_reward = _BID_SHAPING_SCALE * -0.5
+                            else:
+                                bid_reward = _BID_SHAPING_SCALE * -1.0
+                        # blind_nil / pass: bid_reward stays 0
+                        ts[2] = ts[2] + bid_reward
 
             # Only push learning agent's trajectories (Team 0: P0, P2)
             for player_id in [0, 2]:
@@ -135,7 +219,7 @@ def drqn_act(
                 if episode_data:
                     episode_queue.put(episode_data)
 
-    except KeyboardInterrupt:
+            games_played += 1
         pass
     except Exception:
         log.error('Exception in actor %d', actor_id)
@@ -196,11 +280,14 @@ class DRQNTrainer:
         cuda='auto',
         gpu_fraction=0.8,
         # opponent pool
-        opponent_pool_size=5,
-        opponent_update_every=1000,
+        opponent_pool_size=10,
+        opponent_update_every=500,
         # evaluation
         eval_every_frames=100_000,
         eval_num_games=50,
+        # epsilon schedule
+        epsilon_start=0.5,
+        epsilon_decay_games=5000,
     ):
         self.env = env
         self.env_id = env_id
@@ -226,6 +313,8 @@ class DRQNTrainer:
         self.opponent_update_every = opponent_update_every
         self.eval_every_frames = eval_every_frames
         self.eval_num_games = eval_num_games
+        self.epsilon_start = epsilon_start
+        self.epsilon_decay_games = epsilon_decay_games
 
         # Handle "auto" for batch_size and num_actors
         self._auto_batch = (batch_size == 'auto')
@@ -392,6 +481,12 @@ class DRQNTrainer:
         opponent_pool = [
             {k: v.cpu().clone() for k, v in shared_qnet.state_dict().items()}
         ]
+        # Seed pool with randomly-initialised networks for early diversity
+        for _ in range(2):
+            rand_net = self._build_network()
+            opponent_pool.append(
+                {k: v.cpu().clone() for k, v in rand_net.state_dict().items()})
+            del rand_net
 
         # ----- learner model (GPU) -----
         learner_qnet = self._build_network().to(self.training_device)
@@ -430,6 +525,8 @@ class DRQNTrainer:
                     self.actor_device,
                     self.exp_epsilon,
                     stop_event,
+                    self.epsilon_start,
+                    self.epsilon_decay_games,
                 ),
             )
             p.start()

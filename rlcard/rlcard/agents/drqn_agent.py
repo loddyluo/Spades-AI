@@ -688,11 +688,14 @@ class DRQNActorAgent:
         """Greedy action selection."""
         q_values = self._predict(state)
         best_action = np.argmax(q_values)
+        legal_actions = list(state['legal_actions'].keys())
+        if best_action not in legal_actions:
+            best_action = legal_actions[0]
         info = {}
         info['values'] = {
             state['raw_legal_actions'][i]: float(
-                q_values[list(state['legal_actions'].keys())[i]]
+                q_values[legal_actions[i]]
             )
-            for i in range(len(state['legal_actions']))
+            for i in range(len(legal_actions))
         }
         return best_action, info

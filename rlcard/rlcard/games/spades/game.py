@@ -235,10 +235,12 @@ class SpadesGame:
             if not self.enable_blind_nil:
                 return ['nil'] + [f'bid_{i}' for i in range(1, 14)]
             # Bidding
-            if not self.blind_option_passed[player_id] and not player.bid is not None: 
-                # Has not passed blind option yet, and hasn't bid (bid is None)
-                # Available: blind_nil, pass
-                actions = ['blind_nil', 'pass']
+            if not self.blind_option_passed[player_id] and player.bid is None:
+                # Only the last bidder (4th) may choose blind nil
+                if self.bids_collected >= 3:
+                    actions = ['blind_nil', 'pass']
+                else:
+                    actions = ['pass']
             else:
                 # Must bid normal
                 actions = ['nil'] + [f'bid_{i}' for i in range(1, 14)]

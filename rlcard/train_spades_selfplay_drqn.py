@@ -85,11 +85,14 @@ def train():
         cuda=dcfg.get('cuda', 'auto'),
         gpu_fraction=dcfg.get('gpu_fraction', 0.8),
         # opponent pool
-        opponent_pool_size=dcfg.get('opponent_pool_size', 5),
-        opponent_update_every=dcfg.get('opponent_update_every', 1000),
+        opponent_pool_size=dcfg.get('opponent_pool_size', 10),
+        opponent_update_every=dcfg.get('opponent_update_every', 500),
         # evaluation
         eval_every_frames=dcfg.get('eval_every_frames', 100_000),
         eval_num_games=dcfg.get('eval_num_games', 50),
+        # epsilon schedule
+        epsilon_start=dcfg.get('epsilon_start', 0.5),
+        epsilon_decay_games=dcfg.get('epsilon_decay_games', 5000),
     )
 
     trainer.start()
