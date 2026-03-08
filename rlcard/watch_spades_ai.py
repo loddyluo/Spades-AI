@@ -236,7 +236,7 @@ def main():
 
     env_config = {
         'allow_raw_data': True,
-        'game_enable_blind_nil': True,
+        'game_enable_blind_nil': False,
         'seed': args.seed,
     }
     env = rlcard.make('spades', config=env_config)

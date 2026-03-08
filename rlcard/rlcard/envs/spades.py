@@ -64,7 +64,14 @@ class SpadesEnv(Env):
           [186    ]  1  Trick number (0-13, sum of tricks_won)
           [187-190]  4  Lead suit one-hot (S,H,D,C) during play
           [191    ]  1  Is current player leading the trick
-          [192-199]  8  Reserved (zeros)
+          [192    ]  1  Own team bid total
+          [193    ]  1  Own team tricks won
+          [194    ]  1  Opponent team bid total
+          [195    ]  1  Opponent team tricks won
+          [196    ]  1  Tricks remaining to make own bid (can be negative)
+          [197    ]  1  Number of spades in hand
+          [198    ]  1  Number of spades played so far
+          [199    ]  1  Position in current trick (0-3)
         '''
         obs_vec = np.zeros(200, dtype=np.int8)
 
@@ -141,6 +148,53 @@ class SpadesEnv(Env):
         # 15. Is current player leading the trick (191)
         if state['phase'] == 1 and len(state['trick']) == 0:
             obs_vec[191] = 1
+
+        # 16-23. Team-aware features (192-199)
+        tm_id = (player_id + 2) % 4
+        opp1 = 1 - player_id % 2
+        opp2 = opp1 + 2
+
+        _is_nil = state.get('is_nil', [False] * 4)
+        _is_bnil = state.get('is_blind_nil', [False] * 4)
+        _bids = state.get('bids', [None] * 4)
+        _tw = state.get('tricks_won', [0] * 4)
+
+        # Own team bid (non-nil members)
+        own_bid = 0
+        for p in [player_id, tm_id]:
+            if not (_is_nil[p] or _is_bnil[p]):
+                b = _bids[p]
+                if b is not None:
+                    own_bid += b
+        obs_vec[192] = own_bid
+
+        # Own team tricks
+        own_tricks = _tw[player_id] + _tw[tm_id]
+        obs_vec[193] = own_tricks
+
+        # Opponent team bid
+        opp_bid = 0
+        for p in [opp1, opp2]:
+            if not (_is_nil[p] or _is_bnil[p]):
+                b = _bids[p]
+                if b is not None:
+                    opp_bid += b
+        obs_vec[194] = opp_bid
+
+        # Opponent team tricks
+        obs_vec[195] = _tw[opp1] + _tw[opp2]
+
+        # Tricks remaining to make own bid (clamped to int8 range)
+        obs_vec[196] = np.clip(own_bid - own_tricks, -13, 13)
+
+        # Number of spades in hand
+        obs_vec[197] = sum(1 for c in state.get('hand', []) if c[0] == 'S')
+
+        # Number of spades played so far
+        obs_vec[198] = sum(1 for c in state.get('played_cards', []) if c[0] == 'S')
+
+        # Position in current trick (0=lead, 1-3=following)
+        obs_vec[199] = len(state.get('trick', []))
 
         # Construct legal-action dict (O(1) lookup)
         legal_actions = OrderedDict()

@@ -110,7 +110,7 @@ def drqn_act(
             _NIL_BREAK_BONUS = 2.0
             _NIL_TAKE_TRICK_PENALTY = -3.0
 
-            for pid in range(env.num_players):
+            for pid in [0, 2]:  # Only learning agents (Team 0)
                 teammate_id = (pid + 2) % env.num_players
                 opp_players = [1 - pid % 2, 1 - pid % 2 + 2]
                 for i, ts in enumerate(trajectories[pid]):
@@ -135,11 +135,31 @@ def drqn_act(
                             if not tm_is_nil:
                                 shaped += (next_tw[teammate_id] - curr_tw[teammate_id]) * _TRICK_REWARD
                         else:
-                            # Normal bidder: reward own tricks
-                            shaped += (next_tw[pid] - curr_tw[pid]) * _TRICK_REWARD
-                            # Reward non-nil teammate's tricks
-                            if not tm_is_nil:
-                                shaped += (next_tw[teammate_id] - curr_tw[teammate_id]) * _TRICK_REWARD
+                            # Normal bidder: overtrick-aware trick reward
+                            my_gain = next_tw[pid] - curr_tw[pid]
+                            tm_gain = (next_tw[teammate_id] - curr_tw[teammate_id]
+                                       if not tm_is_nil else 0)
+
+                            # Compute team bid (non-nil members only)
+                            bids = ts[0]['raw_obs']['bids']
+                            _is_nil = ts[0]['raw_obs'].get('is_nil', [False]*4)
+                            _is_bnil = ts[0]['raw_obs'].get('is_blind_nil', [False]*4)
+                            team_bid = 0
+                            for p_idx in [pid, teammate_id]:
+                                if not (_is_nil[p_idx] or _is_bnil[p_idx]):
+                                    b = bids[p_idx]
+                                    if b is not None:
+                                        team_bid += b
+
+                            team_tricks = curr_tw[pid] + curr_tw[teammate_id]
+                            if team_bid > 0 and team_tricks >= team_bid:
+                                # Already met bid — overtricks are harmful
+                                shaped += my_gain * (-0.5)
+                                shaped += tm_gain * (-0.5)
+                            else:
+                                # Still need tricks to make bid
+                                shaped += my_gain * _TRICK_REWARD
+                                shaped += tm_gain * _TRICK_REWARD
 
                         # Bonus for breaking opponent nil
                         for opp in opp_players:
@@ -155,24 +175,102 @@ def drqn_act(
             _BID_SHAPING_SCALE = 0.5
 
             def _hand_strength(hand_cards):
-                """Simple hand-strength estimator (expected tricks)."""
-                strength = 0.0
-                suit_counts = {'S': 0, 'H': 0, 'D': 0, 'C': 0}
+                """Linear hand-strength estimator with optimized coefficients.
+
+                Uses 44-dim feature vector: spade length, spade honours,
+                bias, and side-suit honours x length-bucket interactions.
+                Returns round(dot(w, features)) as the recommended bid (int).
+                """
+                # Optimized coefficients (from optimize_bid_coefficients.py)
+                _W = [
+                    0.264543,  # [0]  spade_len
+                    2.449081,  # [1]  sp_AKQ
+                    2.218849,  # [2]  sp_AK
+                    1.725069,  # [3]  sp_AQ
+                    0.967755,  # [4]  sp_KQ
+                    1.505704,  # [5]  sp_A
+                    0.732921,  # [6]  sp_K
+                    0.258547,  # [7]  sp_Q
+                    0.381149,  # [8]  bias
+                    1.942164,  # [9]  d1_AKQ
+                    1.399921,  # [10] d1_AK
+                    0.846144,  # [11] d1_AQ
+                    0.955666,  # [12] d1_KQ
+                    0.506304,  # [13] d1_A
+                    0.453456,  # [14] d1_K
+                    0.182991,  # [15] d1_Q
+                    1.433409,  # [16] d2_AKQ
+                    0.891694,  # [17] d2_AK
+                    0.705316,  # [18] d2_AQ
+                    0.660653,  # [19] d2_KQ
+                    0.473631,  # [20] d2_A
+                    0.469872,  # [21] d2_K
+                    0.226364,  # [22] d2_Q
+                    1.267245,  # [23] d34_AKQ
+                    1.018336,  # [24] d34_AK
+                    0.720991,  # [25] d34_AQ
+                    0.772132,  # [26] d34_KQ
+                    0.492726,  # [27] d34_A
+                    0.461189,  # [28] d34_K
+                    0.216171,  # [29] d34_Q
+                    1.262554,  # [30] d57_AKQ
+                    0.951358,  # [31] d57_AK
+                    0.746386,  # [32] d57_AQ
+                    0.712871,  # [33] d57_KQ
+                    0.506075,  # [34] d57_A
+                    0.494781,  # [35] d57_K
+                    0.236015,  # [36] d57_Q
+                    1.261397,  # [37] d8p_AKQ
+                    0.934525,  # [38] d8p_AK
+                    0.825089,  # [39] d8p_AQ
+                    0.774747,  # [40] d8p_KQ
+                    0.567090,  # [41] d8p_A
+                    0.426407,  # [42] d8p_K
+                    0.119130,  # [43] d8p_Q
+                ]
+
+                suits = {'S': set(), 'H': set(), 'D': set(), 'C': set()}
                 for c in hand_cards:
-                    suit, rank = c[0], c[1]
-                    suit_counts[suit] = suit_counts.get(suit, 0) + 1
-                    if rank == 'A':
-                        strength += 1.0
-                    elif rank == 'K':
-                        strength += 0.7
-                    elif rank == 'Q':
-                        strength += 0.4
-                    elif suit == 'S':
-                        strength += 0.3
-                for s in ['H', 'D', 'C']:
-                    if suit_counts.get(s, 0) == 0:
-                        strength += 0.5
-                return strength
+                    suits[c[0]].add(c[1])
+
+                strength = _W[0] * len(suits['S']) + _W[8]  # spade_len + bias
+
+                # Spade honour combination (one-hot)
+                sp = suits['S']
+                has_A, has_K, has_Q = 'A' in sp, 'K' in sp, 'Q' in sp
+                if has_A and has_K and has_Q:   strength += _W[1]
+                elif has_A and has_K:           strength += _W[2]
+                elif has_A and has_Q:           strength += _W[3]
+                elif has_K and has_Q:           strength += _W[4]
+                elif has_A:                     strength += _W[5]
+                elif has_K:                     strength += _W[6]
+                elif has_Q:                     strength += _W[7]
+
+                # Side suits: honour x length-bucket
+                for suit in ['H', 'D', 'C']:
+                    cards = suits[suit]
+                    d = len(cards)
+                    if d == 0:
+                        continue
+                    has_A, has_K, has_Q = 'A' in cards, 'K' in cards, 'Q' in cards
+                    if has_A and has_K and has_Q:   hon = 0
+                    elif has_A and has_K:           hon = 1
+                    elif has_A and has_Q:           hon = 2
+                    elif has_K and has_Q:           hon = 3
+                    elif has_A:                     hon = 4
+                    elif has_K:                     hon = 5
+                    elif has_Q:                     hon = 6
+                    else:
+                        continue
+                    # Length bucket: 1 / 2 / 3-4 / 5-7 / 8+
+                    if d == 1:     bucket = 0
+                    elif d == 2:   bucket = 1
+                    elif d <= 4:   bucket = 2
+                    elif d <= 7:   bucket = 3
+                    else:          bucket = 4
+                    strength += _W[9 + bucket * 7 + hon]
+
+                return round(strength)
 
             for pid in [0, 2]:  # learning players only
                 for i, ts in enumerate(trajectories[pid]):
@@ -182,26 +280,66 @@ def drqn_act(
                         bid_reward = 0.0
                         if action_str and action_str.startswith('bid_'):
                             bid_val = int(action_str.split('_')[1])
-                            strength = _hand_strength(raw_obs.get('hand', []))
-                            diff = abs(bid_val - strength)
-                            if diff <= 1.0:
+                            recommended = _hand_strength(raw_obs.get('hand', []))
+                            diff = abs(bid_val - recommended)
+                            if diff == 0:
                                 bid_reward = _BID_SHAPING_SCALE * 1.0
-                            elif diff <= 2.0:
+                            elif diff == 1:
                                 bid_reward = _BID_SHAPING_SCALE * 0.3
-                            elif diff <= 3.0:
+                            elif diff == 2:
                                 bid_reward = _BID_SHAPING_SCALE * -0.3
                             else:
                                 bid_reward = _BID_SHAPING_SCALE * -1.0
                         elif action_str == 'nil':
-                            strength = _hand_strength(raw_obs.get('hand', []))
-                            if strength <= 2.0:
+                            recommended = _hand_strength(raw_obs.get('hand', []))
+                            if recommended <= 2:
                                 bid_reward = _BID_SHAPING_SCALE * 1.0
-                            elif strength <= 4.0:
+                            elif recommended <= 4:
                                 bid_reward = _BID_SHAPING_SCALE * -0.5
                             else:
                                 bid_reward = _BID_SHAPING_SCALE * -1.0
                         # blind_nil / pass: bid_reward stays 0
                         ts[2] = ts[2] + bid_reward
+
+            # ---- End-of-round bid accuracy bonus (terminal transition) ----
+            _BID_ACCURACY_SCALE = 2.0
+            for pid in [0, 2]:
+                traj = trajectories[pid]
+                if not traj:
+                    continue
+                terminal_ts = traj[-1]
+                final_raw = terminal_ts[3]['raw_obs']
+                teammate_id = (pid + 2) % 4
+
+                _is_nil = final_raw.get('is_nil', [False] * 4)
+                _is_bnil = final_raw.get('is_blind_nil', [False] * 4)
+                if _is_nil[pid] or _is_bnil[pid]:
+                    continue  # Nil players: skip (already handled by nil rewards)
+
+                player_bid = final_raw['bids'][pid]
+                if player_bid is None:
+                    continue
+
+                # Compute team totals
+                team_bid = 0
+                for p_idx in [pid, teammate_id]:
+                    if not (_is_nil[p_idx] or _is_bnil[p_idx]):
+                        b = final_raw['bids'][p_idx]
+                        if b is not None:
+                            team_bid += b
+                team_tricks = (final_raw['tricks_won'][pid]
+                               + final_raw['tricks_won'][teammate_id])
+
+                if team_bid > 0:
+                    diff = team_tricks - team_bid
+                    if diff == 0:       # Perfect bid
+                        terminal_ts[2] += _BID_ACCURACY_SCALE * 2.0
+                    elif diff == 1:     # 1 overtrick
+                        terminal_ts[2] += _BID_ACCURACY_SCALE * 0.5
+                    elif diff < 0:      # Set (failed bid)
+                        terminal_ts[2] += _BID_ACCURACY_SCALE * -1.0
+                    else:               # Multiple overtricks
+                        terminal_ts[2] += _BID_ACCURACY_SCALE * (-0.3 * diff)
 
             # Only push learning agent's trajectories (Team 0: P0, P2)
             for player_id in [0, 2]:
@@ -690,20 +828,32 @@ class DRQNTrainer:
                     self._save_checkpoint(learner_qnet, optimizer, frames, train_t)
                     last_save_time = now
 
-                # Periodic evaluation
+                # Periodic evaluation (async — does not block learner)
                 if frames - last_eval_frames >= self.eval_every_frames:
-                    avg_diff, win_rate = self._evaluate(learner_qnet)
-                    log.info(
-                        'EVAL @ %d frames: avg_score_diff=%.1f, '
-                        'win_rate_vs_random=%.2f',
-                        frames, avg_diff, win_rate,
-                    )
-                    eval_writer.writerow({
-                        'frames': frames,
-                        'avg_score_diff': f'{avg_diff:.2f}',
-                        'win_rate_vs_random': f'{win_rate:.4f}',
-                    })
-                    eval_csv_file.flush()
+                    eval_frames_snapshot = frames
+                    def _eval_bg(qnet, f, writer, csvfile):
+                        try:
+                            avg_diff, win_rate = self._evaluate(qnet)
+                            log.info(
+                                'EVAL @ %d frames: avg_score_diff=%.1f, '
+                                'win_rate_vs_random=%.2f',
+                                f, avg_diff, win_rate,
+                            )
+                            writer.writerow({
+                                'frames': f,
+                                'avg_score_diff': f'{avg_diff:.2f}',
+                                'win_rate_vs_random': f'{win_rate:.4f}',
+                            })
+                            csvfile.flush()
+                        except Exception:
+                            log.error('Eval thread failed')
+                            traceback.print_exc()
+                    threading.Thread(
+                        target=_eval_bg,
+                        args=(learner_qnet, eval_frames_snapshot,
+                              eval_writer, eval_csv_file),
+                        daemon=True,
+                    ).start()
                     last_eval_frames = frames
 
         except KeyboardInterrupt:
