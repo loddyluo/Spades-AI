@@ -175,78 +175,144 @@ def drqn_act(
             _BID_SHAPING_SCALE = 0.5
 
             def _hand_strength(hand_cards):
-                """Linear hand-strength estimator with optimized coefficients.
+                """Hand-strength estimator v3: mean-centered spade tricks + piecewise-linear basis.
 
-                Uses 44-dim feature vector: spade length, spade honours,
-                bias, and side-suit honours x length-bucket interactions.
+                Uses 44-dim feature vector with spade_trick_estimate (rule-based),
+                piecewise-linear basis for high spade counts, and side-suit honours.
                 Returns round(dot(w, features)) as the recommended bid (int).
                 """
-                # Optimized coefficients (from optimize_bid_coefficients.py)
+                _RANK_VAL = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
+                             '8': 8, '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
+                _ALL_SPADE_VALS = set(range(2, 15))
+                _MU_SP = 0.6151  # empirical mean of spade_trick_estimate over random hands
+
+                # v3 optimized coefficients (from optimize_bid_coefficients.py)
                 _W = [
-                    0.264543,  # [0]  spade_len
-                    2.449081,  # [1]  sp_AKQ
-                    2.218849,  # [2]  sp_AK
-                    1.725069,  # [3]  sp_AQ
-                    0.967755,  # [4]  sp_KQ
-                    1.505704,  # [5]  sp_A
-                    0.732921,  # [6]  sp_K
-                    0.258547,  # [7]  sp_Q
-                    0.381149,  # [8]  bias
-                    1.942164,  # [9]  d1_AKQ
-                    1.399921,  # [10] d1_AK
-                    0.846144,  # [11] d1_AQ
-                    0.955666,  # [12] d1_KQ
-                    0.506304,  # [13] d1_A
-                    0.453456,  # [14] d1_K
-                    0.182991,  # [15] d1_Q
-                    1.433409,  # [16] d2_AKQ
-                    0.891694,  # [17] d2_AK
-                    0.705316,  # [18] d2_AQ
-                    0.660653,  # [19] d2_KQ
-                    0.473631,  # [20] d2_A
-                    0.469872,  # [21] d2_K
-                    0.226364,  # [22] d2_Q
-                    1.267245,  # [23] d34_AKQ
-                    1.018336,  # [24] d34_AK
-                    0.720991,  # [25] d34_AQ
-                    0.772132,  # [26] d34_KQ
-                    0.492726,  # [27] d34_A
-                    0.461189,  # [28] d34_K
-                    0.216171,  # [29] d34_Q
-                    1.262554,  # [30] d57_AKQ
-                    0.951358,  # [31] d57_AK
-                    0.746386,  # [32] d57_AQ
-                    0.712871,  # [33] d57_KQ
-                    0.506075,  # [34] d57_A
-                    0.494781,  # [35] d57_K
-                    0.236015,  # [36] d57_Q
-                    1.261397,  # [37] d8p_AKQ
-                    0.934525,  # [38] d8p_AK
-                    0.825089,  # [39] d8p_AQ
-                    0.774747,  # [40] d8p_KQ
-                    0.567090,  # [41] d8p_A
-                    0.426407,  # [42] d8p_K
-                    0.119130,  # [43] d8p_Q
+                    0.700518,  # [0]  sp_tricks_centered
+                    0.002076,  # [1]  sp_tricks_high (max(0, sp_tricks-5))
+                    1.408285,  # [2]  sp_tricks_extreme (max(0, sp_tricks-8))
+                    -0.495922, # [3]  sp_6plus
+                    0.493795,  # [4]  sp_8plus
+                    -0.330590, # [5]  short_void
+                    -0.116776, # [6]  short_1
+                    -0.092565, # [7]  short_2
+                    1.377523,  # [8]  bias
+                    1.794604,  # [9]  d1_AKQ
+                    1.693353,  # [10] d1_AK
+                    0.936040,  # [11] d1_AQ
+                    0.914291,  # [12] d1_KQ
+                    0.792368,  # [13] d1_A
+                    0.751438,  # [14] d1_K
+                    0.022989,  # [15] d1_Q
+                    1.783133,  # [16] d2_AKQ
+                    1.762509,  # [17] d2_AK
+                    1.020411,  # [18] d2_AQ
+                    0.968214,  # [19] d2_KQ
+                    0.957360,  # [20] d2_A
+                    0.738137,  # [21] d2_K
+                    0.166071,  # [22] d2_Q
+                    2.037492,  # [23] d34_AKQ
+                    1.999994,  # [24] d34_AK
+                    1.019340,  # [25] d34_AQ
+                    1.002860,  # [26] d34_KQ
+                    0.977190,  # [27] d34_A
+                    0.955939,  # [28] d34_K
+                    0.019843,  # [29] d34_Q
+                    2.225011,  # [30] d57_AKQ
+                    1.522568,  # [31] d57_AK
+                    1.030773,  # [32] d57_AQ
+                    1.041517,  # [33] d57_KQ
+                    1.023916,  # [34] d57_A
+                    0.969596,  # [35] d57_K
+                    0.041434,  # [36] d57_Q
+                    2.268900,  # [37] d8p_AKQ
+                    1.465891,  # [38] d8p_AK
+                    1.156170,  # [39] d8p_AQ
+                    0.934842,  # [40] d8p_KQ
+                    0.949825,  # [41] d8p_A
+                    0.618895,  # [42] d8p_K
+                    0.155908,  # [43] d8p_Q
                 ]
 
                 suits = {'S': set(), 'H': set(), 'D': set(), 'C': set()}
                 for c in hand_cards:
                     suits[c[0]].add(c[1])
 
-                strength = _W[0] * len(suits['S']) + _W[8]  # spade_len + bias
+                # --- Nil 前置判定: 全部规则满足则返回 0 ---
+                sp_count = len(suits['S'])
+                if sp_count <= 3:  # Rule 3: 黑桃<=3
+                    _nil_ok = True
+                    # Rule 1: 无大黑桃
+                    if any(r in suits['S'] for r in ['A', 'K', 'Q']):
+                        _nil_ok = False
+                    if _nil_ok:
+                        for suit in ['H', 'D', 'C']:
+                            vals = sorted([_RANK_VAL[r] for r in suits[suit]])
+                            d = len(vals)
+                            if d == 0:
+                                continue
+                            if d <= 3:
+                                # Rule 1b: 短套(<=2)不能有AKQ; 短套(=3)不能有AK
+                                if d <= 2:
+                                    if any(v >= 12 for v in vals):  # Q=12,K=13,A=14
+                                        _nil_ok = False; break
+                                else:  # d == 3
+                                    if any(v >= 13 for v in vals):  # K=13,A=14
+                                        _nil_ok = False; break
+                                # Rule 2a: 短套不能有1张>=Q(12); 不能有2张>=9
+                                if any(v >= 12 for v in vals):
+                                    _nil_ok = False; break
+                                if sum(1 for v in vals if v >= 9) >= 2:
+                                    _nil_ok = False; break
+                            else:
+                                # Rule 2b: 长套(>=4)最小牌<=5, 次小牌<=9
+                                if vals[0] > 5 or vals[1] > 9:
+                                    _nil_ok = False; break
+                    if _nil_ok:
+                        return 0
+                # Spade trick estimate (simulated confrontation)
+                my_vals = sorted([_RANK_VAL[r] for r in suits['S']], reverse=True)
+                opp_vals = sorted(_ALL_SPADE_VALS - set(my_vals), reverse=True)
+                sp_tricks = 0
+                oi = 0
+                for mv in my_vals:
+                    if oi < len(opp_vals):
+                        if mv > opp_vals[oi]:
+                            sp_tricks += 1
+                        oi += 1
+                    else:
+                        sp_tricks += 1
 
-                # Spade honour combination (one-hot)
-                sp = suits['S']
-                has_A, has_K, has_Q = 'A' in sp, 'K' in sp, 'Q' in sp
-                if has_A and has_K and has_Q:   strength += _W[1]
-                elif has_A and has_K:           strength += _W[2]
-                elif has_A and has_Q:           strength += _W[3]
-                elif has_K and has_Q:           strength += _W[4]
-                elif has_A:                     strength += _W[5]
-                elif has_K:                     strength += _W[6]
-                elif has_Q:                     strength += _W[7]
+                # Build strength from features
+                strength = _W[8]  # bias
 
-                # Side suits: honour x length-bucket
+                # [0] mean-centered spade tricks
+                strength += _W[0] * (sp_tricks - _MU_SP)
+                # [1] piecewise-linear above 5
+                if sp_tricks > 5:
+                    strength += _W[1] * (sp_tricks - 5)
+                # [2] piecewise-linear above 8
+                if sp_tricks > 8:
+                    strength += _W[2] * (sp_tricks - 8)
+
+                # [3-4] spade length breakpoints
+                sp_len = len(suits['S'])
+                if sp_len >= 6:
+                    strength += _W[3]
+                if sp_len >= 8:
+                    strength += _W[4]
+
+                # [5-7] shortest side suit
+                side_lengths = [len(suits[s]) for s in ['H', 'D', 'C']]
+                shortest = min(side_lengths)
+                if shortest == 0:
+                    strength += _W[5]
+                elif shortest == 1:
+                    strength += _W[6]
+                elif shortest == 2:
+                    strength += _W[7]
+
+                # [9-43] Side suits: honour x length-bucket
                 for suit in ['H', 'D', 'C']:
                     cards = suits[suit]
                     d = len(cards)
