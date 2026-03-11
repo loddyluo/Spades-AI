@@ -93,6 +93,8 @@ def train():
         # epsilon schedule
         epsilon_start=dcfg.get('epsilon_start', 0.5),
         epsilon_decay_games=dcfg.get('epsilon_decay_games', 5000),
+        # bid shaping schedule
+        bid_shaping_decay_games=dcfg.get('bid_shaping_decay_games', 20000),
     )
 
     trainer.start()

@@ -77,6 +77,7 @@ def drqn_act(
     stop_event,
     epsilon_start=0.5,
     epsilon_decay_games=5000,
+    bid_shaping_decay_games=20000,
 ):
     """Actor process: run games endlessly, push episode data into *episode_queue*."""
     try:
@@ -171,80 +172,65 @@ def drqn_act(
 
                         ts[2] = shaped
 
-            # ---- Bid-quality shaped reward ----
-            _BID_SHAPING_SCALE = 0.5
+            # ---- Bid-quality shaped reward (cosine annealing to 0) ----
+            import math
+            if bid_shaping_decay_games > 0 and games_played < bid_shaping_decay_games:
+                _BID_SHAPING_SCALE = 0.5 * (1 + math.cos(math.pi * games_played / bid_shaping_decay_games)) / 2
+            else:
+                _BID_SHAPING_SCALE = 0.0
 
             def _hand_strength(hand_cards):
-                """Hand-strength estimator v3: mean-centered spade tricks + piecewise-linear basis.
+                """Hand-strength estimator v4.2: 48-dim features with Nil pre-check + NIL_RAW_THRESHOLD.
 
-                Uses 44-dim feature vector with spade_trick_estimate (rule-based),
-                piecewise-linear basis for high spade counts, and side-suit honours.
-                Returns round(dot(w, features)) as the recommended bid (int).
+                Returns (bid: int, raw_strength: float).
+                bid is the final recommended bid (0 for Nil hands).
+                raw_strength is the linear model output before Nil override.
                 """
                 _RANK_VAL = {'2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
                              '8': 8, '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
                 _ALL_SPADE_VALS = set(range(2, 15))
-                _MU_SP = 0.6151  # empirical mean of spade_trick_estimate over random hands
+                _MU_SP = 0.6151
+                _NIL_RAW_THRESHOLD = 3  # If raw linear bid >= this, don't risk Nil
 
-                # v3 optimized coefficients (from optimize_bid_coefficients.py)
+                # v4.2 optimized coefficients (48-dim)
                 _W = [
-                    0.700518,  # [0]  sp_tricks_centered
-                    0.002076,  # [1]  sp_tricks_high (max(0, sp_tricks-5))
-                    1.408285,  # [2]  sp_tricks_extreme (max(0, sp_tricks-8))
-                    -0.495922, # [3]  sp_6plus
-                    0.493795,  # [4]  sp_8plus
-                    -0.330590, # [5]  short_void
-                    -0.116776, # [6]  short_1
-                    -0.092565, # [7]  short_2
-                    1.377523,  # [8]  bias
-                    1.794604,  # [9]  d1_AKQ
-                    1.693353,  # [10] d1_AK
-                    0.936040,  # [11] d1_AQ
-                    0.914291,  # [12] d1_KQ
-                    0.792368,  # [13] d1_A
-                    0.751438,  # [14] d1_K
-                    0.022989,  # [15] d1_Q
-                    1.783133,  # [16] d2_AKQ
-                    1.762509,  # [17] d2_AK
-                    1.020411,  # [18] d2_AQ
-                    0.968214,  # [19] d2_KQ
-                    0.957360,  # [20] d2_A
-                    0.738137,  # [21] d2_K
-                    0.166071,  # [22] d2_Q
-                    2.037492,  # [23] d34_AKQ
-                    1.999994,  # [24] d34_AK
-                    1.019340,  # [25] d34_AQ
-                    1.002860,  # [26] d34_KQ
-                    0.977190,  # [27] d34_A
-                    0.955939,  # [28] d34_K
-                    0.019843,  # [29] d34_Q
-                    2.225011,  # [30] d57_AKQ
-                    1.522568,  # [31] d57_AK
-                    1.030773,  # [32] d57_AQ
-                    1.041517,  # [33] d57_KQ
-                    1.023916,  # [34] d57_A
-                    0.969596,  # [35] d57_K
-                    0.041434,  # [36] d57_Q
-                    2.268900,  # [37] d8p_AKQ
-                    1.465891,  # [38] d8p_AK
-                    1.156170,  # [39] d8p_AQ
-                    0.934842,  # [40] d8p_KQ
-                    0.949825,  # [41] d8p_A
-                    0.618895,  # [42] d8p_K
-                    0.155908,  # [43] d8p_Q
+                    0.701044,   # [0]  sp_tricks_c
+                    0.007511,   # [1]  sp_tricks_hi
+                    0.881980,   # [2]  sp_tricks_ex
+                    -1.999145,  # [3]  sp_0
+                    -1.273403,  # [4]  sp_1
+                    -0.883269,  # [5]  sp_2
+                    0.558984,   # [6]  sp_5
+                    0.429923,   # [7]  sp_6
+                    0.266541,   # [8]  sp_7p
+                    0.370726,   # [9]  short_void
+                    0.488241,   # [10] short_1
+                    0.220489,   # [11] short_2
+                    1.476624,   # [12] bias
+                    2.203615, 1.432062, 0.920113, 0.806798, 0.785587, 0.753077, -0.033648,  # d1
+                    1.882863, 1.416556, 1.157554, 0.515139, 0.888351, 0.441180, 0.298371,   # d2
+                    1.877064, 1.811177, 1.169807, 0.934469, 0.978589, 0.675725, 0.260065,   # d34
+                    1.793521, 1.739455, 1.214013, 0.806248, 0.831830, 0.556648, 0.019048,   # d57
+                    2.081140, 0.738415, 0.667451, 1.104983, 0.265381, -0.123201, -0.185711, # d8p
                 ]
 
                 suits = {'S': set(), 'H': set(), 'D': set(), 'C': set()}
                 for c in hand_cards:
                     suits[c[0]].add(c[1])
 
-                # --- Nil 前置判定: 全部规则满足则返回 0 ---
+                # --- Nil pre-check ---
+                _nil_ok = False
                 sp_count = len(suits['S'])
-                if sp_count <= 3:  # Rule 3: 黑桃<=3
+                if sp_count <= 3:
                     _nil_ok = True
-                    # Rule 1: 无大黑桃
+                    # Rule 1a: no big spades (A/K/Q)
                     if any(r in suits['S'] for r in ['A', 'K', 'Q']):
                         _nil_ok = False
+                    # Rule 1c: spade high cards (9/T/J) at most 1
+                    if _nil_ok:
+                        sp_vals = [_RANK_VAL[r] for r in suits['S']]
+                        if sum(1 for v in sp_vals if v >= 9) >= 2:
+                            _nil_ok = False
                     if _nil_ok:
                         for suit in ['H', 'D', 'C']:
                             vals = sorted([_RANK_VAL[r] for r in suits[suit]])
@@ -252,25 +238,21 @@ def drqn_act(
                             if d == 0:
                                 continue
                             if d <= 3:
-                                # Rule 1b: 短套(<=2)不能有AKQ; 短套(=3)不能有AK
                                 if d <= 2:
-                                    if any(v >= 12 for v in vals):  # Q=12,K=13,A=14
+                                    if any(v >= 12 for v in vals):
                                         _nil_ok = False; break
-                                else:  # d == 3
-                                    if any(v >= 13 for v in vals):  # K=13,A=14
+                                else:
+                                    if any(v >= 13 for v in vals):
                                         _nil_ok = False; break
-                                # Rule 2a: 短套不能有1张>=Q(12); 不能有2张>=9
                                 if any(v >= 12 for v in vals):
                                     _nil_ok = False; break
                                 if sum(1 for v in vals if v >= 9) >= 2:
                                     _nil_ok = False; break
                             else:
-                                # Rule 2b: 长套(>=4)最小牌<=5, 次小牌<=9
                                 if vals[0] > 5 or vals[1] > 9:
                                     _nil_ok = False; break
-                    if _nil_ok:
-                        return 0
-                # Spade trick estimate (simulated confrontation)
+
+                # --- Spade trick estimate ---
                 my_vals = sorted([_RANK_VAL[r] for r in suits['S']], reverse=True)
                 opp_vals = sorted(_ALL_SPADE_VALS - set(my_vals), reverse=True)
                 sp_tricks = 0
@@ -283,8 +265,8 @@ def drqn_act(
                     else:
                         sp_tricks += 1
 
-                # Build strength from features
-                strength = _W[8]  # bias
+                # --- Build 48-dim feature vector and compute strength ---
+                strength = _W[12]  # bias
 
                 # [0] mean-centered spade tricks
                 strength += _W[0] * (sp_tricks - _MU_SP)
@@ -295,24 +277,33 @@ def drqn_act(
                 if sp_tricks > 8:
                     strength += _W[2] * (sp_tricks - 8)
 
-                # [3-4] spade length breakpoints
+                # [3-8] spade length one-hot (3-4 is baseline)
                 sp_len = len(suits['S'])
-                if sp_len >= 6:
+                if sp_len == 0:
                     strength += _W[3]
-                if sp_len >= 8:
+                elif sp_len == 1:
                     strength += _W[4]
+                elif sp_len == 2:
+                    strength += _W[5]
+                elif sp_len == 5:
+                    strength += _W[6]
+                elif sp_len == 6:
+                    strength += _W[7]
+                elif sp_len >= 7:
+                    strength += _W[8]
 
-                # [5-7] shortest side suit
+                # [9-11] shortest side suit
                 side_lengths = [len(suits[s]) for s in ['H', 'D', 'C']]
                 shortest = min(side_lengths)
                 if shortest == 0:
-                    strength += _W[5]
+                    strength += _W[9]
                 elif shortest == 1:
-                    strength += _W[6]
+                    strength += _W[10]
                 elif shortest == 2:
-                    strength += _W[7]
+                    strength += _W[11]
 
-                # [9-43] Side suits: honour x length-bucket
+                # [13-47] Side suits: honour x length-bucket
+                _SIDE_BASE = 13
                 for suit in ['H', 'D', 'C']:
                     cards = suits[suit]
                     d = len(cards)
@@ -328,15 +319,18 @@ def drqn_act(
                     elif has_Q:                     hon = 6
                     else:
                         continue
-                    # Length bucket: 1 / 2 / 3-4 / 5-7 / 8+
                     if d == 1:     bucket = 0
                     elif d == 2:   bucket = 1
                     elif d <= 4:   bucket = 2
                     elif d <= 7:   bucket = 3
                     else:          bucket = 4
-                    strength += _W[9 + bucket * 7 + hon]
+                    strength += _W[_SIDE_BASE + bucket * 7 + hon]
 
-                return round(strength)
+                raw = strength
+                # Nil override: rule-based Nil AND raw < threshold
+                if _nil_ok and raw < _NIL_RAW_THRESHOLD:
+                    return 0, raw
+                return int(max(0, min(13, round(raw)))), raw
 
             for pid in [0, 2]:  # learning players only
                 for i, ts in enumerate(trajectories[pid]):
@@ -346,24 +340,32 @@ def drqn_act(
                         bid_reward = 0.0
                         if action_str and action_str.startswith('bid_'):
                             bid_val = int(action_str.split('_')[1])
-                            recommended = _hand_strength(raw_obs.get('hand', []))
+                            recommended, _ = _hand_strength(raw_obs.get('hand', []))
                             diff = abs(bid_val - recommended)
+                            # Adaptive threshold: low estimate (<=4) → tol=1, high (>=5) → tol=2
+                            tol = 1 if recommended <= 4 else 2
+                            excess = max(0, diff - tol)
                             if diff == 0:
-                                bid_reward = _BID_SHAPING_SCALE * 1.0
-                            elif diff == 1:
+                                # Exact match: small bonus
                                 bid_reward = _BID_SHAPING_SCALE * 0.3
-                            elif diff == 2:
-                                bid_reward = _BID_SHAPING_SCALE * -0.3
+                            elif excess == 0:
+                                # Within tolerance: no penalty
+                                bid_reward = 0.0
                             else:
-                                bid_reward = _BID_SHAPING_SCALE * -1.0
+                                # Beyond tolerance: exponential penalty
+                                bid_reward = _BID_SHAPING_SCALE * -(2 ** excess)
                         elif action_str == 'nil':
-                            recommended = _hand_strength(raw_obs.get('hand', []))
-                            if recommended <= 2:
-                                bid_reward = _BID_SHAPING_SCALE * 1.0
-                            elif recommended <= 4:
-                                bid_reward = _BID_SHAPING_SCALE * -0.5
+                            recommended, _ = _hand_strength(raw_obs.get('hand', []))
+                            if recommended == 0:
+                                # Estimator also says Nil: good
+                                bid_reward = _BID_SHAPING_SCALE * 0.3
+                            elif recommended <= 2:
+                                # Borderline: no penalty
+                                bid_reward = 0.0
                             else:
-                                bid_reward = _BID_SHAPING_SCALE * -1.0
+                                # Strong hand bidding nil: exponential penalty
+                                excess = recommended - 2
+                                bid_reward = _BID_SHAPING_SCALE * -(2 ** excess)
                         # blind_nil / pass: bid_reward stays 0
                         ts[2] = ts[2] + bid_reward
 
@@ -492,6 +494,8 @@ class DRQNTrainer:
         # epsilon schedule
         epsilon_start=0.5,
         epsilon_decay_games=5000,
+        # bid shaping schedule
+        bid_shaping_decay_games=20000,
     ):
         self.env = env
         self.env_id = env_id
@@ -519,6 +523,7 @@ class DRQNTrainer:
         self.eval_num_games = eval_num_games
         self.epsilon_start = epsilon_start
         self.epsilon_decay_games = epsilon_decay_games
+        self.bid_shaping_decay_games = bid_shaping_decay_games
 
         # Handle "auto" for batch_size and num_actors
         self._auto_batch = (batch_size == 'auto')
@@ -735,6 +740,7 @@ class DRQNTrainer:
                     stop_event,
                     self.epsilon_start,
                     self.epsilon_decay_games,
+                    self.bid_shaping_decay_games,
                 ),
             )
             p.start()
