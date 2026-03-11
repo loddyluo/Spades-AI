@@ -190,7 +190,7 @@ def drqn_act(
                              '8': 8, '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14}
                 _ALL_SPADE_VALS = set(range(2, 15))
                 _MU_SP = 0.6151
-                _NIL_RAW_THRESHOLD = 3  # If raw linear bid >= this, don't risk Nil
+                _NIL_RAW_THRESHOLD = 2  # If raw linear bid >= this, don't risk Nil
 
                 # v4.2 optimized coefficients (48-dim)
                 _W = [
