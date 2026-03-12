@@ -106,72 +106,6 @@ def drqn_act(
             trajectories, payoffs = env.run(is_training=True)
             trajectories = reorganize(trajectories, payoffs)
 
-            # ---- Reward shaping: inject per-trick intermediate rewards ----
-            _TRICK_REWARD = 1.0
-            _NIL_BREAK_BONUS = 2.0
-            _NIL_TAKE_TRICK_PENALTY = -3.0
-
-            for pid in [0, 2]:  # Only learning agents (Team 0)
-                teammate_id = (pid + 2) % env.num_players
-                opp_players = [1 - pid % 2, 1 - pid % 2 + 2]
-                for i, ts in enumerate(trajectories[pid]):
-                    if i < len(trajectories[pid]) - 1:  # non-terminal step
-                        curr_tw = ts[0]['raw_obs']['tricks_won']
-                        next_tw = ts[3]['raw_obs']['tricks_won']
-
-                        pid_is_nil = (
-                            ts[0]['raw_obs'].get('is_nil', [False]*4)[pid]
-                            or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[pid])
-                        tm_is_nil = (
-                            ts[0]['raw_obs'].get('is_nil', [False]*4)[teammate_id]
-                            or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[teammate_id])
-
-                        shaped = 0.0
-                        if pid_is_nil:
-                            # Nil bidder: penalise own tricks
-                            my_gain = next_tw[pid] - curr_tw[pid]
-                            if my_gain > 0:
-                                shaped += my_gain * _NIL_TAKE_TRICK_PENALTY
-                            # Reward non-nil teammate's tricks
-                            if not tm_is_nil:
-                                shaped += (next_tw[teammate_id] - curr_tw[teammate_id]) * _TRICK_REWARD
-                        else:
-                            # Normal bidder: overtrick-aware trick reward
-                            my_gain = next_tw[pid] - curr_tw[pid]
-                            tm_gain = (next_tw[teammate_id] - curr_tw[teammate_id]
-                                       if not tm_is_nil else 0)
-
-                            # Compute team bid (non-nil members only)
-                            bids = ts[0]['raw_obs']['bids']
-                            _is_nil = ts[0]['raw_obs'].get('is_nil', [False]*4)
-                            _is_bnil = ts[0]['raw_obs'].get('is_blind_nil', [False]*4)
-                            team_bid = 0
-                            for p_idx in [pid, teammate_id]:
-                                if not (_is_nil[p_idx] or _is_bnil[p_idx]):
-                                    b = bids[p_idx]
-                                    if b is not None:
-                                        team_bid += b
-
-                            team_tricks = curr_tw[pid] + curr_tw[teammate_id]
-                            if team_bid > 0 and team_tricks >= team_bid:
-                                # Already met bid — overtricks are harmful
-                                shaped += my_gain * (-0.5)
-                                shaped += tm_gain * (-0.5)
-                            else:
-                                # Still need tricks to make bid
-                                shaped += my_gain * _TRICK_REWARD
-                                shaped += tm_gain * _TRICK_REWARD
-
-                        # Bonus for breaking opponent nil
-                        for opp in opp_players:
-                            opp_nil = (
-                                ts[0]['raw_obs'].get('is_nil', [False]*4)[opp]
-                                or ts[0]['raw_obs'].get('is_blind_nil', [False]*4)[opp])
-                            if opp_nil and curr_tw[opp] == 0 and next_tw[opp] > 0:
-                                shaped += _NIL_BREAK_BONUS
-
-                        ts[2] = shaped
-
             # ---- Bid-quality shaped reward (cosine annealing to 0) ----
             import math
             if bid_shaping_decay_games > 0 and games_played < bid_shaping_decay_games:
@@ -473,7 +407,7 @@ class DRQNTrainer:
         learning_rate=0.00003,
         # DQN
         update_target_every=1000,
-        discount_factor=0.99,
+        discount_factor=1.0,
         # network
         embed_dim=256,
         lstm_hidden_size=256,

@@ -92,7 +92,7 @@
     "train_steps_per_sync": 16,
     "max_grad_norm": 40,
     "update_target_every": 1000,
-    "discount_factor": 0.99,
+    "discount_factor": 1.0,
     "save_interval": 30,
     "opponent_pool_size": 10,
     "opponent_update_every": 2000,
