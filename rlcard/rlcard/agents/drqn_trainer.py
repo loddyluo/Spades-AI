@@ -468,10 +468,13 @@ class DRQNTrainer:
         self.num_actions = env.num_actions
         self.state_shape = env.state_shape[0][0]
 
-        # Device
+        # Device — require GPU, fail fast if unavailable
         if cuda == 'auto':
-            self.training_device = torch.device(
-                'cuda:0' if torch.cuda.is_available() else 'cpu')
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    'CUDA is not available. Training requires a GPU. '
+                    'Check your PyTorch installation and GPU driver.')
+            self.training_device = torch.device('cuda:0')
         elif cuda:
             self.training_device = torch.device('cuda:' + str(cuda))
         else:
