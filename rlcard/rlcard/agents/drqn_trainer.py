@@ -28,7 +28,6 @@ Modelled after the DMC trainer in ``rlcard/agents/dmc_agent/trainer.py``.
 import logging
 import os
 import random
-import threading
 import time
 import timeit
 import traceback
@@ -109,7 +108,7 @@ def drqn_act(
             # ---- Bid-quality shaped reward (cosine annealing to 0) ----
             import math
             if bid_shaping_decay_games > 0 and games_played < bid_shaping_decay_games:
-                _BID_SHAPING_SCALE = 0.5 * (1 + math.cos(math.pi * games_played / bid_shaping_decay_games)) / 2
+                _BID_SHAPING_SCALE = 50.0 * (1 + math.cos(math.pi * games_played / bid_shaping_decay_games)) / 2
             else:
                 _BID_SHAPING_SCALE = 0.0
 
@@ -430,6 +429,8 @@ class DRQNTrainer:
         epsilon_decay_games=5000,
         # bid shaping schedule
         bid_shaping_decay_games=20000,
+        # replay ratio throttle
+        max_replay_ratio=4.0,
     ):
         self.env = env
         self.env_id = env_id
@@ -458,6 +459,7 @@ class DRQNTrainer:
         self.epsilon_start = epsilon_start
         self.epsilon_decay_games = epsilon_decay_games
         self.bid_shaping_decay_games = bid_shaping_decay_games
+        self.max_replay_ratio = max_replay_ratio
 
         # Handle "auto" for batch_size and num_actors
         self._auto_batch = (batch_size == 'auto')
@@ -647,7 +649,7 @@ class DRQNTrainer:
         target_qnet.eval()
 
         optimizer = torch.optim.Adam(learner_qnet.parameters(), lr=self.learning_rate)
-        mse_loss = nn.MSELoss(reduction='mean')
+        huber_loss = nn.SmoothL1Loss(reduction='mean', beta=10.0)
 
         memory = EpisodeMemory(
             max_episodes=self.max_episodes,
@@ -689,6 +691,7 @@ class DRQNTrainer:
 
         # ----- learner loop -----
         frames = 0
+        total_transitions_consumed = 0
         train_t = 0
         loss_buf = deque(maxlen=100)
         ep_count = 0
@@ -765,7 +768,7 @@ class DRQNTrainer:
             a = torch.from_numpy(action_batch).long().to(device)
             q_all, _ = learner_qnet(s)
             q = torch.gather(q_all, dim=-1, index=a.unsqueeze(-1)).squeeze(-1)
-            loss = mse_loss(q, targets)
+            loss = huber_loss(q, targets)
             loss.backward()
             nn.utils.clip_grad_norm_(learner_qnet.parameters(), self.max_grad_norm)
             optimizer.step()
@@ -791,22 +794,28 @@ class DRQNTrainer:
                     time.sleep(0.1)
                     continue
 
-                # Train multiple steps per sync (keep GPU busy)
+                # Train multiple steps per sync, but respect replay ratio
                 for _ in range(self.train_steps_per_sync):
                     if not memory.can_sample():
                         break
+                    # Replay ratio throttle
+                    if memory.total_transitions > 0:
+                        replay_ratio = total_transitions_consumed / memory.total_transitions
+                        if replay_ratio >= self.max_replay_ratio:
+                            break
                     _train_step()
                     frames += self.batch_size
+                    total_transitions_consumed += self.batch_size
 
                 # Sync weights to shared model
                 if train_t % self.sync_every == 0:
                     shared_qnet.load_state_dict(learner_qnet.state_dict())
 
-                # Update opponent pool periodically
-                if (ep_count > 0
-                        and ep_count % self.opponent_update_every == 0
-                        and ep_count != getattr(self, '_last_opp_update', -1)):
-                    self._last_opp_update = ep_count
+                # Update opponent pool periodically (milestone check — robust to ep_count jumps)
+                _next_opp_milestone = getattr(self, '_next_opp_milestone', self.opponent_update_every)
+                if ep_count >= _next_opp_milestone:
+                    # Next milestone: smallest multiple of opponent_update_every > ep_count
+                    self._next_opp_milestone = (ep_count // self.opponent_update_every + 1) * self.opponent_update_every
                     snapshot = {k: v.cpu().clone()
                                 for k, v in learner_qnet.state_dict().items()}
                     opponent_pool.append(snapshot)
@@ -824,11 +833,12 @@ class DRQNTrainer:
                     elapsed = now - start_time
                     fps = frames / max(elapsed, 1)
                     avg_loss = np.mean(loss_buf) if loss_buf else 0
+                    current_replay_ratio = total_transitions_consumed / max(memory.total_transitions, 1)
                     log.info(
                         'Frames %d | FPS %.1f | Train steps %d | Episodes %d | '
-                        'Avg loss %.6f | Memory %d eps',
+                        'Avg loss %.6f | Memory %d eps | Replay ratio %.1f',
                         frames, fps, train_t, ep_count, avg_loss,
-                        len(memory.episodes),
+                        len(memory.episodes), current_replay_ratio,
                     )
                     last_log_time = now
 
@@ -837,32 +847,24 @@ class DRQNTrainer:
                     self._save_checkpoint(learner_qnet, optimizer, frames, train_t)
                     last_save_time = now
 
-                # Periodic evaluation (async — does not block learner)
+                # Periodic evaluation (synchronous — ensures CSV reliability)
                 if frames - last_eval_frames >= self.eval_every_frames:
-                    eval_frames_snapshot = frames
-                    def _eval_bg(qnet, f, writer, csvfile):
-                        try:
-                            avg_diff, win_rate = self._evaluate(qnet)
-                            log.info(
-                                'EVAL @ %d frames: avg_score_diff=%.1f, '
-                                'win_rate_vs_random=%.2f',
-                                f, avg_diff, win_rate,
-                            )
-                            writer.writerow({
-                                'frames': f,
-                                'avg_score_diff': f'{avg_diff:.2f}',
-                                'win_rate_vs_random': f'{win_rate:.4f}',
-                            })
-                            csvfile.flush()
-                        except Exception:
-                            log.error('Eval thread failed')
-                            traceback.print_exc()
-                    threading.Thread(
-                        target=_eval_bg,
-                        args=(learner_qnet, eval_frames_snapshot,
-                              eval_writer, eval_csv_file),
-                        daemon=True,
-                    ).start()
+                    try:
+                        avg_diff, win_rate = self._evaluate(learner_qnet)
+                        log.info(
+                            'EVAL @ %d frames: avg_score_diff=%.1f, '
+                            'win_rate_vs_random=%.2f',
+                            frames, avg_diff, win_rate,
+                        )
+                        eval_writer.writerow({
+                            'frames': frames,
+                            'avg_score_diff': f'{avg_diff:.2f}',
+                            'win_rate_vs_random': f'{win_rate:.4f}',
+                        })
+                        eval_csv_file.flush()
+                    except Exception:
+                        log.error('Eval failed')
+                        traceback.print_exc()
                     last_eval_frames = frames
 
         except KeyboardInterrupt:

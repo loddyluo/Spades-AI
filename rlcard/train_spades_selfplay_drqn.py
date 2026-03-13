@@ -95,6 +95,8 @@ def train():
         epsilon_decay_games=dcfg.get('epsilon_decay_games', 5000),
         # bid shaping schedule
         bid_shaping_decay_games=dcfg.get('bid_shaping_decay_games', 20000),
+        # replay ratio throttle
+        max_replay_ratio=dcfg.get('max_replay_ratio', 4.0),
     )
 
     trainer.start()

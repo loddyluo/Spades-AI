@@ -37,7 +37,7 @@ class DRQNNetwork(nn.Module):
     Architecture::
 
         (batch, seq_len, state_dim)
-          -> BatchNorm1d(state_dim)           per-timestep normalisation
+          -> LayerNorm(state_dim)                per-timestep normalisation
           -> Linear(state_dim, embed_dim)     feature embedding
           -> ReLU
           -> LSTM(embed_dim, hidden_size)     temporal modelling
@@ -65,7 +65,7 @@ class DRQNNetwork(nn.Module):
         state_dim = int(np.prod(state_shape))
 
         # --- embedding ---
-        self.bn = nn.BatchNorm1d(state_dim)
+        self.ln = nn.LayerNorm(state_dim)
         self.embed = nn.Linear(state_dim, embed_dim)
 
         # --- LSTM ---
@@ -100,9 +100,9 @@ class DRQNNetwork(nn.Module):
 
         batch, seq_len, feat = obs_seq.shape
 
-        # BatchNorm expects (N, C) — flatten time into batch
-        x = obs_seq.reshape(batch * seq_len, feat)
-        x = self.bn(x)
+        # LayerNorm operates on (batch, seq_len, feat) directly — no reshape needed
+        x = self.ln(obs_seq)
+        x = x.reshape(batch * seq_len, feat)
         x = torch.relu(self.embed(x))
         x = x.reshape(batch, seq_len, self.embed_dim)
 
@@ -163,7 +163,7 @@ class DRQNEstimator:
             if len(p.data.shape) > 1:
                 nn.init.xavier_uniform_(p.data)
 
-        self.mse_loss = nn.MSELoss(reduction='mean')
+        self.huber_loss = nn.SmoothL1Loss(reduction='mean', beta=10.0)
         self.optimizer = torch.optim.Adam(self.qnet.parameters(), lr=learning_rate)
 
     # ---- inference --------------------------------------------------------
@@ -205,7 +205,7 @@ class DRQNEstimator:
         q_all, _ = self.qnet(s)  # (batch, num_actions)
         q = torch.gather(q_all, dim=-1, index=a.unsqueeze(-1)).squeeze(-1)
 
-        loss = self.mse_loss(q, y)
+        loss = self.huber_loss(q, y)
         loss.backward()
         self.optimizer.step()
         loss_val = loss.item()
