@@ -798,9 +798,11 @@ class DRQNTrainer:
                 for _ in range(self.train_steps_per_sync):
                     if not memory.can_sample():
                         break
-                    # Replay ratio throttle
-                    if memory.total_transitions > 0:
-                        replay_ratio = total_transitions_consumed / memory.total_transitions
+                    # Replay ratio throttle — use total_ever_added (monotonic) so the
+                    # ratio can fall below the cap again once new episodes arrive,
+                    # preventing permanent deadlock when the circular buffer is full.
+                    if memory.total_ever_added > 0:
+                        replay_ratio = total_transitions_consumed / memory.total_ever_added
                         if replay_ratio >= self.max_replay_ratio:
                             break
                     _train_step()
@@ -833,7 +835,7 @@ class DRQNTrainer:
                     elapsed = now - start_time
                     fps = frames / max(elapsed, 1)
                     avg_loss = np.mean(loss_buf) if loss_buf else 0
-                    current_replay_ratio = total_transitions_consumed / max(memory.total_transitions, 1)
+                    current_replay_ratio = total_transitions_consumed / max(memory.total_ever_added, 1)
                     log.info(
                         'Frames %d | FPS %.1f | Train steps %d | Episodes %d | '
                         'Avg loss %.6f | Memory %d eps | Replay ratio %.1f',

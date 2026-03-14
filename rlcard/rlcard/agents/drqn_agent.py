@@ -267,10 +267,16 @@ class EpisodeMemory:
         self.episodes = deque(maxlen=max_episodes)
         self._current_episode = []
         self._total_transitions = 0
+        self._total_ever_added = 0  # monotonically increasing; never decremented
 
     @property
     def total_transitions(self):
         return self._total_transitions
+
+    @property
+    def total_ever_added(self):
+        """Total transitions ever added (not decremented on eviction)."""
+        return self._total_ever_added
 
     def start_episode(self):
         """Call before feeding transitions of a new episode."""
@@ -294,6 +300,7 @@ class EpisodeMemory:
             self._total_transitions -= len(self.episodes[0])
         self.episodes.append(self._current_episode)
         self._total_transitions += len(self._current_episode)
+        self._total_ever_added += len(self._current_episode)
         self._current_episode = []
 
     def can_sample(self):
