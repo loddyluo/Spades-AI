@@ -9,3 +9,4 @@ build/
 .venv/
 .claw/
 venv/
+data/*.pt
