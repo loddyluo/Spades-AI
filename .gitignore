@@ -10,3 +10,4 @@ build/
 .claw/
 venv/
 data/*.pt
+data/*.pt
