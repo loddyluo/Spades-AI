@@ -71,6 +71,22 @@ python mlp/evaluate.py --checkpoint /tmp/mlp_test.pth --data_dir data --xs 24
 python mlp/evaluate_action_25.py --checkpoint ./result/mlp_test_3.pth --dataset data/spades_dd_x25_n1000.pt --max_samples 1000
 ```
 
+跨仓库模型评估（你这边的截断 MCTS + 合作者仓库的随机 / 启发式 / 训练模型）：
+
+```bash
+python evaluate/evaluate_model_matchups.py \
+    --seed 0 \
+    --num-games 10 \
+    --p0 our_mcts \
+    --p1 go_rule \
+    --p2 go_gomcts \
+    --p3 go_random \
+    --go-pv-checkpoint /path/to/collaborator_pv.pt \
+    --our-checkpoint ./result/mlp_test_3.pth
+```
+
+协作者仓库的模型和状态桥接代码放在 `evaluate/GO-MCTS/`，评估脚本会先把你这边的 `GameState` 转成对方仓库的状态格式，再统一回到本地对局引擎里执行。
+
 ## 3. 最核心接口（出牌程序）
 
 你如果只关心“怎么出牌”，看下面 3 个位置即可。

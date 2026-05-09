@@ -748,6 +748,39 @@ cd /Spades-AI && /root/miniconda3/bin/python strategy/truncated_mcts_strategy.py
 1. 若要做 2s/5s 预算调参，优先扫描 `simulations_per_action`、`exploration_constant`、`leaf_threshold` 三个参数。
 2. 如果想把策略用于交互式对局，再补一个从 `GameState` 直接接入 driver 的封装层。
 
+---
+
+### 2026-05-09｜会话19（跨仓库评估接口落地：GO-MCTS 适配层 + 统一评估脚本）
+
+#### 已确认事实
+- 已在 `evaluate/GO-MCTS/` 新增三层桥接代码，目标是把合作者仓库玩家接入你自己的 `strategy/spades_match_runner.py`：
+  - `models.py`：统一导出合作者模型/玩家并提供 checkpoint 加载函数；
+  - `bridge.py`：本仓库 `GameState/Card` 到 `spades_ai` 状态/牌的转换，外加 bid 合法化；
+  - `adapters.py`：把 `spades_ai` 玩家封装成你这边 `AIPlayer` 接口。
+- 已新增统一评估入口：`evaluate/evaluate_model_matchups.py`。
+  - 支持开头参数化设置：`num_games`、`seed`、每个座位 `p0~p3` 使用什么模型、我方 MCTS 各种阈值/模拟次数、GO-MCTS 参数与 checkpoint。
+  - 支持座位规格：`our_mcts`、`go_random`、`go_rule`、`go_argmax`、`go_gomcts`、`go_mlp_bid`。
+- 已完成“我方暂时无叫牌程序”的统一：
+  - `OurHandStrengthMCTSPlayer` 已接入 `strategy/hand_strength.py` 做叫牌，出牌继续用 `strategy/truncated_mcts_strategy.py`。
+- 已确认两仓库花色枚举数值顺序不同，不能按 `enum.value` 直接互转；已修正为按 `enum.name` 映射（已修正）。
+
+#### 未确认假设/风险
+- `go_argmax` / `go_gomcts` 运行需要 `transformers` 与对应 checkpoint；当前已做延迟导入以降低无关依赖对基础 smoke 的影响，但在真实模型评估环境里仍需保证依赖齐全。
+- 当前评估脚本默认是“固定座位”对局统计；若要做严格公平比较，后续建议加入 duplicate/轮换座位评估模式。
+- `hand_strength` 返回 0 时当前优先映射到 `nil`，该映射在你的规则语义下可用，但是否最优仍需实证对局验证。
+
+#### 关键命令与入口
+```bash
+cd /Spades-AI && /root/miniconda3/bin/python -m compileall -q evaluate strategy trick_taking
+cd /Spades-AI && /root/miniconda3/bin/python evaluate/test_evaluate_model_matchups.py
+cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py --num-games 1 --seed 3 --p0 our_mcts --p1 go_rule --p2 go_random --p3 go_rule --disable-blind-nil
+```
+
+#### 下一步行动
+1. 在 `evaluate/evaluate_model_matchups.py` 增加 duplicate 轮换模式（同种子双局换边），把座位偏置从统计中抵消。
+2. 接入你指定的真实合作者 checkpoint（`--go-pv-checkpoint` / `--go-bid-checkpoint`），跑 30~100 局基准并固定随机种子区间。
+3. 根据结果挑选一组常用对阵模板（如 `our_mcts vs go_rule/go_gomcts`），沉淀成可复用命令或脚本。
+
 
 
 
