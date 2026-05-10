@@ -12,3 +12,4 @@ venv/
 data/*.pt
 data/*.pt
 Spades_AI_GO-MCTS/
+logs/
