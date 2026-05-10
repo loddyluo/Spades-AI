@@ -781,6 +781,75 @@ cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py
 2. 接入你指定的真实合作者 checkpoint（`--go-pv-checkpoint` / `--go-bid-checkpoint`），跑 30~100 局基准并固定随机种子区间。
 3. 根据结果挑选一组常用对阵模板（如 `our_mcts vs go_rule/go_gomcts`），沉淀成可复用命令或脚本。
 
+---
+
+### 2026-05-10｜会话20（README 固化主评估命令 + blind_nil 语义收敛 + 单局复测）
+
+#### 已确认事实
+- 已将最重要的评估命令写入 `README.md`，用于固定跑本地截断 MCTS vs 合作者规则玩家的基准：
+  - `python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 100 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth`
+- 已把本地叫牌逻辑改成更符合语义的版本：
+  - 看到完整手牌后，`OurHandStrengthMCTSPlayer` 只返回 `nil` 或普通数值 bid；不再把 0 分支回退成 `blind_nil`。
+  - 评估入口在当前路径上默认关闭 `blind_nil`，避免“盲叫”和“看牌后的叫牌”混在一起。
+- 已重新跑单局计时测试，验证修改后叫牌阶段不再出现 `blind_nil`。
+
+#### 新知识 / 现场观察
+- `blind_nil` 的语义边界应该只属于“未看牌前”的盲叫窗口；一旦玩家已经通过 `hand_strength` 看到了自己的完整手牌，再返回 `blind_nil` 就不合理。
+- 这次修正后，叫牌阶段会直接落到 `bid_4 / bid_2` 这类常规 bid，说明语义已经收敛到“看牌后叫牌”模型。
+- 本轮复测里，总耗时仍主要被 `our_mcts` 的出牌搜索占用，说明叫牌语义修正没有改变性能瓶颈的位置。
+
+#### 关键命令与入口
+```bash
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_matchup_step_timing.py --seed 134 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth --our-simulations-per-action 50 --slow-step-threshold-sec 120 --disable-blind-nil
+```
+
+#### 验证结果
+- 单局计时测试通过，叫牌阶段输出为常规 bid，不再出现 `blind_nil`。
+- 本轮复测的总时长约 12.76s，慢点仍在 `our_mcts` 搜索步骤。
+
+#### 未确认假设 / 风险
+- 当前评估入口是“默认禁用 blind_nil”的语义化路径；如果未来要恢复盲叫，需要重新设计首次叫牌窗口与常规叫牌窗口的边界。
+- `our_mcts` 的慢点还没有拆分到 exact solver / model forward / Python 树搜索三部分，后续若继续提速仍需要更细粒度 profiling。
+
+#### 下一步行动
+1. 若继续做评估，优先复用 README 中固化的 100 局主命令。
+2. 若继续做性能分析，优先把 `our_mcts` 的耗时拆成求解器、模型前向和树搜索三段。
+3. 若后续重新开启 `blind_nil`，先把规则语义写清楚，再改代码。 
+
+---
+
+### 2026-05-10｜会话21（评估 trace 日志落盘 + 并行 worker 结论固化）
+
+#### 已确认事实
+- 已在 `evaluate/evaluate_model_matchups.py` 新增 `--trace-log-dir`，评估时会把每局 trace 追加到单个文本文件中，默认写到 `logs/` 风格目录。
+- 每局 trace 会记录：
+  - 四个座位分别是谁，以及各自初始牌；
+  - 全部叫牌；
+  - 52 行出牌数据。
+- 对于 `our_mcts` 的出牌行，会记录全部合法动作及其 q 值；当处于精确求解阈值时，q 值来自 `solve_with_q`，否则来自 MCTS 根节点估计。
+- 已补测试 `tests/test_matchup_trace_logging.py`，验证 trace 文件存在且包含 players / bidding / play / q-values / 52 行出牌。
+- 并行评估在本机 CPU 上的真实结论是：单局约 5.95s，10 局串行约 115.25s；使用 25 worker + Torch 线程限制为 1 后，10 局约 42.76s，是当前测试过的最快配置。
+
+#### 新知识 / 现场观察
+- `our_mcts` 的详细日志不需要重新跑搜索：在 player 层把最后一次决策信息缓存下来，runner 直接串起来即可。
+- 评估日志默认开启后，已有并行回归仍能通过，说明 trace 采集没有破坏结果一致性。
+- 25 个 worker 并没有把速度线性提升到 25x，说明仍存在 CPU 竞争/共享资源瓶颈，但已经比串行明显更快。
+
+#### 关键命令与入口
+```bash
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_matchup_trace_logging.py
+cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 10 --num-workers 25 --torch-num-threads 1 --torch-num-interop-threads 1 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth --our-simulations-per-action 50
+```
+
+#### 未确认假设 / 风险
+- trace 文件会比较大，后续如果跑 100 局或更大规模基准，可能需要按游戏拆文件或加压缩输出。
+- 当前 trace 主要服务于 our_mcts；如果后续想给其他 player 也加细粒度日志，需要再扩展 player wrapper。
+
+#### 下一步行动
+1. 若要正式做分析，优先用 `--trace-log-dir logs` 跑一小批样本。
+2. 若 trace 文件过大，再考虑按局切分或改成 JSONL。
+3. 若还想继续提速，下一步应拆 our_mcts 内部耗时，而不是继续加 worker 数。
+
 
 
 

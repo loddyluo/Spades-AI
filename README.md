@@ -87,6 +87,21 @@ python evaluate/evaluate_model_matchups.py \
 
 协作者仓库的模型和状态桥接代码放在 `evaluate/GO-MCTS/`，评估脚本会先把你这边的 `GameState` 转成对方仓库的状态格式，再统一回到本地对局引擎里执行。
 
+如果你只想跑当前最重要、最稳定的评估组合，直接用这一条：
+
+```bash
+python evaluate/evaluate_model_matchups.py \
+    --seed 3786 \
+    --num-games 100 \
+    --p0 our_mcts \
+    --p1 go_rule \
+    --p2 our_mcts \
+    --p3 go_rule \
+    --our-checkpoint mlp_test_3.pth
+```
+
+这条命令用于评估本地截断 MCTS 与协作者规则玩家的对抗表现。当前评估路径会按语义关闭 `blind_nil`，避免把“看牌后”的叫牌与“盲叫”混在一起；本地 `OurHandStrengthMCTSPlayer` 也只会在 `nil` 或普通数值叫牌之间做选择。
+
 ## 3. 最核心接口（出牌程序）
 
 你如果只关心“怎么出牌”，看下面 3 个位置即可。
@@ -224,6 +239,9 @@ python evaluate/evaluate_model_matchups.py \
 - `data/`
     - 训练数据构造、保存、加载和生成脚本。
 
+- `evaluate/`
+    - 测试与评估打牌能力
+
 - `tests/`
     - 回归测试、求解器正确性测试、MCTS测试、数据质量检查脚本。
 
@@ -246,7 +264,7 @@ python evaluate/evaluate_model_matchups.py \
 
 ### 7.1 为什么叫牌里有时同一玩家可能连续出现？
 
-如果启用了 `blind_nil/pass` 机制，玩家会先走盲叫分支，再进入常规叫牌。当前 runner 默认关闭这两个选项，改成更直观的一人一次叫牌。
+如果启用了 `blind_nil/pass` 机制，玩家会先走盲叫分支，再进入常规叫牌。当前评估入口默认关闭 `blind_nil`，改成更直观的一人一次叫牌；这也是上面那条主评估命令推荐的原因。
 
 ### 7.2 出牌程序到底吃什么输入？
 

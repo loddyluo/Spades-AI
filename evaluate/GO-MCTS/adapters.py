@@ -112,6 +112,8 @@ class OurHandStrengthMCTSPlayer(AIPlayer):
         self.strategy = TruncatedMCTSStrategy(config)
         self.position = -1
         self.hand: list[LocalCard] = []
+        self.last_bid_info: dict[str, Any] | None = None
+        self.last_play_info: dict[str, Any] | None = None
 
     def start_game(self, position: int, hand: list[LocalCard], num_players: int) -> None:
         """Store the local seat and starting hand.
@@ -126,6 +128,8 @@ class OurHandStrengthMCTSPlayer(AIPlayer):
         """
         self.position = position
         self.hand = list(hand)
+        self.last_bid_info = None
+        self.last_play_info = None
 
     def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
         """Use the hand-strength heuristic to choose a legal bid.
@@ -147,12 +151,19 @@ class OurHandStrengthMCTSPlayer(AIPlayer):
         # `_hand_strength` expects cards as (suit_char, rank_char) tuples.
         hand_for_strength = [(card.suit.short, card.rank.short) for card in hand]
         bid, _raw_strength = _hand_strength(hand_for_strength)
-        if bid == 0:
+        chosen_bid = bid
+        if chosen_bid == 0:
             if "nil" in legal_bids:
-                return "nil"
-            if "blind_nil" in legal_bids:
-                return "blind_nil"
-        return normalize_bid_for_legal_options(bid, legal_bids)
+                chosen_bid = "nil"
+        normalized_bid = normalize_bid_for_legal_options(chosen_bid, legal_bids)
+        self.last_bid_info = {
+            "hand": [str(card) for card in hand],
+            "legal_bids": list(legal_bids),
+            "raw_strength": float(_raw_strength),
+            "raw_bid": bid,
+            "chosen_bid": normalized_bid,
+        }
+        return normalized_bid
 
     def play_card(self, legal_cards: list[LocalCard], state_view: dict) -> LocalCard:
         """Choose a card with truncated MCTS and return a legal local card.
@@ -167,7 +178,19 @@ class OurHandStrengthMCTSPlayer(AIPlayer):
         state = state_view.get("state")
         if state is None:
             raise ValueError("OurHandStrengthMCTSPlayer.play_card requires state_view['state']")
-        action = self.strategy.choose_action(state)
+        action_info = self.strategy.choose_action_with_info(state)
+        action = action_info.get("best_action")
+        self.last_play_info = {
+            "mode": action_info.get("mode"),
+            "root_team": action_info.get("root_team"),
+            "best_value": action_info.get("best_value"),
+            "action_scores": [
+                {"action": str(item["action"]), "value": float(item["value"])}
+                for item in action_info.get("action_scores", [])
+            ],
+            "chosen_action": str(action) if action is not None else None,
+            "legal_cards": [str(card) for card in legal_cards],
+        }
         if action is None:
             if not legal_cards:
                 raise ValueError("No legal cards available")

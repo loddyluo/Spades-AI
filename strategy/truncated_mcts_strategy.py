@@ -63,6 +63,7 @@ class TruncatedMCTSConfig:
     policy_temperature: float = 1.0
     value_scale: float = 25.0
     checkpoint_path: str | None = None
+    device: str = "cpu"
 
 
 @dataclass
@@ -103,6 +104,12 @@ class TruncatedMCTSStrategy:
         self.rules = SpadesRules()
         self.exact_solver = ExactDoubleDummySolver()
         self.encoder = SpadesFeatureEncoder()
+        self._leaf_value_cache: dict[int, float] = {}
+        self._policy_priors_cache: dict[int, dict[int, float]] = {}
+        # Diagnostics counters for performance analysis
+        self._model_calls: int = 0
+        self._policy_model_calls: int = 0
+        self._exact_calls: int = 0
         self.model = self._load_model(self.config.checkpoint_path)
 
     def _load_model(self, checkpoint_path: str | None) -> DoubleDummyMLP | None:
@@ -117,8 +124,19 @@ class TruncatedMCTSStrategy:
         if not checkpoint_path:
             return None
         model = DoubleDummyMLP(input_dim=self.encoder.total_dim)
-        model.load(checkpoint_path)
+        model.load(checkpoint_path, device=self.config.device)
         return model
+
+    def _state_cache_key(self, state: GameState) -> int:
+        """生成用于缓存的状态键。
+
+        输入:
+        - state: 当前完整牌局状态。
+
+        输出:
+        - int: 用于叶子估值/先验缓存的稳定键。
+        """
+        return self.exact_solver._state_hash(state) ^ self.exact_solver._tt_verify(state)
 
     def choose_action(self, state: GameState) -> Card | None:
         """选择当前状态的最优动作。"""
@@ -131,6 +149,7 @@ class TruncatedMCTSStrategy:
 
         # 30张及以下直接用精确求解器。
         if remaining_cards <= self.config.exact_threshold:
+            self._exact_calls += 1
             result = self.exact_solver.solve_with_q(state)
             best_action = result["best_action"]
             if best_action is not None:
@@ -322,11 +341,19 @@ class TruncatedMCTSStrategy:
         if not legal_actions:
             return {}
 
+        cache_key = self._state_cache_key(state)
+        cached = self._policy_priors_cache.get(cache_key)
+        if cached is not None:
+            return dict(cached)
+
         if self.model is None:
             prob = 1.0 / len(legal_actions)
-            return {action.card_id: prob for action in legal_actions}
+            priors = {action.card_id: prob for action in legal_actions}
+            self._policy_priors_cache[cache_key] = dict(priors)
+            return priors
 
         logits = self.model.predict_policy_logits(self.encoder.encode(state, state.turn))
+        self._policy_model_calls += 1
         if logits.ndim > 1:
             logits = logits[0]
 
@@ -349,23 +376,48 @@ class TruncatedMCTSStrategy:
         priors: dict[int, float] = {}
         for (action, _), exp_value in zip(action_logits, exp_values):
             priors[action.card_id] = exp_value / total
+        self._policy_priors_cache[cache_key] = dict(priors)
         return priors
 
     def _leaf_value(self, state: GameState) -> float:
         """在 leaf_threshold 处使用 MLP 估值，并换算到队伍 0 视角。"""
+        cache_key = self._state_cache_key(state)
+        cached = self._leaf_value_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         if self._is_terminal(state):
-            return self._terminal_value(state)
+            value = self._terminal_value(state)
+            self._leaf_value_cache[cache_key] = value
+            return value
 
         if self.model is None:
             # 没有模型时退化成轻量启发式：用当前已赢墩差近似。
             team0_tricks = state.tricks_won[0] + state.tricks_won[2]
             team1_tricks = state.tricks_won[1] + state.tricks_won[3]
-            return float(team0_tricks - team1_tricks)
+            value = float(team0_tricks - team1_tricks)
+            self._leaf_value_cache[cache_key] = value
+            return value
 
         feature = self.encoder.encode(state, state.turn)
+        self._model_calls += 1
         pred_value_view_scaled = float(self.model.predict(feature))
         pred_value_view = pred_value_view_scaled * self.config.value_scale
-        return pred_value_view if self._current_team(state) == 0 else -pred_value_view
+        value = pred_value_view if self._current_team(state) == 0 else -pred_value_view
+        self._leaf_value_cache[cache_key] = value
+        return value
+
+    def get_diagnostics(self) -> dict[str, int]:
+        """Return simple diagnostics counters for this strategy instance.
+
+        Output:
+        - dict with keys: model_calls, policy_model_calls, exact_calls
+        """
+        return {
+            "model_calls": int(self._model_calls),
+            "policy_model_calls": int(self._policy_model_calls),
+            "exact_calls": int(self._exact_calls),
+        }
 
     def _terminal_value(self, state: GameState) -> float:
         """终局价值（队伍 0 视角）。"""

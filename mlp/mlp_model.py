@@ -24,8 +24,8 @@
     输入: features
     输出: numpy 数组或 logits
 
-- save(path) / load(path)
-    输入/输出: 保存/加载模型参数到文件
+- save(path) / load(path, device="cpu")
+    输入/输出: 保存/加载模型参数到文件；load 可指定加载到的设备
 """
 
 from __future__ import annotations
@@ -76,6 +76,8 @@ class DoubleDummyMLP(nn.Module):
             x = torch.from_numpy(x).float()
         if x.dim() == 1:
             x = x.unsqueeze(0)
+        device = next(self.parameters()).device
+        x = x.to(device)
         hidden = self.backbone(x)
         value = self.value_head(hidden)
         policy_logits = self.policy_head(hidden)
@@ -104,6 +106,7 @@ class DoubleDummyMLP(nn.Module):
     def save(self, path: str) -> None:
         torch.save(self.state_dict(), path)
 
-    def load(self, path: str) -> None:
-        self.load_state_dict(torch.load(path, map_location="cpu"))
+    def load(self, path: str, device: str | torch.device = "cpu") -> None:
+        self.load_state_dict(torch.load(path, map_location=device))
+        self.to(device)
         self.eval()
