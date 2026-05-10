@@ -55,9 +55,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--xs", type=int, nargs="+", default=list(SUPPORTED_BUCKETS), help="训练所用的剩余牌数桶")
     parser.add_argument("--data_dir", type=str, default="data", help="数据目录")
-    parser.add_argument("--epochs", type=int, default=1000, help="训练轮数")
+    parser.add_argument("--epochs", type=int, default=500, help="训练轮数")
     parser.add_argument("--batch_size", type=int, default=1024, help="batch size")
-    parser.add_argument("--lr", type=float, default=2e-6, help="学习率")
+    parser.add_argument("--lr", type=float, default=1e-5, help="学习率")
     parser.add_argument("--value_weight", type=float, default=1.0, help="value loss 权重")
     parser.add_argument("--policy_weight", type=float, default=0.0, help="policy loss 权重")
     parser.add_argument("--policy_temperature", type=float, default=0.3, help="policy 监督温度")
@@ -89,14 +89,16 @@ def main() -> None:
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    X_t = torch.from_numpy(features).to(device)
-    value_t = torch.from_numpy(value_targets).to(device)
-    policy_target_t = torch.from_numpy(policy_targets).to(device)
-    policy_mask_t = torch.from_numpy(policy_masks).to(device)
-    best_action_t = torch.from_numpy(best_action_ids).to(device)
+    # Keep full datasets on CPU and move only minibatches to `device` to avoid OOM
+    X_t = torch.from_numpy(features)
+    value_t = torch.from_numpy(value_targets)
+    policy_target_t = torch.from_numpy(policy_targets)
+    policy_mask_t = torch.from_numpy(policy_masks)
+    best_action_t = torch.from_numpy(best_action_ids)
 
     for epoch in range(args.epochs):
-        permutation = torch.randperm(len(X_t), device=device)
+        # Permute on CPU tensors
+        permutation = torch.randperm(len(X_t))
         X_t = X_t[permutation]
         value_t = value_t[permutation]
         policy_target_t = policy_target_t[permutation]
@@ -110,10 +112,11 @@ def main() -> None:
         batches = 0
         for start in range(0, len(X_t), args.batch_size):
             end = min(start + args.batch_size, len(X_t))
-            batch_x = X_t[start:end]
-            batch_value = value_t[start:end]
-            batch_policy_target = policy_target_t[start:end]
-            batch_policy_mask = policy_mask_t[start:end]
+            # Move minibatch to device
+            batch_x = X_t[start:end].to(device)
+            batch_value = value_t[start:end].to(device)
+            batch_policy_target = policy_target_t[start:end].to(device)
+            batch_policy_mask = policy_mask_t[start:end].to(device)
 
             optimizer.zero_grad()
             outputs = model(batch_x)
@@ -135,10 +138,35 @@ def main() -> None:
         avg_total_loss = running_total_loss / max(batches, 1)
         model.eval()
         with torch.no_grad():
-            eval_outputs = model(X_t)
-            eval_value_loss = criterion(eval_outputs["value"], value_t).item()
-            eval_policy_loss = masked_policy_loss(eval_outputs["policy_logits"], policy_target_t, policy_mask_t).item()
-            eval_policy_acc = masked_policy_accuracy(eval_outputs["policy_logits"], policy_mask_t, best_action_t).item()
+            # Evaluate in minibatches to avoid moving full dataset to GPU
+            eval_value_loss = 0.0
+            eval_policy_loss = 0.0
+            eval_policy_acc = 0.0
+            eval_batches = 0
+            eval_batch_size = args.batch_size
+            for estart in range(0, len(X_t), eval_batch_size):
+                eend = min(estart + eval_batch_size, len(X_t))
+                ex = X_t[estart:eend].to(device)
+                ev = value_t[estart:eend].to(device)
+                ept = policy_target_t[estart:eend].to(device)
+                epm = policy_mask_t[estart:eend].to(device)
+                eba = best_action_t[estart:eend].to(device)
+                eout = model(ex)
+                eval_value_loss += criterion(eout["value"], ev).item() * (eend - estart)
+                eval_policy_loss += masked_policy_loss(eout["policy_logits"], ept, epm).item() * (eend - estart)
+                eval_policy_acc += masked_policy_accuracy(eout["policy_logits"], epm, eba).item() * (eend - estart)
+                eval_batches += (eend - estart)
+            if eval_batches > 0:
+                eval_value_loss = eval_value_loss / eval_batches
+                eval_policy_loss = eval_policy_loss / eval_batches
+                eval_policy_acc = eval_policy_acc / eval_batches
+
+        # free any cached GPU memory to reduce fragmentation
+        if device == "cuda":
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         print(
             f"Epoch {epoch + 1:03d}/{args.epochs} | "

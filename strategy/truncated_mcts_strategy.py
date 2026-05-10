@@ -49,20 +49,28 @@ from trick_taking.card import Card, Suit
 from trick_taking.game_state import GameState
 from trick_taking.games.spades import SpadesRules
 from trick_taking.solvers.exact_double_dummy import ExactDoubleDummySolver
+from trick_taking.solvers.exact_double_dummy_cpp_opt1 import ExactDoubleDummyCppOpt1Solver
 from trick_taking.utils.feature_encoder import SpadesFeatureEncoder
+from trick_taking.card import _STANDARD_CARDS as STANDARD_52
+import random
+import copy
 
 
 @dataclass
 class TruncatedMCTSConfig:
     """截断 MCTS 的参数配置。"""
 
-    exact_threshold: int = 30
+    exact_threshold: int = 24
     leaf_threshold: int = 24
     simulations_per_action: int = 5
     exploration_constant: float = 1.5
     policy_temperature: float = 1.0
     value_scale: float = 25.0
     checkpoint_path: str | None = None
+    # Determinization options: when enabled, opponents' hands are sampled from
+    # the unseen card pool instead of using their private ground-truth hands.
+    use_determinization: bool = True
+    determinization_count: int = 8
     device: str = "cpu"
 
 
@@ -102,7 +110,10 @@ class TruncatedMCTSStrategy:
     def __init__(self, config: TruncatedMCTSConfig | None = None) -> None:
         self.config = config or TruncatedMCTSConfig()
         self.rules = SpadesRules()
-        self.exact_solver = ExactDoubleDummySolver()
+        # Prefer C++ opt1 exact solver for speed; fall back to Python reference
+        # only when native compilation/loading is unavailable.
+        cpp_solver = ExactDoubleDummyCppOpt1Solver()
+        self.exact_solver = cpp_solver if cpp_solver.native_available else ExactDoubleDummySolver()
         self.encoder = SpadesFeatureEncoder()
         self._leaf_value_cache: dict[int, float] = {}
         self._policy_priors_cache: dict[int, dict[int, float]] = {}
@@ -147,10 +158,13 @@ class TruncatedMCTSStrategy:
         if len(legal_actions) == 1:
             return legal_actions[0]
 
-        # 30张及以下直接用精确求解器。
+        # 24张及以下直接用精确求解器。若启用 determinization，则对对手手牌做采样并汇总结果。
         if remaining_cards <= self.config.exact_threshold:
             self._exact_calls += 1
-            result = self.exact_solver.solve_with_q(state)
+            if self.config.use_determinization:
+                result = self._solve_with_determinization(state)
+            else:
+                result = self.exact_solver.solve_with_q(state)
             best_action = result["best_action"]
             if best_action is not None:
                 return best_action
@@ -182,7 +196,10 @@ class TruncatedMCTSStrategy:
             }
 
         if remaining_cards <= self.config.exact_threshold:
-            exact_result = self.exact_solver.solve_with_q(state)
+            if self.config.use_determinization:
+                exact_result = self._solve_with_determinization(state)
+            else:
+                exact_result = self.exact_solver.solve_with_q(state)
             action_scores = [
                 {"action": action, "value": float(value)}
                 for action, value in exact_result["action_q_values"].items()
@@ -204,7 +221,7 @@ class TruncatedMCTSStrategy:
             child_state = self._apply_action(state, action)
             child_node = self._build_root_child(child_state, action)
             for _ in range(self.config.simulations_per_action):
-                self._run_simulation(child_node)
+                self._run_simulation(child_node, root_observer_id=child_state.turn)
             root_scores.append(
                 {
                     "action": action,
@@ -254,24 +271,39 @@ class TruncatedMCTSStrategy:
         node.unexpanded_actions.sort(key=lambda card: node.action_priors.get(card.card_id, 0.0), reverse=True)
         return node
 
-    def _run_simulation(self, root_node: SearchNode) -> float:
-        """从给定节点向下做一次 PUCT 搜索，并回传队伍 0 视角价值。"""
+    def _run_simulation(self, root_node: SearchNode, root_observer_id: int | None = None) -> float:
+        """从给定节点向下做一次 PUCT 搜索，并回传队伍 0 视角价值。
+
+        If determinization is enabled, this simulation will operate on a
+        simulation-local copy of the state with opponents' hands sampled
+        consistent with the public information for the given observer.
+        """
         path: list[SearchNode] = [root_node]
         node = root_node
 
+        # Simulation-local state that follows the `node` as we advance.
+        sim_state = copy.deepcopy(node.state)
+        if self.config.use_determinization and root_observer_id is not None:
+            self._determinize_state(sim_state, observer_id=root_observer_id)
+            # `node` may have been created from a full-information state.
+            # Rebuild its cached action list/prior distribution so they match
+            # the determinized simulation state instead of the original state.
+            node.unexpanded_actions = []
+            node.action_priors = {}
+
         while True:
-            if self._is_terminal(node.state):
-                value = self._terminal_value(node.state)
+            if self._is_terminal(sim_state):
+                value = self._terminal_value(sim_state)
                 break
 
-            remaining_cards = self._remaining_cards(node.state)
+            remaining_cards = self._remaining_cards(sim_state)
             if remaining_cards <= self.config.leaf_threshold:
-                value = self._leaf_value(node.state)
+                value = self._leaf_value(sim_state)
                 break
 
             if not node.unexpanded_actions:
-                node.unexpanded_actions = self._legal_actions(node.state)
-                node.action_priors = self._policy_priors(node.state, node.unexpanded_actions)
+                node.unexpanded_actions = self._legal_actions(sim_state)
+                node.action_priors = self._policy_priors(sim_state, node.unexpanded_actions)
                 node.unexpanded_actions.sort(
                     key=lambda card: node.action_priors.get(card.card_id, 0.0),
                     reverse=True,
@@ -279,7 +311,7 @@ class TruncatedMCTSStrategy:
 
             if node.unexpanded_actions:
                 action = node.unexpanded_actions.pop(0)
-                child_state = self._apply_action(node.state, action)
+                child_state = self._apply_action(sim_state, action)
                 child = SearchNode(
                     state=child_state,
                     parent=node,
@@ -295,20 +327,120 @@ class TruncatedMCTSStrategy:
                 node.children[action] = child
                 path.append(child)
                 node = child
+                # advance sim_state to the child state's copy
+                sim_state = child_state
                 continue
 
             child = self._select_child_puct(node)
             if child is None:
-                value = self._leaf_value(node.state)
+                value = self._leaf_value(sim_state)
                 break
 
             path.append(child)
             node = child
+            # advance sim_state to match the chosen child
+            sim_state = node.state
 
         for visited_node in path:
             visited_node.visits += 1
             visited_node.value_sum += value
         return value
+
+    # -------------------- Determinization helpers --------------------
+    def _determinize_state(self, state: GameState, observer_id: int, rng: random.Random | None = None) -> None:
+        """Replace opponents' hands with a random deal consistent with public info.
+
+        Modifies `state` in-place. Preserves observer's hand, played cards,
+        table cards, trick_history, and hand sizes; fills other hands by
+        randomly assigning from unseen cards.
+        """
+        if rng is None:
+            rng = random.Random()
+
+        # Collect used card ids: observer's hand + played cards + table + history
+        used_ids: set[int] = set()
+        for c in state.hands[observer_id]:
+            used_ids.add(c.card_id)
+
+        bitset = getattr(state, "played_bitset", 0)
+        for cid in range(52):
+            if bitset & (1 << cid):
+                used_ids.add(cid)
+
+        for pair in getattr(state, "table_cards", []):
+            # table_cards is list[tuple[player_id, Card]]
+            used_ids.add(pair[1].card_id)
+
+        for record in getattr(state, "trick_history", []):
+            for _, c in getattr(record, "cards", []):
+                used_ids.add(c.card_id)
+
+        # Pool of remaining cards
+        pool = [c for c in STANDARD_52 if c.card_id not in used_ids]
+        rng.shuffle(pool)
+
+        # Assign to opponents preserving hand sizes
+        indices = [pid for pid in range(state.num_players) if pid != observer_id]
+        counts = {pid: len(state.hands[pid]) for pid in indices}
+
+        pos = 0
+        for pid in indices:
+            n = counts[pid]
+            assigned = pool[pos: pos + n]
+            pos += n
+            state.hands[pid] = list(assigned)
+
+        # Recompute hand_bitsets if present
+        if hasattr(state, "hand_bitsets"):
+            for pid in range(state.num_players):
+                bit = 0
+                for c in state.hands[pid]:
+                    bit |= (1 << c.card_id)
+                state.hand_bitsets[pid] = bit
+
+    def _solve_with_determinization(self, state: GameState) -> dict[str, Any]:
+        """Approximate solve_with_q by averaging results across determinized samples."""
+        agg_q: dict[int, float] = {}
+        agg_value = 0.0
+        counts = 0
+
+        rng = random.Random()
+        id_to_card = {c.card_id: c for c in STANDARD_52}
+
+        for _ in range(self.config.determinization_count):
+            sim_state = copy.deepcopy(state)
+            observer = state.turn
+            self._determinize_state(sim_state, observer, rng)
+            res = self.exact_solver.solve_with_q(sim_state)
+            counts += 1
+            agg_value += float(res.get("value", 0.0))
+            for action, q in res.get("action_q_values", {}).items():
+                aid = action.card_id
+                agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+
+        # Average Qs
+        for k in list(agg_q.keys()):
+            agg_q[k] = agg_q[k] / max(1, counts)
+
+        # Reconstruct action -> q mapping using Card objects
+        action_q_values: dict[Card, float] = {}
+        for aid, q in agg_q.items():
+            if aid in id_to_card:
+                action_q_values[id_to_card[aid]] = q
+
+        avg_value = agg_value / max(1, counts)
+
+        # Choose best action by averaged Q for root team
+        root_team = state.teams[state.turn]
+        if action_q_values:
+            if root_team == 0:
+                best_action = max(action_q_values.items(), key=lambda it: it[1])[0]
+            else:
+                best_action = min(action_q_values.items(), key=lambda it: it[1])[0]
+        else:
+            best_action = None
+
+        return {"value": avg_value, "best_action": best_action, "action_q_values": action_q_values}
 
     def _select_child_puct(self, node: SearchNode) -> SearchNode | None:
         """按 PUCT 选择最值得继续探索的子节点。"""
@@ -334,9 +466,18 @@ class TruncatedMCTSStrategy:
         return best_child
 
     def _policy_priors(self, state: GameState, legal_actions: list[Card]) -> dict[int, float]:
-        """从 policy head 提取合法动作先验概率。
+        """返回合法动作的均匀先验概率。
 
-        若没有加载模型，则返回均匀分布。
+        输入:
+        - state: 当前状态（仅用于缓存键，不触发模型前向）
+        - legal_actions: 当前合法动作列表
+
+        输出:
+        - dict[int, float]: `card_id -> prior_prob`，所有合法动作等概率
+
+        说明:
+        - 为避免在全局阶段误用仅针对残局训练的 policy head，这里固定
+          使用均匀先验，不调用模型。
         """
         if not legal_actions:
             return {}
@@ -346,36 +487,8 @@ class TruncatedMCTSStrategy:
         if cached is not None:
             return dict(cached)
 
-        if self.model is None:
-            prob = 1.0 / len(legal_actions)
-            priors = {action.card_id: prob for action in legal_actions}
-            self._policy_priors_cache[cache_key] = dict(priors)
-            return priors
-
-        logits = self.model.predict_policy_logits(self.encoder.encode(state, state.turn))
-        self._policy_model_calls += 1
-        if logits.ndim > 1:
-            logits = logits[0]
-
-        action_logits = []
-        for action in legal_actions:
-            action_logits.append((action, float(logits[action.card_id])))
-
-        if self.config.policy_temperature <= 1e-8:
-            best_action = max(action_logits, key=lambda item: item[1])[0]
-            return {action.card_id: (1.0 if action is best_action else 0.0) for action, _ in action_logits}
-
-        scaled = [value / self.config.policy_temperature for _, value in action_logits]
-        max_logit = max(scaled)
-        exp_values = [math.exp(value - max_logit) for value in scaled]
-        total = sum(exp_values)
-        if total <= 0.0:
-            prob = 1.0 / len(legal_actions)
-            return {action.card_id: prob for action in legal_actions}
-
-        priors: dict[int, float] = {}
-        for (action, _), exp_value in zip(action_logits, exp_values):
-            priors[action.card_id] = exp_value / total
+        prob = 1.0 / len(legal_actions)
+        priors: dict[int, float] = {action.card_id: prob for action in legal_actions}
         self._policy_priors_cache[cache_key] = dict(priors)
         return priors
 

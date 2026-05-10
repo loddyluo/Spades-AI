@@ -37,7 +37,7 @@
 
 ```bash
 cd /Spades-AI
-python strategy/spades_match_runner.py --seed 0 --checkpoint ./result/mlp_test_3.pth --exact_threshold 30 --leaf_threshold 24 --simulations_per_action 5 --num_eval_games 10
+python strategy/spades_match_runner.py --seed 0 --checkpoint ./result/mlp_test_3.pth --exact_threshold 24 --leaf_threshold 24 --simulations_per_action 5 --num_eval_games 10
 ```
 
 这个命令会做两件事：
@@ -77,12 +77,15 @@ python mlp/evaluate_action_25.py --checkpoint ./result/mlp_test_3.pth --dataset 
 python evaluate/evaluate_model_matchups.py \
     --seed 0 \
     --num-games 10 \
+    --symmetric-seat-swap 1 \
     --p0 our_mcts \
     --p1 go_rule \
     --p2 go_gomcts \
     --p3 go_random \
     --go-pv-checkpoint /path/to/collaborator_pv.pt \
-    --our-checkpoint ./result/mlp_test_3.pth
+    --our-checkpoint ./result/mlp_test_3.pth \
+    --our-exact-threshold 24 \
+    --our-number-of-exact-solvers 50
 ```
 
 协作者仓库的模型和状态桥接代码放在 `evaluate/GO-MCTS/`，评估脚本会先把你这边的 `GameState` 转成对方仓库的状态格式，再统一回到本地对局引擎里执行。
@@ -90,10 +93,12 @@ python evaluate/evaluate_model_matchups.py \
 如果你只想跑当前最稳定的评估组合，直接用这一条：
 
 ```bash
-python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 100 --num-workers 25 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth
+python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 100 --num-workers 25 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth --our-exact-threshold 24 --our-number-of-exact-solvers 50
 ```
 
 这条命令用于评估本地截断 MCTS 与协作者规则玩家的对抗表现。当前评估路径会按语义关闭 `blind_nil`，避免把“看牌后”的叫牌与“盲叫”混在一起；本地 `OurHandStrengthMCTSPlayer` 也只会在 `nil` 或普通数值叫牌之间做选择。
+
+如果你想更接近“真实打牌能力”而不是“看牌运”，`evaluate/evaluate_model_matchups.py` 现在默认会对每个 base seed 跑两局对称对照：第一局使用原始座位顺序，第二局交换奇偶座位组（`0,2` 与 `1,3` 对调）。可以通过 `--symmetric-seat-swap 0` 关闭这一对称双跑。
 
 ## 3. 最核心接口（出牌程序）
 

@@ -3,7 +3,7 @@
 File purpose:
 - Run exactly one full Spades game using the same seat-spec machinery as
   `evaluate/evaluate_model_matchups.py`.
-- Print the elapsed time of every bid and every play step so the slowest
+        - Print the elapsed time of every bid and every play step so the slowest
   action can be identified.
 - Summarize the slowest step, the cumulative per-player time, and whether any
   single step exceeded a user-provided warning threshold.
@@ -298,13 +298,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--p3", type=str, default="go_rule", help="Seat 3 model spec")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device for loaded models")
     parser.add_argument("--our-checkpoint", type=str, default="", help="Optional local MLP checkpoint")
-    parser.add_argument("--our-exact-threshold", type=int, default=30, help="Exact solve threshold for our MCTS")
+    parser.add_argument("--our-exact-threshold", type=int, default=24, help="Exact solve threshold for our MCTS")
     parser.add_argument("--our-leaf-threshold", type=int, default=24, help="Leaf threshold for our MCTS")
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
         default=50,
-        help="Root simulations per legal action for our MCTS",
+        help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
+    )
+    parser.add_argument(
+        "--our-number-of-exact-solvers",
+        type=int,
+        default=50,
+        help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
         "--our-exploration-constant",

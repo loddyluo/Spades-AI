@@ -838,7 +838,7 @@ cd /Spades-AI && /root/miniconda3/bin/python tests/test_matchup_step_timing.py -
 #### 关键命令与入口
 ```bash
 cd /Spades-AI && /root/miniconda3/bin/python tests/test_matchup_trace_logging.py
-cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 10 --num-workers 25 --torch-num-threads 1 --torch-num-interop-threads 1 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth --our-simulations-per-action 50
+cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 10 --num-workers 25 --torch-num-threads 1 --torch-num-interop-threads 1 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth 
 ```
 
 #### 未确认假设 / 风险
@@ -849,6 +849,125 @@ cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py
 1. 若要正式做分析，优先用 `--trace-log-dir logs` 跑一小批样本。
 2. 若 trace 文件过大，再考虑按局切分或改成 JSONL。
 3. 若还想继续提速，下一步应拆 our_mcts 内部耗时，而不是继续加 worker 数。
+
+---
+
+### 2026-05-10｜会话22（对称双跑开关 + README 评估命令同步）
+
+#### 已确认事实
+- 已在 `evaluate/evaluate_model_matchups.py` 新增 `--symmetric-seat-swap`，默认 1；开启后每个 base seed 会评估两局：原始座位顺序与奇偶座位组互换顺序。
+- 该对称双跑逻辑在串行和并行 worker 路径都生效，job 展开为显式的 `(seed, seat_specs)` 对。
+- `README.md` 已同步更新主评估命令：加入 `--symmetric-seat-swap 1`、`--our-exact-threshold 24`、`--our-number-of-exact-solvers 50`，并把快速上手的完整对局命令阈值从 30 改为 24。
+
+#### 未确认假设 / 风险
+- 当前对称映射固定为 `(0,1,2,3) -> (1,0,3,2)`，即奇偶座位交换；如果后续要测试其他旋转或更多轮换模式，需要再明确 seat mapping 语义。
+- 双跑会把总游戏数翻倍，后续若要和历史结果直接横向比较，需要注意 `num_games` 与 `num_game_pairs` 的区别。
+
+#### 关键命令与入口
+- `evaluate/evaluate_model_matchups.py`：`--symmetric-seat-swap`, `--our-exact-threshold`, `--our-number-of-exact-solvers`
+- `README.md`：主评估命令和快速上手命令已同步更新
+- 新回归：`tests/test_evaluate_model_matchups_symmetric_dup.py`
+
+#### 下一步行动
+1. 若要正式做性能对比，优先用对称双跑模式，减少“座位运气”对结果的影响。
+2. 若要继续收敛评估口径，可以把 `num_games` 进一步明确成“base seeds 数”还是“实际对局数”。
+3. 之后若再改评估语义，继续同步 README 与 `copilot_wyy.md` 的可复用记录。
+
+---
+
+### 2026-05-10｜会话23（单局超慢排查：非死循环，热点定位到 policy 前向与 exact 求解）
+
+#### 已确认事实
+- 对 `seed=37865`、`p0/p2=our_mcts`、`p1/p3=go_rule` 的单局逐步计时显示：流程能完整结束（56 个 bid/play 事件），不是死循环。
+- 在 `--our-simulations-per-action=1`、`--our-number-of-exact-solvers=1` 时，单局仍约 `14.686s`，最慢单步约 `3.285s`（our_mcts 决策步）。
+- 新增函数级分解脚本：`tests/test_mcts_function_timing_breakdown.py`。
+  - 同配置（sim=1, exact=1, 带 checkpoint）结果：
+    - `strategy._policy_priors` 总耗时约 `10.06s`（925 次）
+    - `exact_solver.solve_with_q` 总耗时约 `4.32s`（7 次）
+    - `strategy._determinize_state` 总耗时仅约 `0.011s`（64 次）
+  - 去掉 checkpoint（不走 policy 模型前向）后：单局约 `5.52s`，说明主要新增耗时来自 policy 前向与 exact 求解，而不是随机建模本身。
+
+#### 未确认假设 / 风险
+- 当前 `TruncatedMCTSStrategy` 仍使用 `ExactDoubleDummySolver`（Python 版本）做 exact 分支；若要继续降时，可能需要切换到更快的 C++ exact 后端并做一致性回归。
+- determinization 会让每次状态不同，导致 policy 先验缓存命中率下降；后续若引入“仅基于公共信息”的缓存键，需验证是否影响策略质量。
+
+#### 关键命令与入口
+```bash
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_matchup_step_timing.py --seed 37865 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint result/mlp_test_4.pth --our-simulations-per-action 1 --our-number-of-exact-solvers 1 --slow-step-threshold-sec 999 --disable-blind-nil
+
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_mcts_function_timing_breakdown.py --seed 37865 --our-checkpoint result/mlp_test_4.pth --our-simulations-per-action 1 --our-number-of-exact-solvers 1 --disable-blind-nil
+
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_mcts_function_timing_breakdown.py --seed 37865 --our-checkpoint "" --our-simulations-per-action 1 --our-number-of-exact-solvers 1 --disable-blind-nil
+```
+
+#### 下一步行动
+1. 先用函数级分解脚本比较不同 `simulations_per_action`（1/5/10/50）下各热点函数占比，避免盲调。
+2. 优先评估“exact 分支切换到 C++ 后端”的收益与一致性风险。
+3. 设计 policy 先验缓存优化（公共信息键）前，先做正确性回归和动作一致率对照。
+
+---
+
+### 2026-05-10｜会话24（exact 分支切换到 C++ fast solver + 一致性回归）
+
+#### 已确认事实
+- `strategy/truncated_mcts_strategy.py` 的 exact 分支已改为优先使用 `ExactDoubleDummyCppOpt1Solver`（C++ fast solver）；仅当 native 不可用时回退到 `ExactDoubleDummySolver`。
+- 新增一致性回归测试：`tests/test_truncated_mcts_exact_cpp_consistency.py`。
+  - 验证 C++ opt1 与 Python 参考求解器在确定性状态上的 `solve_with_q` value 与 action_q_values 一致。
+  - 验证策略实例在 native 可用时会优先选择 C++ fast solver。
+- 回归执行结果：
+  - `tests/test_truncated_mcts_exact_cpp_consistency.py` 通过。
+  - `tests/test_evaluate_model_matchups_determinization.py` 通过。
+
+#### 未确认假设 / 风险
+- 当前回归主要覆盖“低剩余牌数 deterministic 状态”的一致性；若要覆盖更复杂局面，建议扩展更多 seed/剩余牌数组合。
+- 在 native 不可用环境会自动回退 Python exact，这保证可用性，但会导致性能与 C++ 路径有明显差异。
+
+#### 关键命令与入口
+```bash
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_truncated_mcts_exact_cpp_consistency.py
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_evaluate_model_matchups_determinization.py
+```
+
+#### 下一步行动
+1. 若继续性能优化，下一步优先把 `policy_priors` 的高频模型前向做缓存/批处理优化。
+2. 若继续正确性保障，扩展 C++/Python 一致性回归到更多 seeds 与剩余牌数区间。
+3. 若要做线上稳定评估，固定是否允许 Python fallback 并在日志中明确记录后端类型。
+
+---
+
+### 2026-05-10｜会话25（policy prior 改为均匀分布 + 新增 profile-breakdown 开关）
+
+#### 已确认事实
+- `strategy/truncated_mcts_strategy.py`：`_policy_priors` 已改为“仅输出合法动作均匀分布”，不再调用 policy head 模型前向。
+  - 缓存仍保留，但缓存值固定为均匀先验。
+  - `policy_model_calls` 计数保持为 0（不再增长）。
+- `evaluate/evaluate_model_matchups.py`：新增 CLI 参数 `--profile-breakdown`（默认 `0`）。
+  - 当设为 `1` 时，每局结果 payload 增加 `profile_breakdown` 字段：
+    - `game_wall_sec`
+    - `seats`（每座位 bid/play 调用次数、总耗时、最大耗时）
+    - `strategy_diagnostics`（若座位策略提供 `get_diagnostics`，则写入 counters）
+- 新增回归测试：`tests/test_evaluate_model_matchups_profile_breakdown.py`。
+- 扩展回归测试：`tests/test_truncated_mcts_determinization.py` 新增 `test_policy_priors_are_uniform_without_model_call`。
+- 本地脚本执行通过：
+  - `tests/test_truncated_mcts_determinization.py`
+  - `tests/test_evaluate_model_matchups_profile_breakdown.py`
+
+#### 未确认假设 / 风险
+- 你要求的完整评估命令（`--profile-breakdown 1` 且默认 sim/exact 参数）计算量很大：本次运行在 300s 超时后转后台，尚未返回最终 summary。
+- 仓库当前是 dirty worktree（存在大量历史/他人改动与大文件变更），本次未回滚任何非本次改动内容。
+
+#### 关键命令与入口
+```bash
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_truncated_mcts_determinization.py
+cd /Spades-AI && /root/miniconda3/bin/python tests/test_evaluate_model_matchups_profile_breakdown.py
+
+cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py --seed 37865 --num-games 1 --torch-num-threads 1 --torch-num-interop-threads 1 --profile-breakdown 1 --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_4.pth
+```
+
+#### 下一步行动
+1. 等待当前后台评估命令完成并提取 summary（seat/team 分数与 profile_breakdown 内容）。
+2. 若你希望“可快速复现 profile 输出”，建议先用 `--our-simulations-per-action 1 --our-number-of-exact-solvers 1` 做 smoke，再跑完整配置。
+3. 若后续仍需进一步降时，优先优化 `exact` 调用预算与 `leaf value` 前向频次。
 
 
 

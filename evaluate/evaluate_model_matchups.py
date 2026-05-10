@@ -3,8 +3,9 @@
 File purpose:
 - Evaluate the local MCTS player and the collaborator GO-MCTS players in the
   same local `SpadesMatchRunner` environment.
-- Expose command-line switches for seat assignment, MCTS simulation depth,
-  number of games, random seed, and checkpoint paths.
+        - Expose command-line switches for seat assignment, MCTS simulation depth,
+            exact-solver resampling count, symmetry-duplicate control, number of
+            games, random seed, and checkpoint paths.
 
 Function input/output summary:
 - parse_args() -> argparse.Namespace
@@ -34,12 +35,11 @@ import multiprocessing as mp
 import os
 import json
 import sys
+import time
 from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
-
-import torch
 
 import torch
 
@@ -265,13 +265,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--p3", type=str, default="go_random", help="Seat 3 model spec")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device for loaded models")
     parser.add_argument("--our-checkpoint", type=str, default="", help="Optional local MLP checkpoint")
-    parser.add_argument("--our-exact-threshold", type=int, default=30, help="Exact solve threshold for our MCTS")
+    parser.add_argument("--our-exact-threshold", type=int, default=24, help="Exact solve threshold for our MCTS")
     parser.add_argument("--our-leaf-threshold", type=int, default=24, help="Leaf threshold for our MCTS")
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
         default=5000,
-        help="Root simulations per legal action for our MCTS",
+        help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
+    )
+    parser.add_argument(
+        "--our-number-of-exact-solvers",
+        type=int,
+        default=50,
+        help="Number of determinized exact solves per exact-decision step",
+    )
+    parser.add_argument(
+        "--symmetric-seat-swap",
+        type=int,
+        default=0,
+        help="If 1, evaluate each seed twice with seats (0,1,2,3) and (1,0,3,2); 0 disables the duplicate run",
     )
     parser.add_argument(
         "--num-workers",
@@ -341,6 +353,12 @@ def parse_args() -> argparse.Namespace:
         default="logs",
         help="Directory for per-game trace logs; set to empty string to disable",
     )
+    parser.add_argument(
+        "--profile-breakdown",
+        type=int,
+        default=0,
+        help="If 1, attach per-seat timing and strategy diagnostics to each game record",
+    )
     return parser.parse_args()
 
 
@@ -369,11 +387,11 @@ def _init_parallel_worker(args: argparse.Namespace) -> None:
         _WORKER_RUNTIME = build_runtime(args)
 
 
-def _play_single_game_in_worker(seed: int) -> dict[str, Any]:
+def _play_single_game_in_worker(job: tuple[int, list[str]]) -> dict[str, Any]:
     """Play one game inside a worker process.
 
     Input:
-    - seed: game seed used to build the state.
+    - job: tuple of `(seed, seat_specs)` for one concrete game run.
 
     Output:
     - The same per-game record as `_play_single_game`.
@@ -381,7 +399,8 @@ def _play_single_game_in_worker(seed: int) -> dict[str, Any]:
     if _WORKER_RUNTIME is None or _WORKER_ARGS is None:
         raise RuntimeError("Parallel worker was not initialized")
     trace_enabled = bool(getattr(_WORKER_ARGS, "trace_log_dir", ""))
-    return _play_single_game(_WORKER_ARGS, _WORKER_RUNTIME, seed, trace_enabled=trace_enabled)
+    seed, seat_specs = job
+    return _play_single_game(_WORKER_ARGS, _WORKER_RUNTIME, seed, seat_specs=seat_specs, trace_enabled=trace_enabled)
 
 
 def build_runtime(args: argparse.Namespace) -> Runtime:
@@ -397,6 +416,7 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         exact_threshold=args.our_exact_threshold,
         leaf_threshold=args.our_leaf_threshold,
         simulations_per_action=args.our_simulations_per_action,
+        determinization_count=args.our_number_of_exact_solvers,
         exploration_constant=args.our_exploration_constant,
         policy_temperature=args.our_policy_temperature,
         value_scale=args.our_value_scale,
@@ -434,18 +454,24 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
     )
 
 
-def build_players(args: argparse.Namespace, runtime: Runtime, game_seed: int) -> list:
+def build_players(
+    args: argparse.Namespace,
+    runtime: Runtime,
+    game_seed: int,
+    seat_specs: list[str] | None = None,
+) -> list:
     """Build the four seat-specific players requested by the CLI.
 
     Input:
     - args: parsed command-line arguments with seat model specs.
     - runtime: shared models and configs loaded once for the whole run.
     - game_seed: the seed for the current game, used for random baselines.
+    - seat_specs: optional seat-spec override for symmetry-duplicated runs.
 
     Output:
     - A list of 4 local `AIPlayer` adapters, one per seat.
     """
-    seat_specs = [args.p0, args.p1, args.p2, args.p3]
+    seat_specs = seat_specs or [args.p0, args.p1, args.p2, args.p3]
     players = []
     for seat_index, spec in enumerate(seat_specs):
         if spec == "our_mcts":
@@ -593,10 +619,67 @@ class TracePlayerProxy:
         self._inner.card_played(player_id, card)
 
 
+class ProfilePlayerProxy:
+    """Proxy a player and collect per-seat timing metrics.
+
+    Input:
+    - inner: wrapped player instance.
+    - seat_index: local seat number.
+    - profile: mutable per-game profile dictionary.
+
+    Output:
+    - A player object that forwards behavior while collecting timing counters.
+    """
+
+    def __init__(self, inner: Any, seat_index: int, profile: dict[str, Any]) -> None:
+        self._inner = inner
+        self._seat_index = seat_index
+        self._profile = profile
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def _seat_record(self) -> dict[str, Any]:
+        return self._profile["seats"][self._seat_index]
+
+    def start_game(self, position: int, hand: list[Any], num_players: int) -> None:
+        self._inner.start_game(position, hand, num_players)
+
+    def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
+        t0 = time.perf_counter()
+        bid = self._inner.place_bid(legal_bids, state_view)
+        elapsed = time.perf_counter() - t0
+        seat = self._seat_record()
+        seat["bid_calls"] += 1
+        seat["bid_elapsed_sec"] += float(elapsed)
+        seat["bid_max_sec"] = max(float(seat["bid_max_sec"]), float(elapsed))
+        return bid
+
+    def play_card(self, legal_cards: list[Any], state_view: dict) -> Any:
+        t0 = time.perf_counter()
+        card = self._inner.play_card(legal_cards, state_view)
+        elapsed = time.perf_counter() - t0
+        seat = self._seat_record()
+        seat["play_calls"] += 1
+        seat["play_elapsed_sec"] += float(elapsed)
+        seat["play_max_sec"] = max(float(seat["play_max_sec"]), float(elapsed))
+        return card
+
+    def bid_placed(self, bidder: int, bid: Any) -> None:
+        self._inner.bid_placed(bidder, bid)
+
+    def set_teams(self, teams: list[int], bid_values: list[Any]) -> None:
+        self._inner.set_teams(teams, bid_values)
+
+    def card_played(self, player_id: int, card: Any) -> None:
+        self._inner.card_played(player_id, card)
+
+
 def _play_single_game(
     args: argparse.Namespace,
     runtime: Runtime,
     seed: int,
+    seat_specs: list[str] | None = None,
     trace_enabled: bool = False,
 ) -> dict[str, Any]:
     """Play one seeded game and collect the per-seat and per-team scores.
@@ -605,6 +688,7 @@ def _play_single_game(
     - args: parsed command-line arguments.
     - runtime: shared models and configs loaded once for the whole run.
     - seed: game seed used for deal generation.
+    - seat_specs: optional explicit seat-spec order for this game.
 
     Output:
     - A dictionary containing the game seed, seat scores, team scores, and
@@ -613,12 +697,31 @@ def _play_single_game(
     # This evaluation path treats blind nil as disabled so bidding stays semantic:
     # once cards are visible, the local adapter should only emit nil or normal bids.
     rules = SpadesRules(enable_nil=not args.disable_nil, enable_blind_nil=False)
-    players = build_players(args, runtime, seed)
+    profile_enabled = int(getattr(args, "profile_breakdown", 0)) != 0
+    resolved_seat_specs = seat_specs or [args.p0, args.p1, args.p2, args.p3]
+    players = build_players(args, runtime, seed, seat_specs=resolved_seat_specs)
     game_trace: dict[str, Any] | None = None
+    game_profile: dict[str, Any] | None = None
     if trace_enabled:
-        seat_specs = [args.p0, args.p1, args.p2, args.p3]
-        game_trace = _build_trace_context(seed, seat_specs)
-        players = [TracePlayerProxy(player, seat, seat_specs[seat], game_trace) for seat, player in enumerate(players)]
+        game_trace = _build_trace_context(seed, resolved_seat_specs)
+        players = [TracePlayerProxy(player, seat, resolved_seat_specs[seat], game_trace) for seat, player in enumerate(players)]
+    if profile_enabled:
+        game_profile = {
+            "seats": [
+                {
+                    "seat": seat,
+                    "spec": resolved_seat_specs[seat],
+                    "bid_calls": 0,
+                    "bid_elapsed_sec": 0.0,
+                    "bid_max_sec": 0.0,
+                    "play_calls": 0,
+                    "play_elapsed_sec": 0.0,
+                    "play_max_sec": 0.0,
+                }
+                for seat in range(4)
+            ]
+        }
+        players = [ProfilePlayerProxy(player, seat, game_profile) for seat, player in enumerate(players)]
 
     runner = SpadesMatchRunner(
         players=players,
@@ -626,10 +729,13 @@ def _play_single_game(
         verbose=False,
         rules=rules,
     )
+    game_start = time.perf_counter()
     result = runner.play_game()
+    game_wall_sec = time.perf_counter() - game_start
     seat_scores = [float(score) for score in result.scores]
     payload: dict[str, Any] = {
         "seed": seed,
+        "seat_specs": list(resolved_seat_specs),
         "seat_scores": seat_scores,
         "team0_score": float((seat_scores[0] + seat_scores[2]) / 2.0),
         "team1_score": float((seat_scores[1] + seat_scores[3]) / 2.0),
@@ -637,6 +743,23 @@ def _play_single_game(
     }
     if game_trace is not None:
         payload["trace"] = game_trace
+    if game_profile is not None:
+        diagnostics: list[dict[str, Any]] = []
+        for seat, player in enumerate(players):
+            wrapped = player
+            while hasattr(wrapped, "_inner"):
+                wrapped = getattr(wrapped, "_inner")
+            strategy = getattr(wrapped, "strategy", None)
+            seat_diag: dict[str, Any] = {
+                "seat": seat,
+                "spec": resolved_seat_specs[seat],
+            }
+            if strategy is not None and hasattr(strategy, "get_diagnostics"):
+                seat_diag.update(strategy.get_diagnostics())
+            diagnostics.append(seat_diag)
+        game_profile["game_wall_sec"] = float(game_wall_sec)
+        game_profile["strategy_diagnostics"] = diagnostics
+        payload["profile_breakdown"] = game_profile
     return payload
 
 
@@ -653,20 +776,41 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     games: list[dict[str, Any]] = []
     seat_totals = [0.0, 0.0, 0.0, 0.0]
     trace_enabled = bool(getattr(args, "trace_log_dir", ""))
+    symmetric_enabled = int(getattr(args, "symmetric_seat_swap", 1)) != 0
     worker_count = args.num_workers
     if worker_count <= 0:
         worker_count = min(args.num_games, os.cpu_count() or 1)
 
-    if args.num_games <= 1 or worker_count <= 1:
-        runtime = build_runtime(args)
+    base_seat_specs = [args.p0, args.p1, args.p2, args.p3]
+    swapped_seat_specs = [base_seat_specs[1], base_seat_specs[0], base_seat_specs[3], base_seat_specs[2]]
+
+    def _expand_game_jobs() -> list[tuple[int, list[str]]]:
+        """Expand base seeds into concrete game jobs.
+
+        Input:
+        - none; uses the outer evaluation args.
+
+        Output:
+        - A list of `(seed, seat_specs)` jobs, doubled when symmetry swap is enabled.
+        """
+        jobs: list[tuple[int, list[str]]] = []
         for offset in range(args.num_games):
             seed = args.seed + offset
-            game = _play_single_game(args, runtime, seed, trace_enabled=trace_enabled)
+            jobs.append((seed, list(base_seat_specs)))
+            if symmetric_enabled:
+                jobs.append((seed, list(swapped_seat_specs)))
+        return jobs
+
+    jobs = _expand_game_jobs()
+
+    if len(jobs) <= 1 or worker_count <= 1:
+        runtime = build_runtime(args)
+        for seed, seat_specs in jobs:
+            game = _play_single_game(args, runtime, seed, seat_specs=seat_specs, trace_enabled=trace_enabled)
             games.append(game)
             for index, score in enumerate(game["seat_scores"]):
                 seat_totals[index] += float(score)
     else:
-        seeds = [args.seed + offset for offset in range(args.num_games)]
         parent_runtime = build_runtime(args)
         global _WORKER_RUNTIME, _WORKER_ARGS
         _WORKER_RUNTIME = parent_runtime
@@ -677,18 +821,20 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
             initargs=(args,),
             mp_context=mp.get_context(args.mp_start_method),
         ) as executor:
-            for game in executor.map(_play_single_game_in_worker, seeds, chunksize=1):
+            for game in executor.map(_play_single_game_in_worker, jobs, chunksize=1):
                 games.append(game)
                 for index, score in enumerate(game["seat_scores"]):
                     seat_totals[index] += float(score)
 
-    n = max(args.num_games, 1)
+    n = max(len(games), 1)
     seat_avgs = [total / n for total in seat_totals]
     team0_avg = (seat_avgs[0] + seat_avgs[2]) / 2.0
     team1_avg = (seat_avgs[1] + seat_avgs[3]) / 2.0
     result = {
         "seat_specs": [args.p0, args.p1, args.p2, args.p3],
-        "num_games": args.num_games,
+        "num_games": len(games),
+        "num_game_pairs": args.num_games,
+        "symmetric_seat_swap": int(symmetric_enabled),
         "seed": args.seed,
         "seat_avg_scores": seat_avgs,
         "team_avg_scores": {"team0": team0_avg, "team1": team1_avg},
@@ -711,7 +857,10 @@ def _print_summary(result: dict[str, Any]) -> None:
     print("=" * 72)
     print("Spades matchup evaluation")
     print("=" * 72)
-    print(f"Games: {result['num_games']} | Base seed: {result['seed']}")
+    extra = f" | Base seeds: {result.get('num_game_pairs', result['num_games'])}"
+    if result.get("symmetric_seat_swap"):
+        extra += " | symmetric duplicate enabled"
+    print(f"Games: {result['num_games']}{extra} | Base seed: {result['seed']}")
     for seat_index, (spec, avg) in enumerate(zip(result["seat_specs"], result["seat_avg_scores"])):
         print(f"Seat {seat_index}: {spec:<18} avg score = {avg:+.2f}")
     team_scores = result["team_avg_scores"]
