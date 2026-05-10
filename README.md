@@ -87,17 +87,10 @@ python evaluate/evaluate_model_matchups.py \
 
 协作者仓库的模型和状态桥接代码放在 `evaluate/GO-MCTS/`，评估脚本会先把你这边的 `GameState` 转成对方仓库的状态格式，再统一回到本地对局引擎里执行。
 
-如果你只想跑当前最重要、最稳定的评估组合，直接用这一条：
+如果你只想跑当前最稳定的评估组合，直接用这一条：
 
 ```bash
-python evaluate/evaluate_model_matchups.py \
-    --seed 3786 \
-    --num-games 100 \
-    --p0 our_mcts \
-    --p1 go_rule \
-    --p2 our_mcts \
-    --p3 go_rule \
-    --our-checkpoint mlp_test_3.pth
+python evaluate/evaluate_model_matchups.py --seed 3786 --num-games 100 --num-workers 25 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule --our-checkpoint mlp_test_3.pth
 ```
 
 这条命令用于评估本地截断 MCTS 与协作者规则玩家的对抗表现。当前评估路径会按语义关闭 `blind_nil`，避免把“看牌后”的叫牌与“盲叫”混在一起；本地 `OurHandStrengthMCTSPlayer` 也只会在 `nil` 或普通数值叫牌之间做选择。
@@ -241,6 +234,9 @@ python evaluate/evaluate_model_matchups.py \
 
 - `evaluate/`
     - 测试与评估打牌能力
+
+- `logs`
+    - 调试结果
 
 - `tests/`
     - 回归测试、求解器正确性测试、MCTS测试、数据质量检查脚本。
