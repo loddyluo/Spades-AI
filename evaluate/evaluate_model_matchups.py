@@ -41,6 +41,8 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from tqdm import tqdm
+
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -270,13 +272,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=5000,
+        default=50,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=50,
+        default=5,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -723,14 +725,17 @@ def _play_single_game(
         }
         players = [ProfilePlayerProxy(player, seat, game_profile) for seat, player in enumerate(players)]
 
+    pbar = tqdm(total=52, desc=f"Seed {seed}", unit="card", leave=False, position=1)
     runner = SpadesMatchRunner(
         players=players,
         seed=seed,
         verbose=False,
         rules=rules,
+        on_card_played=lambda cur, total: pbar.update(1),
     )
     game_start = time.perf_counter()
     result = runner.play_game()
+    pbar.close()
     game_wall_sec = time.perf_counter() - game_start
     seat_scores = [float(score) for score in result.scores]
     payload: dict[str, Any] = {
@@ -803,9 +808,13 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
 
     jobs = _expand_game_jobs()
 
+    print(f"Seat specs: {base_seat_specs}")
+    print(f"Total games: {len(jobs)} (workers={worker_count}, symmetric_swap={symmetric_enabled})")
+    t_start = time.perf_counter()
+
     if len(jobs) <= 1 or worker_count <= 1:
         runtime = build_runtime(args)
-        for seed, seat_specs in jobs:
+        for seed, seat_specs in tqdm(jobs, desc="Playing games", unit="game", position=0):
             game = _play_single_game(args, runtime, seed, seat_specs=seat_specs, trace_enabled=trace_enabled)
             games.append(game)
             for index, score in enumerate(game["seat_scores"]):
@@ -821,10 +830,14 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
             initargs=(args,),
             mp_context=mp.get_context(args.mp_start_method),
         ) as executor:
-            for game in executor.map(_play_single_game_in_worker, jobs, chunksize=1):
+            for game in tqdm(executor.map(_play_single_game_in_worker, jobs, chunksize=1),
+                             total=len(jobs), desc="Playing games", unit="game", position=0):
                 games.append(game)
                 for index, score in enumerate(game["seat_scores"]):
                     seat_totals[index] += float(score)
+
+    t_elapsed = time.perf_counter() - t_start
+    print(f"All games finished in {t_elapsed:.1f}s ({t_elapsed / max(len(games), 1):.1f}s per game)")
 
     n = max(len(games), 1)
     seat_avgs = [total / n for total in seat_totals]

@@ -1,0 +1,3 @@
+[submodule "Spades_AI_GO-MCTS"]
+	path = Spades_AI_GO-MCTS
+	url = https://github.com/loddyluo/Spades_AI_GO-MCTS

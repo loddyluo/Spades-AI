@@ -92,13 +92,15 @@ class SpadesMatchRunner:
         verbose: bool = True,
         rules: SpadesRules | None = None,
         encoder: SpadesFeatureEncoder | None = None,
+        on_card_played: Callable[[int, int], None] | None = None,
     ) -> None:
         if len(players) != 4:
             raise ValueError(f"需要 4 名玩家，实际得到 {len(players)} 名")
         self.players = players
         self.seed = seed
         self.verbose = verbose
-        # 默认采用“每人一次数值叫牌”的简化模式，避免 blind_nil/pass 造成同一玩家连续叫两次。
+        self.on_card_played = on_card_played
+        # 默认采用”每人一次数值叫牌”的简化模式，避免 blind_nil/pass 造成同一玩家连续叫两次。
         self.rules = rules or SpadesRules(enable_nil=False, enable_blind_nil=False)
         self.encoder = encoder or SpadesFeatureEncoder()
         self.state = build_random_state(seed)
@@ -202,6 +204,8 @@ class SpadesMatchRunner:
 
                 self.state.turn = (current + 1) % self.rules.num_players
                 turn_count += 1
+                if self.on_card_played is not None:
+                    self.on_card_played(turn_count, 52)
 
             winner = self.rules.winner_trick(self.state)
             self.state.complete_trick(winner)

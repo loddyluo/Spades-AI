@@ -55,6 +55,8 @@ from trick_taking.card import _STANDARD_CARDS as STANDARD_52
 import random
 import copy
 
+from tqdm import tqdm
+
 
 @dataclass
 class TruncatedMCTSConfig:
@@ -217,11 +219,15 @@ class TruncatedMCTSStrategy:
         root_team = self._current_team(state)
         root_scores: list[dict[str, Any]] = []
 
+        total_sims = len(legal_actions) * self.config.simulations_per_action
+        pbar = tqdm(total=total_sims, desc=f"MCTS (rem={remaining_cards})", unit="sim",
+                    leave=False, position=2)
         for action in legal_actions:
             child_state = self._apply_action(state, action)
             child_node = self._build_root_child(child_state, action)
             for _ in range(self.config.simulations_per_action):
                 self._run_simulation(child_node, root_observer_id=child_state.turn)
+                pbar.update(1)
             root_scores.append(
                 {
                     "action": action,
@@ -229,6 +235,7 @@ class TruncatedMCTSStrategy:
                     "visits": child_node.visits,
                 }
             )
+        pbar.close()
 
         best_score = root_scores[0]
         for item in root_scores[1:]:
