@@ -94,6 +94,20 @@ def _format_action_scores(action_scores: list[dict[str, Any]]) -> str:
     return ", ".join(f"{item['action']}={float(item['value']):+.6f}" for item in action_scores)
 
 
+def _parse_bid_value(bid_str: str) -> int:
+    """Extract numeric bid value from a bid string.
+
+    Input:
+    - bid_str: string like "bid_3", "nil", "blind_nil"
+
+    Output:
+    - Integer bid value (0 for nil/blind_nil).
+    """
+    if bid_str.startswith("bid_"):
+        return int(bid_str.split("_")[1])
+    return 0
+
+
 def _format_legal_entries(legal_entries: list[Any]) -> str:
     """Render legal bids/cards for logs.
 
@@ -159,36 +173,66 @@ def _render_game_trace(trace: dict[str, Any]) -> str:
         if action_scores:
             base += f" q=[{_format_action_scores(action_scores)}]"
         lines.append(base)
+
+    # ── Results summary (tricks / bid & team scores) ──
+    if "tricks_won" in trace:
+        lines.append("")
+        lines.append("Results (tricks/bid):")
+        for player in trace["players"]:
+            seat = player["seat"]
+            player_bids = [b for b in trace["bids"] if b["seat"] == seat]
+            bid_str = player_bids[-1]["chosen_bid"] if player_bids else "?"
+            bid_value = _parse_bid_value(str(bid_str))
+            tricks = trace["tricks_won"][seat]
+            lines.append(f"  seat {seat}: {player['spec']:<18} {tricks}/{bid_value}")
+        # Team scores (fixed teams: seats 0&2 vs 1&3)
+        if "scores" in trace:
+            scores = trace["scores"]
+            seat_specs = [p["spec"] for p in trace["players"]]
+            team0_score = (scores[0] + scores[2]) / 2.0
+            team1_score = (scores[1] + scores[3]) / 2.0
+            lines.append(f"Team {seat_specs[0]}: {team0_score:+.1f}")
+            lines.append(f"Team {seat_specs[1]}: {team1_score:+.1f}")
+
     return "\n".join(lines)
 
 
-def _write_trace_log(trace_dir: str, result: dict[str, Any]) -> str:
-    """Write all collected per-game traces into one log file.
+def _init_trace_log(trace_dir: str, seed: int, num_games: int, seat_specs: list[str]) -> str:
+    """Create the trace log file and write the header.
 
     Input:
-    - trace_dir: directory where the trace log should be written.
-    - result: evaluation result containing a `games` list.
+    - trace_dir: directory for the log file.
+    - seed: base random seed.
+    - num_games: total number of games that will be written.
+    - seat_specs: seat model specs in seat order.
 
     Output:
-    - Absolute path to the generated trace file.
+    - Absolute path to the created trace file.
     """
     trace_path = Path(trace_dir)
     trace_path.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = trace_path / f"matchup_trace_seed{result['seed']}_games{result['num_games']}_{stamp}.txt"
-
-    blocks: list[str] = []
-    blocks.append("# Spades matchup trace log")
-    blocks.append(f"# seed={result['seed']} num_games={result['num_games']}")
-    blocks.append(f"# seat_specs={result['seat_specs']}")
-    for game in result.get("games", []):
-        trace = game.get("trace")
-        if trace is None:
-            continue
-        blocks.append(_render_game_trace(trace))
-        blocks.append("")
-    output_path.write_text("\n".join(blocks).rstrip() + "\n", encoding="utf-8")
+    output_path = trace_path / f"matchup_trace_seed{seed}_games{num_games}_{stamp}.txt"
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("# Spades matchup trace log\n")
+        f.write(f"# seed={seed} num_games={num_games}\n")
+        f.write(f"# seat_specs={seat_specs}\n")
     return str(output_path)
+
+
+def _append_game_trace(trace_log_path: str, game: dict[str, Any]) -> None:
+    """Append one game's rendered trace to the log file.
+
+    Input:
+    - trace_log_path: path to the trace log file.
+    - game: per-game record from `_play_single_game`.
+    """
+    trace = game.get("trace")
+    if trace is None:
+        return
+    with open(trace_log_path, "a", encoding="utf-8") as f:
+        f.write(_render_game_trace(trace))
+        f.write("\n\n")
 
 
 def _resolve_checkpoint_path(checkpoint_path: str) -> str:
@@ -272,13 +316,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=50,
+        default=40,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=5,
+        default=40,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -736,6 +780,9 @@ def _play_single_game(
     game_start = time.perf_counter()
     result = runner.play_game()
     pbar.close()
+    if game_trace is not None:
+        game_trace["tricks_won"] = [int(t) for t in result.tricks_won]
+        game_trace["scores"] = [float(s) for s in result.scores]
     game_wall_sec = time.perf_counter() - game_start
     seat_scores = [float(score) for score in result.scores]
     payload: dict[str, Any] = {
@@ -806,7 +853,12 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
                 jobs.append((seed, list(swapped_seat_specs)))
         return jobs
 
+    # ── Create trace log file upfront (write header before any game) ──
     jobs = _expand_game_jobs()
+    trace_log_path: str | None = None
+    if trace_enabled:
+        total_game_count = len(jobs)
+        trace_log_path = _init_trace_log(args.trace_log_dir, args.seed, total_game_count, base_seat_specs)
 
     print(f"Seat specs: {base_seat_specs}")
     print(f"Total games: {len(jobs)} (workers={worker_count}, symmetric_swap={symmetric_enabled})")
@@ -819,6 +871,8 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
             games.append(game)
             for index, score in enumerate(game["seat_scores"]):
                 seat_totals[index] += float(score)
+            if trace_log_path is not None:
+                _append_game_trace(trace_log_path, game)
     else:
         parent_runtime = build_runtime(args)
         global _WORKER_RUNTIME, _WORKER_ARGS
@@ -835,6 +889,8 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
                 games.append(game)
                 for index, score in enumerate(game["seat_scores"]):
                     seat_totals[index] += float(score)
+                if trace_log_path is not None:
+                    _append_game_trace(trace_log_path, game)
 
     t_elapsed = time.perf_counter() - t_start
     print(f"All games finished in {t_elapsed:.1f}s ({t_elapsed / max(len(games), 1):.1f}s per game)")
@@ -853,8 +909,8 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         "team_avg_scores": {"team0": team0_avg, "team1": team1_avg},
         "games": games,
     }
-    if trace_enabled:
-        result["trace_log_path"] = _write_trace_log(args.trace_log_dir, result)
+    if trace_log_path is not None:
+        result["trace_log_path"] = trace_log_path
     return result
 
 

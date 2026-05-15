@@ -54,6 +54,7 @@ from trick_taking.utils.feature_encoder import SpadesFeatureEncoder
 from trick_taking.card import _STANDARD_CARDS as STANDARD_52
 import random
 import copy
+import time
 
 from tqdm import tqdm
 
@@ -64,7 +65,7 @@ class TruncatedMCTSConfig:
 
     exact_threshold: int = 24
     leaf_threshold: int = 24
-    simulations_per_action: int = 5
+    simulations_per_action: int = 20
     exploration_constant: float = 1.5
     policy_temperature: float = 1.0
     value_scale: float = 25.0
@@ -73,6 +74,10 @@ class TruncatedMCTSConfig:
     # the unseen card pool instead of using their private ground-truth hands.
     use_determinization: bool = True
     determinization_count: int = 8
+    # Number of IS-proposal determinizations to draw for each MCTS decision.
+    # Each determinization gets its own independent MCTS tree (no sharing),
+    # and results are averaged across determinizations.
+    mcts_determinization_count: int = 4
     device: str = "cpu"
 
 
@@ -219,23 +224,53 @@ class TruncatedMCTSStrategy:
         root_team = self._current_team(state)
         root_scores: list[dict[str, Any]] = []
 
-        total_sims = len(legal_actions) * self.config.simulations_per_action
+        # --- Independent determinizations for MCTS ---
+        # Build IS pool once, draw K distinct proposals.  Each proposal is a
+        # complete initial-deal hypothesis.  We run a *separate* MCTS for each
+        # proposal with the opponent hands fixed throughout — no tree sharing
+        # across proposals.  This avoids the stale-state problem where different
+        # determinizations pollute the same MCTS tree.
+        det_states: list[GameState] = [state]
+        if self.config.use_determinization:
+            mcts_is_rng = random.Random()
+            mcts_pool_hands, mcts_pool_weights = self._build_is_pool(state, state.turn, mcts_is_rng)
+            if mcts_pool_hands:
+                K = self.config.mcts_determinization_count
+                det_states = []
+                for _ in range(K):
+                    chosen = self._draw_is_sample(mcts_pool_hands, mcts_pool_weights, mcts_is_rng)
+                    if chosen is not None:
+                        det_state = copy.deepcopy(state)
+                        self._apply_proposal(det_state, state.turn, chosen)
+                        det_states.append(det_state)
+                if not det_states:
+                    det_states = [state]  # fallback: full-info (no determinization)
+
+        total_sims = len(det_states) * len(legal_actions) * self.config.simulations_per_action
         pbar = tqdm(total=total_sims, desc=f"MCTS (rem={remaining_cards})", unit="sim",
                     leave=False, position=2)
-        for action in legal_actions:
-            child_state = self._apply_action(state, action)
-            child_node = self._build_root_child(child_state, action)
-            for _ in range(self.config.simulations_per_action):
-                self._run_simulation(child_node, root_observer_id=child_state.turn)
-                pbar.update(1)
-            root_scores.append(
-                {
-                    "action": action,
-                    "value": child_node.average_value,
-                    "visits": child_node.visits,
-                }
-            )
+
+        action_value_sum: dict[int, float] = {a.card_id: 0.0 for a in legal_actions}
+        for det_state in det_states:
+            for action in legal_actions:
+                child_state = self._apply_action(det_state, action)
+                child_node = self._build_root_child(child_state, action)
+                for _ in range(self.config.simulations_per_action):
+                    self._run_simulation(
+                        child_node, root_observer_id=child_state.turn,
+                        skip_determinization=True,
+                    )
+                    pbar.update(1)
+                action_value_sum[action.card_id] += child_node.average_value
+
         pbar.close()
+
+        for action in legal_actions:
+            root_scores.append({
+                "action": action,
+                "value": action_value_sum[action.card_id] / len(det_states),
+                "visits": 0,
+            })
 
         best_score = root_scores[0]
         for item in root_scores[1:]:
@@ -278,20 +313,36 @@ class TruncatedMCTSStrategy:
         node.unexpanded_actions.sort(key=lambda card: node.action_priors.get(card.card_id, 0.0), reverse=True)
         return node
 
-    def _run_simulation(self, root_node: SearchNode, root_observer_id: int | None = None) -> float:
+    def _run_simulation(
+        self,
+        root_node: SearchNode,
+        root_observer_id: int | None = None,
+        is_pool_hands: list[list[list[Card]]] | None = None,
+        is_pool_weights: list[float] | None = None,
+        is_rng: random.Random | None = None,
+        skip_determinization: bool = False,
+    ) -> float:
         """从给定节点向下做一次 PUCT 搜索，并回传队伍 0 视角价值。
 
         If determinization is enabled, this simulation will operate on a
         simulation-local copy of the state with opponents' hands sampled
         consistent with the public information for the given observer.
+        When is_pool_hands is provided, uses importance-sampled determinization
+        from a pre-built pool; otherwise falls back to uniform determinization.
         """
         path: list[SearchNode] = [root_node]
         node = root_node
 
         # Simulation-local state that follows the `node` as we advance.
         sim_state = copy.deepcopy(node.state)
-        if self.config.use_determinization and root_observer_id is not None:
-            self._determinize_state(sim_state, observer_id=root_observer_id)
+        if self.config.use_determinization and root_observer_id is not None and not skip_determinization:
+            if is_pool_hands is not None and is_pool_weights is not None:
+                self._apply_is_determinization(
+                    sim_state, root_observer_id, is_pool_hands, is_pool_weights,
+                    is_rng or random.Random(),
+                )
+            else:
+                self._determinize_state(sim_state, observer_id=root_observer_id)
             # `node` may have been created from a full-information state.
             # Rebuild its cached action list/prior distribution so they match
             # the determinized simulation state instead of the original state.
@@ -354,6 +405,272 @@ class TruncatedMCTSStrategy:
         return value
 
     # -------------------- Determinization helpers --------------------
+    def _build_play_sequence(self, state: GameState) -> list[tuple[int, Card]]:
+        """Extract ordered (player_id, card) sequence from trick_history + table_cards.
+
+        Input:
+        - state: current game state.
+
+        Output:
+        - list of (player_id, Card) in the order cards were played so far.
+        """
+        sequence: list[tuple[int, Card]] = []
+        for record in state.trick_history:
+            for pid, card in record.cards:
+                sequence.append((pid, card))
+        for pid, card in state.table_cards:
+            sequence.append((pid, card))
+        return sequence
+
+    def _generate_proposal(
+        self,
+        all_cards: list[Card],
+        observer_id: int,
+        observer_current_hand: list[Card],
+        played_by_player: dict[int, list[Card]],
+        rng: random.Random,
+    ) -> list[list[Card]]:
+        """Generate one random initial deal proposal consistent with observed play.
+
+        Input:
+        - all_cards: full 52-card deck.
+        - observer_id: the player whose hand is fully known.
+        - observer_current_hand: observer's current hand at this state.
+        - played_by_player: dict mapping each player to cards they have played.
+        - rng: seeded random generator.
+
+        Output:
+        - 4 initial hands (each list[Card], 13 cards each).
+        """
+        # Observer's initial = current hand + played cards
+        obs_set: set[int] = set(c.card_id for c in observer_current_hand)
+        obs_set.update(c.card_id for c in played_by_player[observer_id])
+        id_to_card = {c.card_id: c for c in all_cards}
+        observer_initial = [id_to_card[cid] for cid in obs_set]
+
+        # Collect which cards are spoken-for
+        used_ids: set[int] = set(obs_set)
+        for p in range(4):
+            if p != observer_id:
+                used_ids.update(c.card_id for c in played_by_player[p])
+
+        # Pool of remaining cards (those unaccounted for)
+        pool = [c for c in all_cards if c.card_id not in used_ids]
+        rng.shuffle(pool)
+
+        initial_hands: list[list[Card]] = [None] * 4  # type: ignore
+        initial_hands[observer_id] = list(observer_initial)
+
+        idx = 0
+        for p in range(4):
+            if p == observer_id:
+                continue
+            initial_hands[p] = list(played_by_player[p])
+            need = 13 - len(played_by_player[p])
+            initial_hands[p].extend(pool[idx: idx + need])
+            idx += need
+
+        return initial_hands
+
+    def _compute_importance_weight(
+        self,
+        initial_hands: list[list[Card]],
+        play_sequence: list[tuple[int, Card]],
+    ) -> float:
+        """Replay play_sequence against initial_hands and compute p = ∏(1/D_i).
+
+        Input:
+        - initial_hands: 4 initial hands (the proposal being evaluated).
+        - play_sequence: ordered (player_id, Card) from actual game history.
+
+        Output:
+        - probability weight p; 0 if any move was illegal given this deal.
+        """
+        hands = [list(h) for h in initial_hands]  # mutable copies
+        spades_broken = False
+        pos_in_trick = 0
+        led_suit: Suit | None = None
+        weight = 1.0
+
+        for player, card in play_sequence:
+            hand = hands[player]
+
+            # Card must be in hand
+            try:
+                idx = hand.index(card)
+            except ValueError:
+                return 0.0
+
+            if pos_in_trick == 0:  # Leading
+                if not spades_broken and card.suit == Suit.SPADES:
+                    has_non_spade = any(c.suit != Suit.SPADES for c in hand)
+                    if has_non_spade:
+                        return 0.0  # Can't lead spades before broken
+                # Count legal actions at this step
+                if not spades_broken:
+                    non_spades = [c for c in hand if c.suit != Suit.SPADES]
+                    legal_count = len(non_spades) if non_spades else len(hand)
+                else:
+                    legal_count = len(hand)
+                led_suit = card.suit
+            else:  # Following
+                has_led = any(c.suit == led_suit for c in hand)
+                if has_led and card.suit != led_suit:
+                    return 0.0  # Must follow suit
+                legal_count = (sum(1 for c in hand if c.suit == led_suit)
+                               if has_led else len(hand))
+
+            weight *= 1.0 / legal_count
+            hand.pop(idx)
+
+            if card.suit == Suit.SPADES:
+                spades_broken = True
+
+            pos_in_trick = (pos_in_trick + 1) % 4
+            if pos_in_trick == 0:
+                led_suit = None
+
+        return weight
+
+    def _build_is_pool(
+        self,
+        state: GameState,
+        observer_id: int,
+        rng: random.Random | None = None,
+        num_proposals: int = 1234,
+    ) -> tuple[list[list[list[Card]]], list[float]]:
+        """Build importance-sampling pool once per decision.
+
+        Generates num_proposals initial deal proposals, computes each
+        proposal's probability weight (product of 1/legal_count per step),
+        and returns (proposals, weights) for repeated weighted drawing.
+
+        Input:
+        - state: current game state.
+        - observer_id: player whose hand is fully known.
+        - rng: optional seeded random generator.
+        - num_proposals: number of initial deal proposals to sample (default 1234).
+
+        Output:
+        - (proposals, weights) where proposals[i] is 4 initial hands, weights[i] is p.
+          Only proposals with weight > 0 are included.
+        """
+        if rng is None:
+            rng = random.Random()
+
+        play_sequence = self._build_play_sequence(state)
+
+        # Pre-compute which cards each player has played so far
+        played_by_player: dict[int, list[Card]] = {p: [] for p in range(4)}
+        for p, c in play_sequence:
+            played_by_player[p].append(c)
+
+        proposals: list[list[list[Card]]] = []
+        prop_weights: list[float] = []
+
+        for _ in range(num_proposals):
+            initial_hands = self._generate_proposal(
+                state.all_cards, observer_id, state.hands[observer_id],
+                played_by_player, rng,
+            )
+            w = self._compute_importance_weight(initial_hands, play_sequence)
+            if w > 0.0:
+                proposals.append(initial_hands)
+                prop_weights.append(w)
+
+        if prop_weights:
+            sorted_w = sorted(prop_weights, reverse=True)
+            top3 = sorted_w[:3]
+            min_w = sorted_w[-1]
+        #     print(f"  [IS] {len(prop_weights)}/{num_proposals} proposals valid, "
+        #           f"top3: {top3[0]:.6g}, {top3[1]:.6g}, {top3[2]:.6g}, "
+        #           f"min: {min_w:.6g}")
+        # else:
+        #     print(f"  [IS] 0/{num_proposals} proposals valid — all weights zero")
+
+        return proposals, prop_weights
+
+    @staticmethod
+    def _draw_is_sample(
+        pool_hands: list[list[list[Card]]],
+        pool_weights: list[float],
+        rng: random.Random,
+    ) -> list[list[Card]] | None:
+        """Weighted random draw one proposal from the IS pool.
+
+        Input:
+        - pool_hands: list of proposals from _build_is_pool.
+        - pool_weights: corresponding weights.
+        - rng: seeded random generator.
+
+        Output:
+        - One proposal (4 initial hands), or None if pool is empty.
+        """
+        if not pool_hands or not pool_weights:
+            return None
+
+        total = sum(pool_weights)
+        if total <= 0.0:
+            return None
+        #return pool_hands[2] ##############################NOTE: for testing, disable randomness and always pick the top proposal 
+        r = rng.random() * total
+        cumulative = 0.0
+        for i, w in enumerate(pool_weights):
+            cumulative += w
+            if r < cumulative:
+                return pool_hands[i]
+        return pool_hands[-1]
+
+    def _apply_proposal(
+        self,
+        state: GameState,
+        observer_id: int,
+        proposal: list[list[Card]],
+    ) -> None:
+        """Apply a specific initial-deal proposal to a state (opponents' hands in-place).
+
+        Input:
+        - state: deep-copied root state to modify
+        - observer_id: player whose hand is kept unchanged
+        - proposal: 4 initial 13-card hands from _build_is_pool
+        """
+        played_by_player: dict[int, set[int]] = {i: set() for i in range(4)}
+        for record in state.trick_history:
+            for pid, card in record.cards:
+                played_by_player[pid].add(card.card_id)
+        for pid, card in state.table_cards:
+            played_by_player[pid].add(card.card_id)
+
+        for p in range(4):
+            if p != observer_id:
+                remaining = [c for c in proposal[p] if c.card_id not in played_by_player[p]]
+                state.hands[p] = remaining
+
+        if hasattr(state, "hand_bitsets"):
+            for p in range(4):
+                bit = 0
+                for c in state.hands[p]:
+                    bit |= (1 << c.card_id)
+                state.hand_bitsets[p] = bit
+
+    def _apply_is_determinization(
+        self,
+        state: GameState,
+        observer_id: int,
+        pool_hands: list[list[list[Card]]],
+        pool_weights: list[float],
+        rng: random.Random,
+    ) -> None:
+        """Apply one IS sample to state (modifies opponents' hands in-place).
+
+        Falls back to uniform _determinize_state if pool is empty.
+        """
+        chosen = self._draw_is_sample(pool_hands, pool_weights, rng)
+        if chosen is None:
+            self._determinize_state(state, observer_id, rng)
+            return
+        self._apply_proposal(state, observer_id, chosen)
+
     def _determinize_state(self, state: GameState, observer_id: int, rng: random.Random | None = None) -> None:
         """Replace opponents' hands with a random deal consistent with public info.
 
@@ -407,6 +724,7 @@ class TruncatedMCTSStrategy:
 
     def _solve_with_determinization(self, state: GameState) -> dict[str, Any]:
         """Approximate solve_with_q by averaging results across determinized samples."""
+        t0 = time.time()
         agg_q: dict[int, float] = {}
         agg_value = 0.0
         counts = 0
@@ -414,11 +732,19 @@ class TruncatedMCTSStrategy:
         rng = random.Random()
         id_to_card = {c.card_id: c for c in STANDARD_52}
 
+        # Build IS pool once, then draw determinization_count samples from it
+        pool_hands, pool_weights = self._build_is_pool(state, state.turn, rng)
+        t1 = time.time()
+        #print(f"  [TIMING] IS pool built: {len(pool_hands)} valid proposals in {t1-t0:.2f}s")
+
         for _ in range(self.config.determinization_count):
             sim_state = copy.deepcopy(state)
             observer = state.turn
-            self._determinize_state(sim_state, observer, rng)
+            self._apply_is_determinization(sim_state, observer, pool_hands, pool_weights, rng)
+            t2 = time.time()
             res = self.exact_solver.solve_with_q(sim_state)
+            t3 = time.time()
+            #print(f"  [TIMING]   determinization {_}: solve_with_q in {t3-t2:.2f}s")
             counts += 1
             agg_value += float(res.get("value", 0.0))
             for action, q in res.get("action_q_values", {}).items():
