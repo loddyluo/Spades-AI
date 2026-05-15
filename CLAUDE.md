@@ -6,4 +6,4 @@
 
 你需要做的是【每一次想要采样除了自己以外的三个玩家的剩余牌前】，都采样1234种【初始的牌的分布】，然后对它们开展重要性采样，【加权随机】选出 $x$ 种（$x$视具体情况而定）初始的牌的分布，把这作为另三个玩家的剩余牌。
 
-您需要修改一些代码。
+上面的已经写完了，使用了our_mcts和go_rule相互对打，其中go_rule是Spades_AI_GO-MCTS/spades_ai/players/rule_based中的。现在，我们有了Spades_AI_GO-MCTS/spades_ai/players/rule_based_v2，请模仿/home/oier/wyy/Spades-AI/evaluate/evaluate_model_matchups.py写一个评测our_mcts和go_rule_2相互对打的脚本。复制evaluate_model_matchups.py，别直接在上面修改。

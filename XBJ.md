@@ -2,6 +2,7 @@
 
 PUCT
 exact求解
+mcts_determinization_count: int = 4 
 
 ## 笔记
  
