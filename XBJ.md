@@ -3,6 +3,9 @@
 PUCT
 exact求解
 mcts_determinization_count: int = 4 
+千万要注意，不能if self.model is None:
+
+vs_2mcts.py是目前主要的人机交互。
 
 ## 笔记
  

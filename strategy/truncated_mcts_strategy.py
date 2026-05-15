@@ -73,7 +73,7 @@ class TruncatedMCTSConfig:
     # Determinization options: when enabled, opponents' hands are sampled from
     # the unseen card pool instead of using their private ground-truth hands.
     use_determinization: bool = True
-    determinization_count: int = 8
+    determinization_count: int = 32
     # Number of IS-proposal determinizations to draw for each MCTS decision.
     # Each determinization gets its own independent MCTS tree (no sharing),
     # and results are averaged across determinizations.
@@ -838,10 +838,19 @@ class TruncatedMCTSStrategy:
             return value
 
         if self.model is None:
-            # 没有模型时退化成轻量启发式：用当前已赢墩差近似。
+            # 考虑叫牌信息的轻量启发式：基础是毛墩差，叠加已确定的 nil 奖惩。
             team0_tricks = state.tricks_won[0] + state.tricks_won[2]
             team1_tricks = state.tricks_won[1] + state.tricks_won[3]
             value = float(team0_tricks - team1_tricks)
+            # 对已经失败的 nil 施加惩罚（已赢墩的 nil 玩家不可能挽回了）
+            for pid in range(state.num_players):
+                bid = state.max_bid[pid] if pid < len(state.max_bid) else None
+                if bid in ("nil", "blind_nil") and state.tricks_won[pid] > 0:
+                    penalty = 100.0 if bid == "blind_nil" else 50.0
+                    if state.teams[pid] == 0:
+                        value -= penalty
+                    else:
+                        value += penalty
             self._leaf_value_cache[cache_key] = value
             return value
 
