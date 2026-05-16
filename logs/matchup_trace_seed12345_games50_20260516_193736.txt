@@ -1,0 +1,3 @@
+# Spades matchup trace log
+# seed=12345 num_games=50
+# seat_specs=['our_mcts', 'go_rule_2', 'our_mcts', 'go_rule_2']

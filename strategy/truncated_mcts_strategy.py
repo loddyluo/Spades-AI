@@ -79,6 +79,8 @@ class TruncatedMCTSConfig:
     # and results are averaged across determinizations.
     mcts_determinization_count: int = 4
     device: str = "cpu"
+    # optional prior oracle spec (e.g. 'go_rule_2') to bias root priors
+    prior_oracle_spec: str = ""
 
 
 @dataclass
@@ -124,11 +126,32 @@ class TruncatedMCTSStrategy:
         self.encoder = SpadesFeatureEncoder()
         self._leaf_value_cache: dict[int, float] = {}
         self._policy_priors_cache: dict[int, dict[int, float]] = {}
+        # Per-decision caches avoid recomputing state hashes and legal-action
+        # lists repeatedly inside one MCTS root search.
+        self._decision_state_key_cache: dict[int, int] | None = None
+        self._decision_legal_actions_cache: dict[int, list[Card]] | None = None
+        self._decision_policy_priors_cache: dict[int, dict[int, float]] | None = None
+        self._decision_leaf_value_cache: dict[int, float] | None = None
         # Diagnostics counters for performance analysis
         self._model_calls: int = 0
         self._policy_model_calls: int = 0
         self._exact_calls: int = 0
         self.model = self._load_model(self.config.checkpoint_path)
+        # optional external prior oracle (rule-based). Try to construct
+        # if a spec was provided; keep None on failure.
+        self._prior_oracle = None
+        spec = getattr(self.config, "prior_oracle_spec", "")
+        if spec:
+            try:
+                # try evaluate/GO-MCTS re-export first
+                from evaluate.GO_MCTS.models import RuleBasedPlayer as _RBP  # type: ignore
+                self._prior_oracle = _RBP()
+            except Exception:
+                try:
+                    from spades_ai.players.rule_based.player import RuleBasedPlayer as _RBP2  # type: ignore
+                    self._prior_oracle = _RBP2()
+                except Exception:
+                    self._prior_oracle = None
 
     def _load_model(self, checkpoint_path: str | None) -> DoubleDummyMLP | None:
         """加载 value/policy 双头模型。
@@ -154,6 +177,14 @@ class TruncatedMCTSStrategy:
         输出:
         - int: 用于叶子估值/先验缓存的稳定键。
         """
+        if self._decision_state_key_cache is not None:
+            state_id = id(state)
+            cached = self._decision_state_key_cache.get(state_id)
+            if cached is not None:
+                return cached
+            cache_key = self.exact_solver._state_hash(state) ^ self.exact_solver._tt_verify(state)
+            self._decision_state_key_cache[state_id] = cache_key
+            return cache_key
         return self.exact_solver._state_hash(state) ^ self.exact_solver._tt_verify(state)
 
     def choose_action(self, state: GameState) -> Card | None:
@@ -182,6 +213,25 @@ class TruncatedMCTSStrategy:
 
     def choose_action_with_info(self, state: GameState) -> dict[str, Any]:
         """返回带搜索统计的动作选择结果。"""
+        self._decision_state_key_cache = {}
+        self._decision_legal_actions_cache = {}
+        self._decision_policy_priors_cache = {}
+        self._decision_leaf_value_cache = {}
+        try:
+            return self._choose_action_with_info_impl(state)
+        finally:
+            self._decision_state_key_cache = None
+            self._decision_legal_actions_cache = None
+            self._decision_policy_priors_cache = None
+            self._decision_leaf_value_cache = None
+
+    def _choose_action_with_info_impl(self, state: GameState) -> dict[str, Any]:
+        """Internal implementation for `choose_action_with_info`.
+
+        Keeping the cache lifetime scoped to a single root decision avoids
+        stale entries when the external game engine mutates `GameState`
+        objects between turns.
+        """
         remaining_cards = self._remaining_cards(state)
         legal_actions = self._legal_actions(state)
         if not legal_actions:
@@ -240,7 +290,10 @@ class TruncatedMCTSStrategy:
                 for _ in range(K):
                     chosen = self._draw_is_sample(mcts_pool_hands, mcts_pool_weights, mcts_is_rng)
                     if chosen is not None:
-                        det_state = copy.deepcopy(state)
+                        try:
+                            det_state = self.exact_solver._deep_copy_state(state)
+                        except Exception:
+                            det_state = copy.deepcopy(state)
                         self._apply_proposal(det_state, state.turn, chosen)
                         det_states.append(det_state)
                 if not det_states:
@@ -309,8 +362,6 @@ class TruncatedMCTSStrategy:
         """把根动作后的状态包装为搜索树根子节点。"""
         node = SearchNode(state=state, action_from_parent=action, prior=1.0)
         node.unexpanded_actions = self._legal_actions(state)
-        node.action_priors = self._policy_priors(state, node.unexpanded_actions)
-        node.unexpanded_actions.sort(key=lambda card: node.action_priors.get(card.card_id, 0.0), reverse=True)
         return node
 
     def _run_simulation(
@@ -334,7 +385,11 @@ class TruncatedMCTSStrategy:
         node = root_node
 
         # Simulation-local state that follows the `node` as we advance.
-        sim_state = copy.deepcopy(node.state)
+        # Use solver's lightweight deep-copy to reduce Python object allocation.
+        try:
+            sim_state = self.exact_solver._deep_copy_state(node.state)
+        except Exception:
+            sim_state = copy.deepcopy(node.state)
         if self.config.use_determinization and root_observer_id is not None and not skip_determinization:
             if is_pool_hands is not None and is_pool_weights is not None:
                 self._apply_is_determinization(
@@ -361,27 +416,38 @@ class TruncatedMCTSStrategy:
 
             if not node.unexpanded_actions:
                 node.unexpanded_actions = self._legal_actions(sim_state)
-                node.action_priors = self._policy_priors(sim_state, node.unexpanded_actions)
-                node.unexpanded_actions.sort(
-                    key=lambda card: node.action_priors.get(card.card_id, 0.0),
-                    reverse=True,
-                )
 
             if node.unexpanded_actions:
                 action = node.unexpanded_actions.pop(0)
                 child_state = self._apply_action(sim_state, action)
+                # compute priors: if an external prior oracle exists, ask it
+                # for a recommended action and give it 60% mass; split
+                # remaining 40% across other legal moves. Fallback to
+                # uniform priors when oracle is unavailable or returns
+                # an illegal move.
+                n_actions = len(node.unexpanded_actions) + 1
+                chosen_prior = None
+                if self._prior_oracle is not None:
+                    try:
+                        state_view = node.state.get_player_view(node.state.turn)
+                        rec = self._prior_oracle.play_card(node.unexpanded_actions, state_view)
+                        # ensure returned action matches one of the legal actions
+                        if rec is not None and any(rec.card_id == a.card_id for a in node.unexpanded_actions):
+                            chosen_prior = rec.card_id
+                    except Exception:
+                        chosen_prior = None
+                if chosen_prior is None:
+                    uniform_prior = 1.0 / max(n_actions, 1)
+                else:
+                    # set prior for the chosen action to 0.6, others split 0.4
+                    uniform_prior = 0.0
                 child = SearchNode(
                     state=child_state,
                     parent=node,
                     action_from_parent=action,
-                    prior=node.action_priors.get(action.card_id, 1.0),
+                    prior=(0.6 if chosen_prior is not None and action.card_id == chosen_prior else (0.4 / max(n_actions - 1, 1)) if chosen_prior is not None else uniform_prior),
                 )
                 child.unexpanded_actions = self._legal_actions(child_state)
-                child.action_priors = self._policy_priors(child_state, child.unexpanded_actions)
-                child.unexpanded_actions.sort(
-                    key=lambda card: child.action_priors.get(card.card_id, 0.0),
-                    reverse=True,
-                )
                 node.children[action] = child
                 path.append(child)
                 node = child
@@ -537,7 +603,7 @@ class TruncatedMCTSStrategy:
         state: GameState,
         observer_id: int,
         rng: random.Random | None = None,
-        num_proposals: int = 1234,
+        num_proposals: int = 10000,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build importance-sampling pool once per decision.
 
@@ -549,7 +615,7 @@ class TruncatedMCTSStrategy:
         - state: current game state.
         - observer_id: player whose hand is fully known.
         - rng: optional seeded random generator.
-        - num_proposals: number of initial deal proposals to sample (default 1234).
+        - num_proposals: number of initial deal proposals to sample (default 10000).
 
         Output:
         - (proposals, weights) where proposals[i] is 4 initial hands, weights[i] is p.
@@ -815,18 +881,45 @@ class TruncatedMCTSStrategy:
         if not legal_actions:
             return {}
 
-        cache_key = self._state_cache_key(state)
-        cached = self._policy_priors_cache.get(cache_key)
-        if cached is not None:
-            return dict(cached)
+        if self._decision_policy_priors_cache is not None:
+            state_id = id(state)
+            cached = self._decision_policy_priors_cache.get(state_id)
+            if cached is not None:
+                return dict(cached)
 
         prob = 1.0 / len(legal_actions)
         priors: dict[int, float] = {action.card_id: prob for action in legal_actions}
-        self._policy_priors_cache[cache_key] = dict(priors)
+        if self._decision_policy_priors_cache is not None:
+            self._decision_policy_priors_cache[id(state)] = dict(priors)
+        else:
+            cache_key = self._state_cache_key(state)
+            self._policy_priors_cache[cache_key] = dict(priors)
         return priors
+
+    def _legal_actions(self, state: GameState) -> list[Card]:
+        """Cached wrapper around `rules.playable` to avoid repeated allocation."""
+        if self._decision_legal_actions_cache is not None:
+            state_id = id(state)
+            cached = self._decision_legal_actions_cache.get(state_id)
+            if cached is not None:
+                return list(cached)
+
+        hand = state.hands[state.turn]
+        legal_actions = self.rules.playable(state, hand, state.turn)
+        legal_actions = sorted(legal_actions, key=lambda card: card.card_id)
+        if self._decision_legal_actions_cache is not None:
+            # store canonical list to avoid repeated work; callers get a copy
+            self._decision_legal_actions_cache[id(state)] = list(legal_actions)
+        return list(legal_actions)
 
     def _leaf_value(self, state: GameState) -> float:
         """在 leaf_threshold 处使用 MLP 估值，并换算到队伍 0 视角。"""
+        if self._decision_leaf_value_cache is not None:
+            state_id = id(state)
+            cached = self._decision_leaf_value_cache.get(state_id)
+            if cached is not None:
+                return cached
+
         cache_key = self._state_cache_key(state)
         cached = self._leaf_value_cache.get(cache_key)
         if cached is not None:
@@ -835,6 +928,8 @@ class TruncatedMCTSStrategy:
         if self._is_terminal(state):
             value = self._terminal_value(state)
             self._leaf_value_cache[cache_key] = value
+            if self._decision_leaf_value_cache is not None:
+                self._decision_leaf_value_cache[id(state)] = value
             return value
 
         if self.model is None:
@@ -852,6 +947,8 @@ class TruncatedMCTSStrategy:
                     else:
                         value += penalty
             self._leaf_value_cache[cache_key] = value
+            if self._decision_leaf_value_cache is not None:
+                self._decision_leaf_value_cache[id(state)] = value
             return value
 
         feature = self.encoder.encode(state, state.turn)
@@ -860,6 +957,8 @@ class TruncatedMCTSStrategy:
         pred_value_view = pred_value_view_scaled * self.config.value_scale
         value = pred_value_view if self._current_team(state) == 0 else -pred_value_view
         self._leaf_value_cache[cache_key] = value
+        if self._decision_leaf_value_cache is not None:
+            self._decision_leaf_value_cache[id(state)] = value
         return value
 
     def get_diagnostics(self) -> dict[str, int]:

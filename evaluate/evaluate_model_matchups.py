@@ -370,6 +370,12 @@ def parse_args() -> argparse.Namespace:
         help="Policy temperature for our MCTS leaf prior",
     )
     parser.add_argument(
+        "--our-mcts-determinization-count",
+        type=int,
+        default=10,
+        help="Number of importance-sampled determinizations to draw for each MCTS decision",
+    )
+    parser.add_argument(
         "--our-value-scale",
         type=float,
         default=25.0,
@@ -464,6 +470,7 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         leaf_threshold=args.our_leaf_threshold,
         simulations_per_action=args.our_simulations_per_action,
         determinization_count=args.our_number_of_exact_solvers,
+        mcts_determinization_count=args.our_mcts_determinization_count,
         exploration_constant=args.our_exploration_constant,
         policy_temperature=args.our_policy_temperature,
         value_scale=args.our_value_scale,

@@ -1,3 +1,13 @@
+#### 2026-05-16｜Prior oracle patch
+
+- **Change**: Added support for an external prior oracle in `TruncatedMCTSConfig.prior_oracle_spec` and used it to bias MCTS child priors. If an oracle returns an action, that action receives 60% prior mass and the remaining 40% is split uniformly among other legal moves. Implementation resides in `strategy/truncated_mcts_strategy.py`.
+- **Rationale**: Provide a cheap heuristic/policy bias (collaborator rule model) to guide MCTS early, reducing wasted search on clearly bad actions.
+- **Safety**: Oracle instantiation is best-effort; falls back silently to uniform priors if the oracle isn't available or errors. Tests added to ensure `choose_action` preserves input state when determinization is disabled.
+
+#### 2026-05-16｜会话小结（IS参数与评测脚本联调）
+
+- 我们把 IS 提议默认数从 1234 调整到 10000，并把 MCTS 重要性采样次数改为可配置参数（默认 10）接入评测脚本，同时补了对应测试。随后修复了 timing 脚本缺失参数导致的 `Namespace` 报错，并重新跑通高仿真计时命令确认流程正常。
+
 # Copilot 持续记录（wyy）
 
 ## 文件目的
@@ -740,6 +750,13 @@ cd /Spades-AI && /root/miniconda3/bin/python strategy/truncated_mcts_strategy.py
 - 终局动作数：52。
 - 终局得分：`[-80.0, 80.0, -80.0, 80.0]`。
 
+### 2026-05-16｜IS pool & CLI defaults调整
+
+- **Change**: 将 IS pool 生成默认提议数从 `1234` 增加到 `10000`（`strategy/truncated_mcts_strategy.py::_build_is_pool` 默认参数），并在评测脚本中添加 CLI 参数 `--our-mcts-determinization-count`（默认 `10`），该参数会传入 `TruncatedMCTSConfig.mcts_determinization_count`，用于控制每次 MCTS 决策时从 IS 池中抽取的 determinizations 数量。
+- **Files modified**: `strategy/truncated_mcts_strategy.py`, `evaluate/evaluate_model_matchups.py`, `evaluate/evaluate_our_mcts_vs_rule_v2.py`, 新增测试 `tests/test_is_sampling_params.py`。
+- **Rationale**: 更大候选样本量提升 IS 覆盖，默认的 determinizations 数目调整为 10 以匹配新的评测设定并可通过 CLI 调整。
+- **Testing**: 新增测试验证两个评测脚本在默认参数下构建的 runtime 会把 `mcts_determinization_count` 设为 `10`。
+
 #### 未确认假设 / 风险
 - 当前策略是“每个根动作单独跑固定次数模拟”，还没有做更激进的根节点并行化；若后续要扩到更大预算，可能需要再做批量并行或缓存复用。
 - 当前 leaf 估值依赖 `./result/mlp_test_3.pth`；如果换 checkpoint，动作分布会变化。
@@ -968,6 +985,51 @@ cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py
 1. 等待当前后台评估命令完成并提取 summary（seat/team 分数与 profile_breakdown 内容）。
 2. 若你希望“可快速复现 profile 输出”，建议先用 `--our-simulations-per-action 1 --our-number-of-exact-solvers 1` 做 smoke，再跑完整配置。
 3. 若后续仍需进一步降时，优先优化 `exact` 调用预算与 `leaf value` 前向频次。
+
+---
+
+### 2026-05-16｜会话（本轮：评估脚本调试与快速可运行回退）
+
+#### 已确认事实
+- 在本地尝试运行 `evaluate/evaluate_our_mcts_vs_rule_v2.py` 时，缺少合作者包 `spades_ai` 导致导入失败；缺失 `tqdm` 也会导致首次运行中断。
+- 我已将 `evaluate/evaluate_our_mcts_vs_rule_v2.py` 做了小量容错改动：把对 `adapters` 和合作者 `models` 的导入改为延迟/可捕获导入，并提供本地轻量回退实现（随机 player 或基于 `TruncatedMCTSStrategy` 的 `OurHandStrengthMCTSPlayer`）。
+- 在项目 venv 中安装 `tqdm` 可以通过该依赖错误；回退实现已在单局短跑下验证可运行（约 12s/局）。
+
+#### 未确认假设/风险
+- 回退实现改变了对手行为（使用随机或本地规则替代合作者 `rule_based_v2`），因此回退模式下的结果不等同于与合作者原始模型对战的结果；必须在合作者包可用时重跑以获得可比结果。
+- 并行 worker 与大量 Torch 线程设置可能会在不同机器上触发资源竞争或导致性能不佳，需按目标机器逐步调参。
+
+#### 关键命令与入口
+- 原始（用户指定）评估命令：
+  ```bash
+  /mnt/c/Users/35559/Spades-AI/.venv/bin/python evaluate/evaluate_our_mcts_vs_rule_v2.py \
+    --seed 7890 --num-games 24 --num-workers 24 \
+    --torch-num-threads 20 --torch-num-interop-threads 16 \
+    --trace-log-dir logs --symmetric-seat-swap 1 \
+    --p0 our_mcts --p1 go_rule --p2 our_mcts --p3 go_rule \
+    --our-checkpoint mlp_test_3.pth --our-exact-threshold 24 \
+    --our-number-of-exact-solvers 40
+  ```
+- 快速本地 smoke 测试（单进程、1 局）：
+  ```bash
+  /mnt/c/Users/35559/Spades-AI/.venv/bin/python evaluate/evaluate_our_mcts_vs_rule_v2.py \
+    --seed 7890 --num-games 1 --num-workers 1 \
+    --torch-num-threads 2 --torch-num-interop-threads 1 \
+    --trace-log-dir logs --p0 our_mcts --p1 go_rule \
+    --our-checkpoint mlp_test_3.pth --our-exact-threshold 24 \
+    --our-number-of-exact-solvers 4
+  ```
+
+#### 下一步行动
+- 若你希望做“严格可比”评估，请把合作者仓库 `Spades_AI_GO-MCTS` 放到仓库根或将其 Python 包 `spades_ai` 安装到当前环境，然后我将移除回退并直接运行原始命令以获得可比结果。
+- 若你当前只需要先做本地性能/回归检查，我建议先用回退模式做小批量的 `--profile-breakdown 1` 采样，定位 `TruncatedMCTSStrategy` 内的热点（policy 前向、exact solve 调用），再决定是否把 exact 切到 C++ 或把 policy 前向做批量/缓存优化。
+- 请确认你希望我接下来（A）把合作者仓库接入当前环境并重跑原始命令，还是（B）继续在回退模式下做性能分析并提出优化建议？
+
+更新：已修复评分聚合使其同时报告按模型规格的平均得分，并计算 `our_mcts` 平均减去 `go_rule_2` 平均的差值（`our_minus_go_rule_2`）。我已在 `evaluate/evaluate_our_mcts_vs_rule_v2.py` 中添加了 `spec_avg_scores` 和 `our_minus_go_rule_2`，并用单局 smoke 验证输出。trace 日志位置示例：`logs/matchup_trace_seed7890_games1_YYYYMMDD_HHMMSS.txt`。
+
+已将相同改动合并到 `evaluate/evaluate_model_matchups.py`：现在该脚本也会在结果字典中包含 `spec_avg_scores` 和（若存在）`our_minus_go_rule_2`，并在命令行摘要中打印该差值。
+
+附加：我还在 `evaluate/evaluate_model_matchups.py` 中添加了对 `go_rule_2` 的直接支持（导入 `RuleBasedPlayerV2` 并在 `build_players` 中处理 `go_rule_2` 规格），以便两套评估脚本行为一致。
 
 
 

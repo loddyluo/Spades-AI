@@ -319,13 +319,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=40,
+        default=100,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=40,
+        default=100,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -370,6 +370,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Policy temperature for our MCTS leaf prior",
+    )
+    parser.add_argument(
+        "--our-mcts-determinization-count",
+        type=int,
+        default=10,
+        help="Number of importance-sampled determinizations to draw for each MCTS decision",
     )
     parser.add_argument(
         "--our-value-scale",
@@ -445,7 +451,7 @@ def _play_single_game_in_worker(job: tuple[int, list[str]]) -> dict[str, Any]:
     """
     if _WORKER_RUNTIME is None or _WORKER_ARGS is None:
         raise RuntimeError("Parallel worker was not initialized")
-    trace_enabled = bool(getattr(_WORKER_ARGS, "trace_log_dir", ""))
+    trace_enabled = bool(getattr(_WORKER_ARGS, "trace_log_dir", "")) and str(getattr(_WORKER_ARGS, "trace_log_dir", "")).lower() != "no"
     seed, seat_specs = job
     return _play_single_game(_WORKER_ARGS, _WORKER_RUNTIME, seed, seat_specs=seat_specs, trace_enabled=trace_enabled)
 
@@ -464,6 +470,7 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         leaf_threshold=args.our_leaf_threshold,
         simulations_per_action=args.our_simulations_per_action,
         determinization_count=args.our_number_of_exact_solvers,
+        mcts_determinization_count=args.our_mcts_determinization_count,
         exploration_constant=args.our_exploration_constant,
         policy_temperature=args.our_policy_temperature,
         value_scale=args.our_value_scale,
@@ -829,7 +836,7 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     """
     games: list[dict[str, Any]] = []
     seat_totals = [0.0, 0.0, 0.0, 0.0]
-    trace_enabled = bool(getattr(args, "trace_log_dir", ""))
+    trace_enabled = bool(getattr(args, "trace_log_dir", "")) and str(getattr(args, "trace_log_dir", "")).lower() != "no"
     symmetric_enabled = int(getattr(args, "symmetric_seat_swap", 1)) != 0
     worker_count = args.num_workers
     if worker_count <= 0:
@@ -909,8 +916,38 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         "seed": args.seed,
         "seat_avg_scores": seat_avgs,
         "team_avg_scores": {"team0": team0_avg, "team1": team1_avg},
+        # Per-spec averages (average of seats using the same spec)
+        "spec_avg_scores": {},
+        
         "games": games,
     }
+    # compute per-spec averages from actual game records (handles symmetric swaps)
+    spec_to_scores: dict[str, list[float]] = {}
+    for game in games:
+        for seat_idx, spec in enumerate(game["seat_specs"]):
+            spec_to_scores.setdefault(spec, []).append(float(game["seat_scores"][seat_idx]))
+    spec_avgs: dict[str, float] = {spec: sum(vals) / len(vals) for spec, vals in spec_to_scores.items()}
+    result["spec_avg_scores"] = spec_avgs
+    # If both our_mcts and go_rule_2 are present, add their difference (our_mcts - go_rule_2)
+    if "our_mcts" in spec_avgs and "go_rule_2" in spec_avgs:
+        result["our_minus_go_rule_2"] = float(spec_avgs["our_mcts"] - spec_avgs["go_rule_2"])
+    # If symmetric seat-swap is enabled, compute per-model-slot averages.
+    if symmetric_enabled:
+        base_specs = list(base_seat_specs)
+        slot_totals = [0.0, 0.0, 0.0, 0.0]
+        slot_counts = [0, 0, 0, 0]
+        swapped_map = [1, 0, 3, 2]
+        for game in games:
+            if game["seat_specs"] == base_specs:
+                slot_to_seat = [0, 1, 2, 3]
+            else:
+                slot_to_seat = swapped_map
+            for slot_idx in range(4):
+                seat_idx = slot_to_seat[slot_idx]
+                slot_totals[slot_idx] += float(game["seat_scores"][seat_idx])
+                slot_counts[slot_idx] += 1
+        slot_avgs = [slot_totals[i] / slot_counts[i] if slot_counts[i] else 0.0 for i in range(4)]
+        result["model_slot_avg_scores"] = slot_avgs
     if trace_log_path is not None:
         result["trace_log_path"] = trace_log_path
     return result
@@ -932,11 +969,41 @@ def _print_summary(result: dict[str, Any]) -> None:
     if result.get("symmetric_seat_swap"):
         extra += " | symmetric duplicate enabled"
     print(f"Games: {result['num_games']}{extra} | Base seed: {result['seed']}")
-    for seat_index, (spec, avg) in enumerate(zip(result["seat_specs"], result["seat_avg_scores"])):
-        print(f"Seat {seat_index}: {spec:<18} avg score = {avg:+.2f}")
-    team_scores = result["team_avg_scores"]
-    print(f"Team 0 avg score: {team_scores['team0']:+.2f}")
-    print(f"Team 1 avg score: {team_scores['team1']:+.2f}")
+    # If symmetric seat-swap is enabled, report per-model-slot averages
+    if result.get("symmetric_seat_swap") and result.get("model_slot_avg_scores"):
+        slot_avgs = result["model_slot_avg_scores"]
+        print("Per-seat (base specs shown for reference):")
+        for seat_index, spec in enumerate(result["seat_specs"]):
+            print(f"  seat {seat_index}: {spec}")
+        team_scores = result["team_avg_scores"]
+        print(f"Team 0 avg score: {team_scores['team0']:+.2f}")
+        print(f"Team 1 avg score: {team_scores['team1']:+.2f}")
+        print("-- Per-model-slot averages (model0..model3):")
+        for idx, avg in enumerate(slot_avgs):
+            spec = result["seat_specs"][idx]
+            print(f"  model {idx} ({spec}): avg score = {avg:+.2f}")
+    else:
+        for seat_index, (spec, avg) in enumerate(zip(result["seat_specs"], result["seat_avg_scores"])):
+            print(f"Seat {seat_index}: {spec:<18} avg score = {avg:+.2f}")
+        team_scores = result["team_avg_scores"]
+        print(f"Team 0 avg score: {team_scores['team0']:+.2f}")
+        print(f"Team 1 avg score: {team_scores['team1']:+.2f}")
+    # Print per-spec averages if available
+    spec_avgs = result.get("spec_avg_scores")
+    if spec_avgs:
+        print("-- Per-spec averages:")
+        for spec, avg in spec_avgs.items():
+            print(f"  {spec:<18} avg score = {avg:+.2f}")
+        if "our_minus_go_rule_2" in result:
+            diff = result["our_minus_go_rule_2"]
+            print(f"\nour_mcts avg - go_rule_2 avg = {diff:+.2f}")
+    # Print per-model-slot averages when symmetric seat-swap is enabled
+    slot_avgs = result.get("model_slot_avg_scores")
+    if result.get("symmetric_seat_swap") and slot_avgs:
+        print("-- Per-model-slot averages (model0..model3):")
+        for idx, avg in enumerate(slot_avgs):
+            spec = result["seat_specs"][idx]
+            print(f"  model {idx} ({spec}): avg score = {avg:+.2f}")
     print("=" * 72)
 
 
