@@ -159,7 +159,7 @@ static void legal_actions(const NativeState* s, int32_t player_id, std::vector<i
 }
 
 static double evaluate_score_diff(const NativeState* s) {
-    int32_t team_scores[2] = {0, 0};
+    double team_scores[2] = {0.0, 0.0};
     for (int32_t team_id = 0; team_id < 2; ++team_id) {
         int members[2];
         int idx = 0;
@@ -192,10 +192,10 @@ static double evaluate_score_diff(const NativeState* s) {
             }
         }
 
-        team_scores[team_id] = static_cast<int32_t>(score);
+        team_scores[team_id] = score;
     }
 
-    return static_cast<double>(team_scores[0] - team_scores[1]);
+    return team_scores[0] - team_scores[1];
 }
 
 static inline uint64_t hash_state(const NativeState* s) {
@@ -399,10 +399,10 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
     double best_value = maximize ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
     int32_t best_action = actions[0];
 
+    clear_tt();
     for (size_t i = 0; i < actions.size(); ++i) {
         NativeState child = s;
         double q_value;
-        clear_tt();
         q_value = solve_child_value(&child, s.turn, actions[i], -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 
         out_result->actions[i] = actions[i];

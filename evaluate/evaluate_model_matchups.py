@@ -30,6 +30,7 @@ Function input/output summary:
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 from datetime import datetime
 import multiprocessing as mp
 import os
@@ -899,6 +900,24 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     seat_avgs = [total / n for total in seat_totals]
     team0_avg = (seat_avgs[0] + seat_avgs[2]) / 2.0
     team1_avg = (seat_avgs[1] + seat_avgs[3]) / 2.0
+
+    # --- Per-spec aggregation (correct under symmetric seat swap) ---
+    # Accumulate scores by AI identity (spec name) rather than by physical
+    # seat index, so that symmetric-swap games don't mix different AIs'
+    # scores into the same bucket.
+    spec_score_totals: dict[str, float] = defaultdict(float)
+    spec_score_counts: dict[str, int] = defaultdict(int)
+    for game in games:
+        game_specs = game.get("seat_specs", base_seat_specs)
+        for seat_idx, score in enumerate(game["seat_scores"]):
+            spec = game_specs[seat_idx]
+            spec_score_totals[spec] += float(score)
+            spec_score_counts[spec] += 1
+
+    spec_avg_scores: dict[str, float] = {}
+    for spec in spec_score_totals:
+        spec_avg_scores[spec] = spec_score_totals[spec] / max(spec_score_counts[spec], 1)
+
     result = {
         "seat_specs": [args.p0, args.p1, args.p2, args.p3],
         "num_games": len(games),
@@ -907,6 +926,7 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         "seed": args.seed,
         "seat_avg_scores": seat_avgs,
         "team_avg_scores": {"team0": team0_avg, "team1": team1_avg},
+        "spec_avg_scores": spec_avg_scores,
         "games": games,
     }
     if trace_log_path is not None:
@@ -935,6 +955,13 @@ def _print_summary(result: dict[str, Any]) -> None:
     team_scores = result["team_avg_scores"]
     print(f"Team 0 avg score: {team_scores['team0']:+.2f}")
     print(f"Team 1 avg score: {team_scores['team1']:+.2f}")
+    # --- Per-spec average scores (the primary metric under symmetric swap) ---
+    spec_avg = result.get("spec_avg_scores")
+    if spec_avg:
+        print("-" * 72)
+        print("Per-AI average scores (aggregated by identity, not seat):")
+        for spec, avg in spec_avg.items():
+            print(f"  {spec:<18} avg score = {avg:+.2f}")
     print("=" * 72)
 
 

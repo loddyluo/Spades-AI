@@ -90,8 +90,6 @@ static void legal_actions(const NativeState* s, int32_t player_id, std::vector<i
     if (table_count == 0) {
         // 领牌：黑桃未破时不能首攻黑桃，除非只剩黑桃。
         if (!s->spades_broken) {
-            uint64_t non_spade_mask = hand & ~(((1ULL << 13) - 1ULL) << 0);
-            non_spade_mask |= hand & ~(((1ULL << 13) - 1ULL) << 0); // fallback clarity
             bool has_non_spade = false;
             for (int32_t suit = 1; suit < 4; ++suit) {
                 if (hand_has_suit(hand, suit)) { has_non_spade = true; break; }
@@ -124,7 +122,7 @@ static void legal_actions(const NativeState* s, int32_t player_id, std::vector<i
 }
 
 static double evaluate_score_diff(const NativeState* s) {
-    int32_t team_scores[2] = {0, 0};
+    double team_scores[2] = {0.0, 0.0};
     for (int32_t team_id = 0; team_id < 2; ++team_id) {
         int members[2];
         int idx = 0;
@@ -157,10 +155,10 @@ static double evaluate_score_diff(const NativeState* s) {
             }
         }
 
-        team_scores[team_id] = static_cast<int32_t>(score);
+        team_scores[team_id] = score;
     }
 
-    return static_cast<double>(team_scores[0] - team_scores[1]);
+    return team_scores[0] - team_scores[1];
 }
 
 static inline uint64_t hash_state(const NativeState* s) {
@@ -364,10 +362,10 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
     double best_value = maximize ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
     int32_t best_action = actions[0];
 
+    clear_tt();
     for (size_t i = 0; i < actions.size(); ++i) {
         NativeState child = s;
         double q_value;
-        clear_tt();
         q_value = solve_child_value(&child, s.turn, actions[i], -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 
         out_result->actions[i] = actions[i];
