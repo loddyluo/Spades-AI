@@ -66,6 +66,7 @@ from models import (
     MLPBidPlayer,
     RandomPlayer,
     RuleBasedPlayer,
+    RuleBasedPlayerV2,
     load_bid_mlp_model,
     load_gpt2_policy_value_model,
 )
@@ -536,6 +537,9 @@ def build_players(
             continue
         if spec == "go_rule":
             players.append(GoPlayerAdapter(RuleBasedPlayer()))
+            continue
+        if spec == "go_rule_v2":
+            players.append(GoPlayerAdapter(RuleBasedPlayerV2()))
             continue
         if spec == "go_argmax":
             if runtime.go_pv_model is None:

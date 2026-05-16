@@ -35,6 +35,7 @@ from spades_ai.players.gomcts_player import GOMCTSPlayer
 from spades_ai.players.mlp_bid_player import MLPBidPlayer
 from spades_ai.players.random_player import RandomPlayer
 from spades_ai.players.rule_based.player import RuleBasedPlayer
+from spades_ai.players.rule_based_v2.player import RuleBasedPlayer as RuleBasedPlayerV2
 from spades_ai.search.go_mcts import GOMCTSConfig
 
 
@@ -95,6 +96,7 @@ __all__ = [
     "MLPBidPlayer",
     "RandomPlayer",
     "RuleBasedPlayer",
+    "RuleBasedPlayerV2",
     "load_bid_mlp_model",
     "load_gpt2_policy_value_model",
 ]
