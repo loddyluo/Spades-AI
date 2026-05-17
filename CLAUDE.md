@@ -1,3 +1,7 @@
+rule_based_v2被写在/home/oier/wyy/Spades-AI/Spades_AI_GO-MCTS/spades_ai/players/rule_based_v2里，被用作MCTS搜索时动作的先验概率生成。你需要注意这个模型的输入的数据格式（如何表示局面状态）. 现在问题出在这个oracle没有被正确加载，truncated_mcts_strategy.py代码出现问题了。
+
+您需要一直修改问题（只修改truncated_mcts_strategy.py），直到print("!!!!!!!! Chosen_prior_is_None !!!!!!!")不被输出为止。我的测试的bash命令是python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 990 --num-games 1 --num-workers 15 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-checkpoint mlp_test_3.pth
+
 现在有一个仓库，其中的our_mcts是我们的黑桃王人工智能。黑桃王是一种牌类游戏。
 
 目前在还剩＞24张牌时，使用MCTS与PUCT混合的办法。在还剩≤24张牌时，使用精确求解器。这都是使用了所有人的手牌信息。但是，现在除了自己以外的三个玩家的剩余牌都是随机采样的，这不够好。

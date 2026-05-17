@@ -536,6 +536,7 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         policy_temperature=args.our_policy_temperature,
         value_scale=args.our_value_scale,
         checkpoint_path=_resolve_checkpoint_path(args.our_checkpoint) if args.our_checkpoint else None,
+        prior_oracle_spec="go_rule_2",
     )
     go_mcts_config = GOMCTSConfig(
         n_runs=args.go_mcts_runs,

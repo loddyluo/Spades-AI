@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,14 +138,21 @@ class TruncatedMCTSStrategy:
         self._policy_model_calls: int = 0
         self._exact_calls: int = 0
         self.model = self._load_model(self.config.checkpoint_path)
+        # Ensure Spades_AI_GO-MCTS is on sys.path for oracle imports
+        _collab_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "Spades_AI_GO-MCTS"))
+        if _collab_root not in sys.path:
+            sys.path.insert(0, _collab_root)
+
         # optional external prior oracle (rule-based). Try to construct
         # if a spec was provided; keep None on failure.
         self._prior_oracle = None
         spec = getattr(self.config, "prior_oracle_spec", "")
         if spec:
             try:
-                # try evaluate/GO-MCTS re-export first
-                from evaluate.GO_MCTS.models import RuleBasedPlayer as _RBP  # type: ignore
+                if spec == "go_rule_2":
+                    from spades_ai.players.rule_based_v2.player import RuleBasedPlayer as _RBP  # type: ignore
+                else:
+                    from evaluate.GO_MCTS.models import RuleBasedPlayer as _RBP  # type: ignore
                 self._prior_oracle = _RBP()
             except Exception:
                 try:
@@ -152,6 +160,22 @@ class TruncatedMCTSStrategy:
                     self._prior_oracle = _RBP2()
                 except Exception:
                     self._prior_oracle = None
+        # Cache bridge module for converting local state -> GoGameState
+        self._bridge_mod = None
+        if self._prior_oracle is not None:
+            try:
+                from pathlib import Path
+                import importlib.util
+                _bp = Path(__file__).resolve().parent.parent / "evaluate" / "GO-MCTS" / "bridge.py"
+                _spec = importlib.util.spec_from_file_location("_go_bridge", str(_bp))
+                if _spec and _spec.loader:
+                    _mod = importlib.util.module_from_spec(_spec)
+                    _spec.loader.exec_module(_mod)
+                    self._bridge_mod = _mod
+                    print(f"[ORACLE] Bridge loaded, prior oracle ready: {self._prior_oracle}")
+            except Exception:
+                import traceback; traceback.print_exc()
+                self._bridge_mod = None
 
     def _load_model(self, checkpoint_path: str | None) -> DoubleDummyMLP | None:
         """加载 value/policy 双头模型。
@@ -427,16 +451,24 @@ class TruncatedMCTSStrategy:
                 # an illegal move.
                 n_actions = len(node.unexpanded_actions) + 1
                 chosen_prior = None
-                if self._prior_oracle is not None:
+                if self._prior_oracle is not None and self._bridge_mod is not None:
                     try:
-                        state_view = node.state.get_player_view(node.state.turn)
-                        rec = self._prior_oracle.play_card(node.unexpanded_actions, state_view)
-                        # ensure returned action matches one of the legal actions
-                        if rec is not None and any(rec.card_id == a.card_id for a in node.unexpanded_actions):
-                            chosen_prior = rec.card_id
-                    except Exception:
+                        go_state = self._bridge_mod.to_go_state(node.state)
+                        go_card = self._prior_oracle.choose_card(go_state)
+                        # print("[GO_CARD]", go_card)
+                        local_rec = self._bridge_mod.to_local_card(go_card)
+                        # Check against the FULL set of legal actions for this
+                        # state (node.unexpanded_actions may have shrunk as
+                        # earlier _run_simulation calls expanded some actions).
+                        all_legal_full = self._legal_actions(node.state)
+                        if any(local_rec.card_id == a.card_id for a in all_legal_full):
+                            chosen_prior = local_rec.card_id
+                    except Exception as _e:
+                        import traceback
+                        traceback.print_exc()
                         chosen_prior = None
                 if chosen_prior is None:
+                    print("!!!!!!! CHOSEN PRIOR is none", flush=True)
                     uniform_prior = 1.0 / max(n_actions, 1)
                 else:
                     # set prior for the chosen action to .75, others split 0.25

@@ -106,7 +106,7 @@ python evaluate/evaluate_model_matchups.py \
 如果你只想跑当前最稳定的评估组合，直接用这一条：
 
 ```bash
-python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 13000 --num-games 30 --num-workers 15 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-checkpoint mlp_test_3.pth
+python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 990 --num-games 1 --num-workers 15 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-checkpoint mlp_test_3.pth
 ```
 
 这条命令用于评估本地截断 MCTS 与协作者规则玩家的对抗表现。当前评估路径会按语义关闭 `blind_nil`，避免把“看牌后”的叫牌与“盲叫”混在一起；本地 `OurHandStrengthMCTSPlayer` 也只会在 `nil` 或普通数值叫牌之间做选择。
