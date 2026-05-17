@@ -739,7 +739,7 @@ class TruncatedMCTSStrategy:
                 except Exception:
                     match = 0.0
                 p_step = 0.4 * (1.0 / legal_count) + 0.6 * match
-                print(p_step)
+                # print(p_step)
             else:
                 print("!!!!!!!!!!!!!!!! FALLBACK")
                 p_step = 1.0 / legal_count
