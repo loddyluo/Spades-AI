@@ -429,7 +429,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-mcts-determinization-count",
         type=int,
-        default=10,
+        default=5,
         help="Number of importance-sampled determinizations to draw for each MCTS decision",
     )
     parser.add_argument(

@@ -2,6 +2,8 @@
 
 本文档面向第一次接触本仓库的开发者，目标是让你快速理解并跑通项目。
 
+python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 11 --num-games 10 --num-workers 20 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-checkpoint mlp_test_3.pth
+
 ## Trouble Shooting
 
 
@@ -13,6 +15,9 @@ submodule没拉取：
 
 git submodule sync --recursive && git submodule update --init --recursive
 
+git submodule add https://github.com/loddyluo/Spades_AI_GO-MCTS Spades_AI_GO-MCTS
+
+git submodule update --init --recursive
 
 
 ## 1. 项目目标

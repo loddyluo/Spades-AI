@@ -503,6 +503,84 @@ class TruncatedMCTSStrategy:
         return value
 
     # -------------------- Determinization helpers --------------------
+
+    def _precompute_go_step_data(
+        self,
+        play_sequence: list[tuple[int, Card]],
+        original_state: GameState,
+    ) -> list[dict]:
+        """Precompute GoGameState invariants at each step of play_sequence.
+
+        For each step k, returns a dict with everything needed to build
+        a GoGameState *except* hands (which is proposal-dependent).
+        Returns list of length len(play_sequence); entry k is the state
+        *before* the k-th action.
+        """
+        bm = self._bridge_mod
+
+        # Convert bids (same for all steps)
+        go_bids = []
+        for bv in original_state.max_bid:
+            gb = bm._to_go_bid_value(bv)
+            if gb is not None:
+                go_bids.append(gb)
+        go_bids_tuple = tuple(go_bids)
+
+        steps: list[dict] = []
+        completed_tricks_list: list = []
+        current_trick_cards_list: list = []
+        tricks_won = [0, 0, 0, 0]
+        trick_number = 0
+        spades_broken_flag = False
+        void_sets: list[set] = [set(), set(), set(), set()]
+        leader = play_sequence[0][0] if play_sequence else 0
+
+        for step_idx, (player, card) in enumerate(play_sequence):
+            pos_in_trick = step_idx % 4
+
+            # --- record state BEFORE this action ---
+            steps.append({
+                "completed_tricks": tuple(completed_tricks_list),
+                "current_trick_cards": tuple(current_trick_cards_list),
+                "leader": leader,
+                "trick_number": trick_number + 1,
+                "tricks_won": tuple(tricks_won),
+                "spades_broken": spades_broken_flag,
+                "void_shown": tuple(frozenset(s) for s in void_sets),
+                "bids": go_bids_tuple,
+            })
+
+            # --- apply this action to our tracking ---
+            go_card = bm.to_go_card(card)
+            go_tc = bm.GoTrickCard(player=player, card=go_card)
+
+            # Void inference: follower who plays off-suit is void in led suit
+            if pos_in_trick > 0 and current_trick_cards_list:
+                led_suit_go = current_trick_cards_list[0].card.suit
+                if go_card.suit != led_suit_go:
+                    void_sets[player].add(led_suit_go)
+
+            current_trick_cards_list.append(go_tc)
+
+            if card.suit == Suit.SPADES:
+                spades_broken_flag = True
+
+            # Trick completion?
+            if pos_in_trick == 3:
+                led_suit_go = current_trick_cards_list[0].card.suit
+                trick = bm.GoTrick(
+                    cards=tuple(current_trick_cards_list),
+                    led_suit=led_suit_go,
+                )
+                winner = trick.winner()
+                tricks_won[winner] += 1
+                completed_tricks_list.append(trick)
+                current_trick_cards_list = []
+                trick_number += 1
+                leader = winner
+
+        return steps
+
     def _build_play_sequence(self, state: GameState) -> list[tuple[int, Card]]:
         """Extract ordered (player_id, card) sequence from trick_history + table_cards.
 
@@ -574,12 +652,18 @@ class TruncatedMCTSStrategy:
         self,
         initial_hands: list[list[Card]],
         play_sequence: list[tuple[int, Card]],
+        step_contexts: list[dict] | None = None,
     ) -> float:
-        """Replay play_sequence against initial_hands and compute p = ∏(1/D_i).
+        """Replay play_sequence against initial_hands and compute p = ∏(p_i).
+
+        Each p_i = 0.4 * (1/D_i) + 0.6 * oracle_match  if the move is legal,
+        or 0 if illegal.  When oracle / step_contexts is unavailable, falls
+        back to uniform p_i = 1/D_i (original behaviour).
 
         Input:
         - initial_hands: 4 initial hands (the proposal being evaluated).
         - play_sequence: ordered (player_id, Card) from actual game history.
+        - step_contexts: optional pre-computed Go state invariants per step.
 
         Output:
         - probability weight p; 0 if any move was illegal given this deal.
@@ -590,7 +674,21 @@ class TruncatedMCTSStrategy:
         led_suit: Suit | None = None
         weight = 1.0
 
-        for player, card in play_sequence:
+        use_oracle = (
+            self._prior_oracle is not None
+            and self._bridge_mod is not None
+            and step_contexts is not None
+        )
+
+        if use_oracle:
+            bm = self._bridge_mod
+            # Maintain GO-format hands incrementally alongside local hands
+            go_hands = tuple(
+                frozenset(bm.to_go_card(c) for c in hands[p])
+                for p in range(4)
+            )
+
+        for step_idx, (player, card) in enumerate(play_sequence):
             hand = hands[player]
 
             # Card must be in hand
@@ -618,8 +716,43 @@ class TruncatedMCTSStrategy:
                 legal_count = (sum(1 for c in hand if c.suit == led_suit)
                                if has_led else len(hand))
 
-            weight *= 1.0 / legal_count
+            # --- compute step probability ---
+            if use_oracle:
+                ctx = step_contexts[step_idx]
+                try:
+                    go_state = bm.GoGameState(
+                        hands=go_hands,
+                        bids=ctx["bids"],
+                        completed_tricks=ctx["completed_tricks"],
+                        current_trick_cards=ctx["current_trick_cards"],
+                        current_player=player,
+                        leader=ctx["leader"],
+                        trick_number=ctx["trick_number"],
+                        tricks_won=ctx["tricks_won"],
+                        spades_broken=spades_broken,
+                        phase=bm.GoPhase.PLAYING,
+                        void_shown=ctx["void_shown"],
+                    )
+                    oracle_card = self._prior_oracle.choose_card(go_state)
+                    oracle_local = bm.to_local_card(oracle_card)
+                    match = 1.0 if oracle_local.card_id == card.card_id else 0.0
+                except Exception:
+                    match = 0.0
+                p_step = 0.4 * (1.0 / legal_count) + 0.6 * match
+                print(p_step)
+            else:
+                print("!!!!!!!!!!!!!!!! FALLBACK")
+                p_step = 1.0 / legal_count
+
+            weight *= p_step
+
+            # --- update tracking after the action ---
             hand.pop(idx)
+            if use_oracle:
+                go_card = bm.to_go_card(card)
+                go_hands_list = list(go_hands)
+                go_hands_list[player] = go_hands[player] - {go_card}
+                go_hands = tuple(go_hands_list)
 
             if card.suit == Suit.SPADES:
                 spades_broken = True
@@ -635,19 +768,21 @@ class TruncatedMCTSStrategy:
         state: GameState,
         observer_id: int,
         rng: random.Random | None = None,
-        num_proposals: int = 10000,
+        num_proposals: int = 1234,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build importance-sampling pool once per decision.
 
         Generates num_proposals initial deal proposals, computes each
-        proposal's probability weight (product of 1/legal_count per step),
-        and returns (proposals, weights) for repeated weighted drawing.
+        proposal's probability weight — either uniform (1/D per step) or
+        the oracle-blended 0.4*(1/D)+0.6*one_hot when the rule-based prior
+        oracle is available — and returns (proposals, weights) for repeated
+        weighted drawing.
 
         Input:
         - state: current game state.
         - observer_id: player whose hand is fully known.
         - rng: optional seeded random generator.
-        - num_proposals: number of initial deal proposals to sample (default 10000).
+        - num_proposals: number of initial deal proposals to sample (default 1234).
 
         Output:
         - (proposals, weights) where proposals[i] is 4 initial hands, weights[i] is p.
@@ -663,6 +798,14 @@ class TruncatedMCTSStrategy:
         for p, c in play_sequence:
             played_by_player[p].append(c)
 
+        # Pre-compute Go step contexts when oracle is available
+        step_contexts = None
+        if self._prior_oracle is not None and self._bridge_mod is not None:
+            try:
+                step_contexts = self._precompute_go_step_data(play_sequence, state)
+            except Exception:
+                step_contexts = None
+
         proposals: list[list[list[Card]]] = []
         prop_weights: list[float] = []
 
@@ -671,7 +814,9 @@ class TruncatedMCTSStrategy:
                 state.all_cards, observer_id, state.hands[observer_id],
                 played_by_player, rng,
             )
-            w = self._compute_importance_weight(initial_hands, play_sequence)
+            w = self._compute_importance_weight(
+                initial_hands, play_sequence, step_contexts,
+            )
             if w > 0.0:
                 proposals.append(initial_hands)
                 prop_weights.append(w)
