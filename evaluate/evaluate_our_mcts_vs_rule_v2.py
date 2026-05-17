@@ -417,7 +417,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-exploration-constant",
         type=float,
-        default=1.5,
+        default=8.0,
         help="PUCT exploration constant for our MCTS",
     )
     parser.add_argument(

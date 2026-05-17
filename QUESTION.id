@@ -1,0 +1,8 @@
+您需要解决的问题是MCTS在低模拟次数时，如果一个节点的子节点有尚未被展开的，那么会按照card_id选择，但是实际上我们希望MCTS在低模拟次数时第一次优先选择oracle推荐的子节点，其次再按照card_id选择。
+
+if node.unexpanded_actions:          # True！大部分都没展开过                             
+      action = node.unexpanded_actions.pop(0)  # 按 card_id 顺序弹出                        
+      # oracle 被调用了（设 prior），但没用！                                               
+      # 因为根本不会走到 _select_child_puct
+
+修改/home/oier/wyy/Spades-AI/strategy/truncated_mcts_strategy.py的代码

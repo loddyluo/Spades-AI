@@ -442,33 +442,37 @@ class TruncatedMCTSStrategy:
                 node.unexpanded_actions = self._legal_actions(sim_state)
 
             if node.unexpanded_actions:
-                action = node.unexpanded_actions.pop(0)
-                child_state = self._apply_action(sim_state, action)
-                # compute priors: if an external prior oracle exists, ask it
-                # for a recommended action and give it 75% mass; split
-                # remaining 25% across other legal moves. Fallback to
-                # uniform priors when oracle is unavailable or returns
-                # an illegal move.
-                n_actions = len(node.unexpanded_actions) + 1
+                # --- decide which action to expand ---
+                # 1st priority: oracle recommendation (if still unexpanded)
+                # 2nd priority: first remaining by card_id order
                 chosen_prior = None
+                oracle_action_card = None
                 if self._prior_oracle is not None and self._bridge_mod is not None:
                     try:
                         go_state = self._bridge_mod.to_go_state(node.state)
                         go_card = self._prior_oracle.choose_card(go_state)
-                        # print("[GO_CARD]", go_card)
                         local_rec = self._bridge_mod.to_local_card(go_card)
-                        # Check against the FULL set of legal actions for this
-                        # state (node.unexpanded_actions may have shrunk as
-                        # earlier _run_simulation calls expanded some actions).
+                        oracle_cid = local_rec.card_id
                         all_legal_full = self._legal_actions(node.state)
-                        if any(local_rec.card_id == a.card_id for a in all_legal_full):
-                            chosen_prior = local_rec.card_id
-                    except Exception as _e:
-                        import traceback
-                        traceback.print_exc()
+                        if any(oracle_cid == a.card_id for a in all_legal_full):
+                            chosen_prior = oracle_cid
+                            # Check if oracle's choice is still unexpanded
+                            for i, a in enumerate(node.unexpanded_actions):
+                                if a.card_id == oracle_cid:
+                                    oracle_action_card = node.unexpanded_actions.pop(i)
+                                    break
+                    except Exception:
                         chosen_prior = None
+
+                if oracle_action_card is not None:
+                    action = oracle_action_card
+                else:
+                    action = node.unexpanded_actions.pop(0)
+
+                child_state = self._apply_action(sim_state, action)
+                n_actions = len(node.unexpanded_actions) + 1
                 if chosen_prior is None:
-                    print("!!!!!!! CHOSEN PRIOR is none", flush=True)
+                    # print("!!!!!!! CHOSEN PRIOR is none", flush=True)
                     uniform_prior = 1.0 / max(n_actions, 1)
                 else:
                     # set prior for the chosen action to .75, others split 0.25
