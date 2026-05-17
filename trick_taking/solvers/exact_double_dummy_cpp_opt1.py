@@ -72,9 +72,12 @@ class ExactDoubleDummyCppOpt1Solver(ExactDoubleDummySolver):
                 subprocess.check_call([
                     "g++",
                     "-O3",
+                    "-march=native",
+                    "-flto",
                     "-std=c++17",
                     "-shared",
                     "-fPIC",
+                    "-pthread",
                     src,
                     "-o",
                     out,
