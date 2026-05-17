@@ -57,6 +57,7 @@ from strategy.truncated_mcts_strategy import TruncatedMCTSConfig
 from trick_taking.games.spades import SpadesRules
 
 from adapters import GoPlayerAdapter, OurHandStrengthMCTSPlayer
+from bridge import normalize_bid_for_legal_options, to_go_state
 from models import (
     ArgmaxPlayer,
     BidMLP,
@@ -71,6 +72,59 @@ from models import (
 
 # v2 rule-based player — imported from the collaborator's rule_based_v2 package
 from spades_ai.players.rule_based_v2.player import RuleBasedPlayer as RuleBasedPlayerV2
+
+
+# ── Unified bid-model wrappers ──────────────────────────────────────────────
+# Both wrappers below use the MLP bid checkpoint for bidding while keeping
+# their original card-play strategy (MCTS / rule-based-v2).
+
+
+class _OurMCTSWithMLPBid(OurHandStrengthMCTSPlayer):
+    """OurHandStrengthMCTSPlayer variant that bids with MLPBidPlayer.
+
+    Card play still uses TruncatedMCTSStrategy (inherited from parent).
+    """
+
+    def __init__(self, config: TruncatedMCTSConfig | None, bid_model: BidMLP, device: str) -> None:
+        super().__init__(config)
+        self._mlp_bidder = MLPBidPlayer(bid_model, device)
+
+    def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
+        state = state_view.get("state")
+        if state is None:
+            raise ValueError("_OurMCTSWithMLPBid.place_bid requires state_view['state']")
+        if self.position < 0:
+            raise ValueError("_OurMCTSWithMLPBid.start_game was not called")
+
+        go_state = to_go_state(state)
+        bid = self._mlp_bidder.choose_bid(go_state)
+        normalized_bid = normalize_bid_for_legal_options(bid, legal_bids)
+
+        hand = list(state.hands[self.position])
+        self.last_bid_info = {
+            "hand": [str(card) for card in hand],
+            "legal_bids": list(legal_bids),
+            "chosen_bid": normalized_bid,
+        }
+        return normalized_bid
+
+
+class _MLPBidWithV2Play:
+    """Adapter object: MLP bidding, RuleBasedPlayerV2 card play.
+
+    Designed to be wrapped by ``GoPlayerAdapter`` so it plugs into the
+    local match runner seamlessly.
+    """
+
+    def __init__(self, bid_model: BidMLP, device: str) -> None:
+        self._mlp = MLPBidPlayer(bid_model, device)
+        self._v2 = RuleBasedPlayerV2()
+
+    def choose_bid(self, state: Any) -> Any:
+        return self._mlp.choose_bid(state)
+
+    def choose_card(self, state: Any) -> Any:
+        return self._v2.choose_card(state)
 
 
 def _card_list_to_text(cards: list[Any]) -> str:
@@ -281,6 +335,7 @@ class Runtime:
     go_mcts_config: GOMCTSConfig
     go_pv_model: Any
     go_bid_model: BidMLP | None
+    bid_model: BidMLP | None
     go_argmax_threshold: float
     go_pv_checkpoint: str
     go_bid_checkpoint: str
@@ -319,13 +374,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=100,
+        default=40,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=100,
+        default=40,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -385,6 +440,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--go-pv-checkpoint", type=str, default="", help="合作者仓库 GPT-2 策略/价值模型的 checkpoint 路径")
     parser.add_argument("--go-bid-checkpoint", type=str, default="", help="合作者仓库叫牌 MLP 模型的 checkpoint 路径")
+    parser.add_argument(
+        "--bid-checkpoint",
+        type=str,
+        default="./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt",
+        help="Bid MLP checkpoint used by both our_mcts and go_rule_2 for bidding",
+    )
     parser.add_argument("--go-mcts-runs", type=int, default=100, help="合作者 GOMCTS 每次决策的模拟/rollout 次数")
     parser.add_argument("--go-mcts-steps", type=int, default=5, help="合作者 GOMCTS 每次 rollout 的最大步数/深度")
     parser.add_argument("--go-mcts-c", type=float, default=0.3, help="合作者 GOMCTS 的探索常数，越大越偏向探索")
@@ -496,12 +557,18 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         if need_go_bid_model and args.go_bid_checkpoint
         else None
     )
+    bid_model = (
+        load_bid_mlp_model(_resolve_checkpoint_path(args.bid_checkpoint), args.device)
+        if args.bid_checkpoint
+        else None
+    )
     return Runtime(
         device=args.device,
         local_mcts_config=local_mcts_config,
         go_mcts_config=go_mcts_config,
         go_pv_model=go_pv_model,
         go_bid_model=go_bid_model,
+        bid_model=bid_model,
         go_argmax_threshold=args.go_argmax_threshold,
         go_pv_checkpoint=args.go_pv_checkpoint,
         go_bid_checkpoint=args.go_bid_checkpoint,
@@ -529,7 +596,10 @@ def build_players(
     players = []
     for seat_index, spec in enumerate(seat_specs):
         if spec == "our_mcts":
-            players.append(OurHandStrengthMCTSPlayer(config=runtime.local_mcts_config))
+            if runtime.bid_model is not None:
+                players.append(_OurMCTSWithMLPBid(config=runtime.local_mcts_config, bid_model=runtime.bid_model, device=runtime.device))
+            else:
+                players.append(OurHandStrengthMCTSPlayer(config=runtime.local_mcts_config))
             continue
         if spec == "go_random":
             players.append(GoPlayerAdapter(RandomPlayer(seed=game_seed + seat_index)))
@@ -538,7 +608,10 @@ def build_players(
             players.append(GoPlayerAdapter(RuleBasedPlayer()))
             continue
         if spec == "go_rule_2":
-            players.append(GoPlayerAdapter(RuleBasedPlayerV2()))
+            if runtime.bid_model is not None:
+                players.append(GoPlayerAdapter(_MLPBidWithV2Play(runtime.bid_model, runtime.device)))
+            else:
+                players.append(GoPlayerAdapter(RuleBasedPlayerV2()))
             continue
         if spec == "go_argmax":
             if runtime.go_pv_model is None:

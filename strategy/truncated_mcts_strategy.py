@@ -421,8 +421,8 @@ class TruncatedMCTSStrategy:
                 action = node.unexpanded_actions.pop(0)
                 child_state = self._apply_action(sim_state, action)
                 # compute priors: if an external prior oracle exists, ask it
-                # for a recommended action and give it 60% mass; split
-                # remaining 40% across other legal moves. Fallback to
+                # for a recommended action and give it 75% mass; split
+                # remaining 25% across other legal moves. Fallback to
                 # uniform priors when oracle is unavailable or returns
                 # an illegal move.
                 n_actions = len(node.unexpanded_actions) + 1
@@ -439,13 +439,13 @@ class TruncatedMCTSStrategy:
                 if chosen_prior is None:
                     uniform_prior = 1.0 / max(n_actions, 1)
                 else:
-                    # set prior for the chosen action to 0.6, others split 0.4
+                    # set prior for the chosen action to .75, others split 0.25
                     uniform_prior = 0.0
                 child = SearchNode(
                     state=child_state,
                     parent=node,
                     action_from_parent=action,
-                    prior=(0.6 if chosen_prior is not None and action.card_id == chosen_prior else (0.4 / max(n_actions - 1, 1)) if chosen_prior is not None else uniform_prior),
+                    prior=(0.75 if chosen_prior is not None and action.card_id == chosen_prior else (0.25 / max(n_actions - 1, 1)) if chosen_prior is not None else uniform_prior),
                 )
                 child.unexpanded_actions = self._legal_actions(child_state)
                 node.children[action] = child
