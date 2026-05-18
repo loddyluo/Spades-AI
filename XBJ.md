@@ -10,6 +10,10 @@ vs_2mcts.py是目前主要的人机交互。
 手牌格式：SA S5 S4 DT D6 D3 D2 H5 H4 H2 C8 C7 C3
          SK SQ SJ S3 DA HT H9 H8 H7 CJ C5 C4 C2
 
+#### 读log
+
+logs/matchup_trace_seed1_games200_20260518_101402.txt 第57、58、59、60把
+
 ## 笔记
  
  命令执行流程                                                                              

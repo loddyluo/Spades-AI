@@ -82,6 +82,8 @@ class TruncatedMCTSConfig:
     device: str = "cpu"
     # optional prior oracle spec (e.g. 'go_rule_2') to bias root priors
     prior_oracle_spec: str = ""
+    # Path to bid_nsfp.pt (BidMLP checkpoint) for bid probability in IS weights
+    bid_checkpoint_path: str = ""
 
 
 @dataclass
@@ -138,10 +140,14 @@ class TruncatedMCTSStrategy:
         self._policy_model_calls: int = 0
         self._exact_calls: int = 0
         self.model = self._load_model(self.config.checkpoint_path)
-        # Ensure Spades_AI_GO-MCTS is on sys.path for oracle imports
+        # Ensure Spades_AI_GO-MCTS is on sys.path for oracle/BidMLP imports
         _collab_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "Spades_AI_GO-MCTS"))
         if _collab_root not in sys.path:
             sys.path.insert(0, _collab_root)
+
+        # Lazy-loaded BidMLP for bid probability in importance sampling weights
+        self._bid_model = None
+        self._bid_encoder = None
 
         # optional external prior oracle (rule-based). Try to construct
         # if a spec was provided; keep None on failure.
@@ -652,31 +658,140 @@ class TruncatedMCTSStrategy:
 
         return initial_hands
 
+    @staticmethod
+    def _bid_str_to_mlp_index(bid_str: str) -> int:
+        """Convert a local bid string to a BidMLP output index (0-15).
+
+        Input:
+        - bid_str: e.g. "bid_3", "nil", "blind_nil"
+
+        Output:
+        - index 0-13 for normal bids, 14 for Nil, 15 for Blind Nil.
+        """
+        if bid_str == "nil":
+            return 14
+        if bid_str == "blind_nil":
+            return 15
+        if bid_str.startswith("bid_"):
+            return int(bid_str.split("_")[1])
+        return 0
+
+    def _compute_bid_probs_product(
+        self,
+        initial_hands: list[list[Card]],
+        max_bid: list[str],
+    ) -> float:
+        """Compute ∏_{p=0..3} P(bid_p | hand_p) from BidMLP softmax.
+
+        Input:
+        - initial_hands: 4 initial 13-card hands of the proposal.
+        - max_bid: list of 4 bid strings indexed by player.
+
+        Output:
+        - Product of softmax probabilities of the actual bids (float).
+          Returns 1.0 if the BidMLP is unavailable.
+        """
+        # Lazy-load BidMLP on first call
+        if self._bid_model is None:
+            ckpt = self.config.bid_checkpoint_path
+            if not ckpt or not os.path.exists(ckpt):
+                return 1.0
+            try:
+                import torch
+                from spades_ai.models.bid_mlp import BidMLP
+                from spades_ai.models.bid_encoder import BidEncoder
+                self._bid_model = BidMLP()
+                state_dict = torch.load(ckpt, weights_only=True, map_location="cpu")
+                self._bid_model.load_state_dict(state_dict)
+                self._bid_model.eval()
+                self._bid_encoder = BidEncoder()
+            except Exception:
+                self._bid_model = None
+                return 1.0
+
+        if self._bid_encoder is None:
+            return 1.0
+
+        import torch
+        from spades_ai.game.state import Bid as GoBid
+        from spades_ai.game.scoring import BidType as GoBidType
+        from spades_ai.game.card import Card as GoCard
+
+        # Convert local bid strings to Go Bid objects
+        def _to_go_bid(bid_str: str) -> GoBid:
+            if bid_str == "nil":
+                return GoBid(value=0, bid_type=GoBidType.NIL)
+            if bid_str == "blind_nil":
+                return GoBid(value=0, bid_type=GoBidType.BLIND_NIL)
+            if bid_str.startswith("bid_"):
+                return GoBid(value=int(bid_str.split("_")[1]), bid_type=GoBidType.NORMAL)
+            return GoBid(value=0, bid_type=GoBidType.NORMAL)
+
+        go_bids = [_to_go_bid(b) for b in max_bid]
+
+        # Encode each player's hand with appropriate prev_bids in seat order.
+        # initial_hands contains local Card objects -> convert to Go Card via .card_id
+        features_list = []
+        for p in range(4):
+            hand = [GoCard.from_index(c.card_id) for c in initial_hands[p]]
+            prev = go_bids[:p]  # seat order 0→1→2→3
+            position = min(p, 2)  # 0, 1, 2 for players 0,1,2; player 3 gets 2
+            features = self._bid_encoder.encode(hand, prev, position)
+            features_list.append(features.unsqueeze(0))
+
+        x = torch.cat(features_list, dim=0)  # (4, 149)
+        with torch.no_grad():
+            logits = self._bid_model(x)  # (4, 16)
+
+        probs = torch.softmax(logits, dim=-1)  # (4, 16)
+
+        # Smooth: 0.75 * original + 0.25 * uniform over 14 legal bid types
+        # (13 normal bid_1..bid_13 + nil; blind_nil disabled, bid_0 invalid)
+        uniform = 1.0 / 14
+        smoothed = 0.75 * probs + 0.25 * uniform
+
+        product = 1.0
+        for p in range(4):
+            idx = self._bid_str_to_mlp_index(max_bid[p])
+            product *= float(smoothed[p, idx].item())
+
+        return product
+
     def _compute_importance_weight(
         self,
         initial_hands: list[list[Card]],
         play_sequence: list[tuple[int, Card]],
         step_contexts: list[dict] | None = None,
+        max_bid: list[str] | None = None,
     ) -> float:
         """Replay play_sequence against initial_hands and compute p = ∏(p_i).
 
-        Each p_i = 0.4 * (1/D_i) + 0.6 * oracle_match  if the move is legal,
-        or 0 if illegal.  When oracle / step_contexts is unavailable, falls
-        back to uniform p_i = 1/D_i (original behaviour).
+        The total weight is:
+          p = P_bid * ∏_{step} p_step
+
+        where P_bid = ∏_{player} P(bid_p | hand_p) from BidMLP softmax,
+        and each p_step = 0.4*(1/D_i) + 0.6*oracle_match if legal, else 0.
 
         Input:
         - initial_hands: 4 initial hands (the proposal being evaluated).
         - play_sequence: ordered (player_id, Card) from actual game history.
         - step_contexts: optional pre-computed Go state invariants per step.
+        - max_bid: actual bid strings per player (indexed by seat).
 
         Output:
         - probability weight p; 0 if any move was illegal given this deal.
         """
+        # ── Bid probability from BidMLP ──
+        if max_bid is not None:
+            bid_prod = self._compute_bid_probs_product(initial_hands, max_bid)
+        else:
+            bid_prod = 1.0
+
         hands = [list(h) for h in initial_hands]  # mutable copies
         spades_broken = False
         pos_in_trick = 0
         led_suit: Suit | None = None
-        weight = 1.0
+        weight = bid_prod
 
         use_oracle = (
             self._prior_oracle is not None
@@ -797,6 +912,18 @@ class TruncatedMCTSStrategy:
 
         play_sequence = self._build_play_sequence(state)
 
+        # Extract actual bids (per player, indexed by seat).
+        # Only pass string bids — None or other types skip bid probability.
+        max_bid: list[str] | None = None
+        raw_bids = None
+        if hasattr(state, "max_bid") and state.max_bid:
+            raw_bids = state.max_bid
+        elif hasattr(state, "bids") and state.bids:
+            raw_bids = state.bids
+        if raw_bids is not None and len(raw_bids) == 4:
+            if all(isinstance(b, str) for b in raw_bids):
+                max_bid = list(raw_bids)
+
         # Pre-compute which cards each player has played so far
         played_by_player: dict[int, list[Card]] = {p: [] for p in range(4)}
         for p, c in play_sequence:
@@ -820,6 +947,7 @@ class TruncatedMCTSStrategy:
             )
             w = self._compute_importance_weight(
                 initial_hands, play_sequence, step_contexts,
+                max_bid=max_bid,
             )
             if w > 0.0:
                 proposals.append(initial_hands)

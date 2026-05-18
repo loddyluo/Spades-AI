@@ -417,7 +417,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-exploration-constant",
         type=float,
-        default=8.0,
+        default=25.0,
         help="PUCT exploration constant for our MCTS",
     )
     parser.add_argument(
@@ -537,6 +537,7 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         value_scale=args.our_value_scale,
         checkpoint_path=_resolve_checkpoint_path(args.our_checkpoint) if args.our_checkpoint else None,
         prior_oracle_spec="go_rule_2",
+        bid_checkpoint_path=_resolve_checkpoint_path(args.bid_checkpoint) if args.bid_checkpoint else "",
     )
     go_mcts_config = GOMCTSConfig(
         n_runs=args.go_mcts_runs,
