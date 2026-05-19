@@ -11,3 +11,4 @@ build/
 venv/
 data/*.pt
 data/*.pt
+logs/

@@ -374,13 +374,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=40,
+        default=1,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=40,
+        default=100,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -429,7 +429,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-mcts-determinization-count",
         type=int,
-        default=5,
+        default=20,
         help="Number of importance-sampled determinizations to draw for each MCTS decision",
     )
     parser.add_argument(

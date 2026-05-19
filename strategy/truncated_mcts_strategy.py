@@ -445,7 +445,8 @@ class TruncatedMCTSStrategy:
                 break
 
             if not node.unexpanded_actions:
-                node.unexpanded_actions = self._legal_actions(sim_state)
+                if not node.children:
+                    node.unexpanded_actions = self._legal_actions(sim_state)
 
             if node.unexpanded_actions:
                 # --- decide which action to expand ---
@@ -716,7 +717,8 @@ class TruncatedMCTSStrategy:
         from spades_ai.game.state import Bid as GoBid
         from spades_ai.game.scoring import BidType as GoBidType
         from spades_ai.game.card import Card as GoCard
-
+        from spades_ai.game.card import Rank as GoRank, Suit as GoSuit
+        
         # Convert local bid strings to Go Bid objects
         def _to_go_bid(bid_str: str) -> GoBid:
             if bid_str == "nil":
@@ -733,7 +735,7 @@ class TruncatedMCTSStrategy:
         # initial_hands contains local Card objects -> convert to Go Card via .card_id
         features_list = []
         for p in range(4):
-            hand = [GoCard.from_index(c.card_id) for c in initial_hands[p]]
+            hand = [GoCard(GoRank(c.rank.value), GoSuit[c.suit.name]) for c in initial_hands[p]]
             prev = go_bids[:p]  # seat order 0→1→2→3
             position = min(p, 2)  # 0, 1, 2 for players 0,1,2; player 3 gets 2
             features = self._bid_encoder.encode(hand, prev, position)
@@ -748,7 +750,7 @@ class TruncatedMCTSStrategy:
         # Smooth: 0.75 * original + 0.25 * uniform over 14 legal bid types
         # (13 normal bid_1..bid_13 + nil; blind_nil disabled, bid_0 invalid)
         uniform = 1.0 / 14
-        smoothed = 0.75 * probs + 0.25 * uniform
+        smoothed = 0.99 * probs + 0.01 * uniform
 
         product = 1.0
         for p in range(4):
