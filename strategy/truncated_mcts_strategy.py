@@ -81,7 +81,7 @@ class TruncatedMCTSConfig:
     mcts_determinization_count: int = 4
     device: str = "cpu"
     # optional prior oracle spec (e.g. 'go_rule_2') to bias root priors
-    prior_oracle_spec: str = ""
+    prior_oracle_spec: str = "no"
     # Path to bid_nsfp.pt (BidMLP checkpoint) for bid probability in IS weights
     bid_checkpoint_path: str = ""
 
@@ -153,7 +153,9 @@ class TruncatedMCTSStrategy:
         # if a spec was provided; keep None on failure.
         self._prior_oracle = None
         spec = getattr(self.config, "prior_oracle_spec", "")
-        if spec:
+        self._oracle_requested = spec not in {"", "no"}
+        self._fallback_print_count = 0
+        if self._oracle_requested:
             try:
                 if spec == "go_rule_2":
                     from spades_ai.players.rule_based_v2.player import RuleBasedPlayer as _RBP  # type: ignore
@@ -178,7 +180,6 @@ class TruncatedMCTSStrategy:
                     _mod = importlib.util.module_from_spec(_spec)
                     _spec.loader.exec_module(_mod)
                     self._bridge_mod = _mod
-                    print(f"[ORACLE] Bridge loaded, prior oracle ready: {self._prior_oracle}")
             except Exception:
                 import traceback; traceback.print_exc()
                 self._bridge_mod = None
@@ -862,7 +863,9 @@ class TruncatedMCTSStrategy:
                 p_step = 0.4 * (1.0 / legal_count) + 0.6 * match
                 # print(p_step)
             else:
-                print("!!!!!!!!!!!!!!!! FALLBACK")
+                if self._oracle_requested and self._fallback_print_count < 5:
+                    print("!!!!!!!!!!!!!!!! FALLBACK")
+                    self._fallback_print_count += 1
                 p_step = 1.0 / legal_count
 
             weight *= p_step

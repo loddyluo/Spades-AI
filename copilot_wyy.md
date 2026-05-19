@@ -1031,6 +1031,53 @@ cd /Spades-AI && /root/miniconda3/bin/python evaluate/evaluate_model_matchups.py
 
 附加：我还在 `evaluate/evaluate_model_matchups.py` 中添加了对 `go_rule_2` 的直接支持（导入 `RuleBasedPlayerV2` 并在 `build_players` 中处理 `go_rule_2` 规格），以便两套评估脚本行为一致。
 
+---
+
+## 2026-05-18｜快速结论与可运行示例
+
+**主要结论（精简）**
+- 评估主程序为 [evaluate/evaluate_model_matchups.py](evaluate/evaluate_model_matchups.py)。它暴露了构建运行时、座位工厂、并行评估及 trace 输出的完整逻辑。
+- 我方出牌逻辑：使用 `TruncatedMCTSStrategy`（见 [strategy/truncated_mcts_strategy.py](strategy/truncated_mcts_strategy.py)），在较少剩余牌时调用精确求解器 `solve_with_q`，在较多剩余牌时用截断 MCTS + leaf value（MLP）评估。
+- 重要性采样（IS）机制：为每次决策生成大量初始发牌提议（默认上游为 10000 个候选，抽取 mcts_determinization_count，例如 10 个），每个提议的权重为：
+  - 叫牌先验（若启用）：`BidMLP` 给出的每位玩家叫牌概率乘积；
+  - 加上轨迹逐步概率：每一步 p_step = 0.4*(1 / D) + 0.6*(oracle_one_hot)，其中 oracle 来自 `rule_based_v2`。
+
+**哪里使用了 `BidMLP`**
+- `BidMLP` 在 `evaluate/evaluate_model_matchups.py::build_runtime` 被按需加载（`load_bid_mlp_model`）并传入 `Runtime.go_bid_model`。
+- 在 `strategy/truncated_mcts_strategy.py::_compute_importance_weight()` 中，如果存在 bid model，则通过 `_compute_bid_probs_product()` 计算 P(bids | hands) 的乘积，并把它作为初始发牌（determinization）权重的一部分。
+
+**如何运行（最小可复现命令）**
+- 例：本地快速 smoke（2 局）：
+
+  python scripts/run_evaluate_matchup.py --num-games 2 --p0 our_mcts --p1 go_rule_v2 --p2 go_rule_v2 --p3 go_random --device cpu
+
+- 例：使用主评估脚本并加载本地 checkpoint（10 局）：
+
+  python evaluate/evaluate_model_matchups.py --num-games 10 --p0 our_mcts --p1 go_rule_v2 --p2 go_rule_v2 --p3 go_random --device cpu --our-checkpoint result/mlp_test_3.pth
+
+（若要让 GO 合作者模型参与，请传入 `--go-pv-checkpoint` 与/或 `--go-bid-checkpoint`）
+
+---
+
+**按要求记录（每次对话必须更新的四项）**
+- 已确认事实：
+  - 主评估脚本为 [evaluate/evaluate_model_matchups.py](evaluate/evaluate_model_matchups.py)。
+  - 本地出牌策略为 [strategy/truncated_mcts_strategy.py](strategy/truncated_mcts_strategy.py)，重要性采样权重使用 0.4×uniform + 0.6×`rule_based_v2`（oracle one-hot），并可乘以 `BidMLP` 的叫牌先验。 
+  - 新增脚本 `scripts/run_evaluate_matchup.py` 可直接调用评估 runner（示例在本节上方）。
+- 未确认假设 / 风险：
+  - `rule_based_v2` 是否在并列最优情况下输出概率分布尚不确定；当前实现假设 oracle 是 one-hot。若 oracle 实际输出概率分布，IS 权重实现应改为使用 oracle_prob 而非 one_hot。 
+  - `BidMLP` checkpoint 與 feature encoder 的向后兼容性未完全验证；若模型结构/特征发生变化，加载或推理可能失败。
+  - 并行 worker 与线程配置在不同机器上表现差异大，需在目标机器上逐步调优 `--num-workers`、`--torch-num-threads` 与 `--torch-num-interop-threads`。
+- 关键命令与入口（精要）：
+  - 运行主评估脚本：`python evaluate/evaluate_model_matchups.py --num-games 10 --p0 our_mcts --p1 go_rule_v2 --p2 go_rule_v2 --p3 go_rule_v2 --device cpu --our-checkpoint result/mlp_test_3.pth`
+  - 快速 Python wrapper：`python scripts/run_evaluate_matchup.py --num-games 2 --p0 our_mcts --p1 go_rule_v2`
+  - 若并行：传入 `--num-workers N`，并控制 `--torch-num-threads` 为 1 在每个 worker 内避免过度竞争。
+- 下一步行动：
+  1. 增加测试覆盖：`tests/test_is_weight_oracle_behavior.py` 与 `tests/test_bidmlp_forward.py`，分别验证 oracle one-hot / probabilistic 行为与 BidMLP 前向输出形状与数值约束。
+  2. 若 oracle 实际可返回概率，计划在 `_compute_importance_weight` 中把 0.6×one_hot 替换为 0.6×oracle_prob，并回归测试行为差异。
+  3. 把 `README.md` 中的主评估命令和 `scripts/run_evaluate_matchup.py` 的用法写入快速上手段落，便于他人复现。
+
+
 
 
 

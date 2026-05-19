@@ -37,7 +37,7 @@ import os
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -58,6 +58,7 @@ from strategy.truncated_mcts_strategy import TruncatedMCTSConfig
 from trick_taking.games.spades import SpadesRules
 
 from adapters import GoPlayerAdapter, OurHandStrengthMCTSPlayer
+from bridge import normalize_bid_for_legal_options, to_go_state
 from models import (
     ArgmaxPlayer,
     BidMLP,
@@ -70,6 +71,37 @@ from models import (
     load_bid_mlp_model,
     load_gpt2_policy_value_model,
 )
+
+
+class _OurMCTSWithMLPBid(OurHandStrengthMCTSPlayer):
+    """OurHandStrengthMCTSPlayer variant that bids with MLPBidPlayer.
+
+    Card play still uses TruncatedMCTSStrategy (inherited from parent).
+    """
+
+    def __init__(self, config: TruncatedMCTSConfig | None, bid_model: BidMLP, device: str) -> None:
+        super().__init__(config)
+        self._mlp_bidder = MLPBidPlayer(bid_model, device)
+
+    def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
+        state = state_view.get("state")
+        if state is None:
+            raise ValueError("_OurMCTSWithMLPBid.place_bid requires state_view['state']")
+        if self.position < 0:
+            raise ValueError("_OurMCTSWithMLPBid.start_game was not called")
+
+        go_state = to_go_state(state)
+        bid = self._mlp_bidder.choose_bid(go_state)
+        normalized_bid = normalize_bid_for_legal_options(bid, legal_bids)
+
+        hand = list(state.hands[self.position])
+        self.last_bid_info = {
+            "hand": [str(card) for card in hand],
+            "legal_bids": list(legal_bids),
+            "chosen_bid": normalized_bid,
+        }
+        return normalized_bid
+
 
 
 def _card_list_to_text(cards: list[Any]) -> str:
@@ -280,6 +312,7 @@ class Runtime:
     go_mcts_config: GOMCTSConfig
     go_pv_model: Any
     go_bid_model: BidMLP | None
+    bid_model: BidMLP | None
     go_argmax_threshold: float
     go_pv_checkpoint: str
     go_bid_checkpoint: str
@@ -312,19 +345,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--p2", type=str, default="go_rule", help="Seat 2 model spec")
     parser.add_argument("--p3", type=str, default="go_random", help="Seat 3 model spec")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device for loaded models")
-    parser.add_argument("--our-checkpoint", type=str, default="", help="Optional local MLP checkpoint")
+    parser.add_argument("--our-checkpoint", type=str, default="result/mlp_test_3.pth", help="Optional local MLP checkpoint")
+    parser.add_argument(
+        "--our-prior-oracle-spec",
+        type=str,
+        default="no",
+        help="Prior oracle spec for our_mcts; set to 'go_rule_2' to enable oracle-guided IS weights",
+    )
+    parser.add_argument(
+        "--bid-checkpoint",
+        type=str,
+        default="./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt",
+        help="Bid MLP checkpoint used by both our_mcts and ruleexact for bidding",
+    )
     parser.add_argument("--our-exact-threshold", type=int, default=24, help="Exact solve threshold for our MCTS")
     parser.add_argument("--our-leaf-threshold", type=int, default=24, help="Leaf threshold for our MCTS")
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=40,
+        default=10,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=40,
+        default=100,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -476,6 +521,8 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         policy_temperature=args.our_policy_temperature,
         value_scale=args.our_value_scale,
         checkpoint_path=_resolve_checkpoint_path(args.our_checkpoint) if args.our_checkpoint else None,
+        prior_oracle_spec=args.our_prior_oracle_spec,
+        bid_checkpoint_path=_resolve_checkpoint_path(args.bid_checkpoint) if args.bid_checkpoint else "",
     )
     go_mcts_config = GOMCTSConfig(
         n_runs=args.go_mcts_runs,
@@ -497,12 +544,18 @@ def build_runtime(args: argparse.Namespace) -> Runtime:
         if need_go_bid_model and args.go_bid_checkpoint
         else None
     )
+    bid_model = (
+        load_bid_mlp_model(_resolve_checkpoint_path(args.bid_checkpoint), args.device)
+        if args.bid_checkpoint
+        else None
+    )
     return Runtime(
         device=args.device,
         local_mcts_config=local_mcts_config,
         go_mcts_config=go_mcts_config,
         go_pv_model=go_pv_model,
         go_bid_model=go_bid_model,
+        bid_model=bid_model,
         go_argmax_threshold=args.go_argmax_threshold,
         go_pv_checkpoint=args.go_pv_checkpoint,
         go_bid_checkpoint=args.go_bid_checkpoint,
@@ -530,7 +583,22 @@ def build_players(
     players = []
     for seat_index, spec in enumerate(seat_specs):
         if spec == "our_mcts":
-            players.append(OurHandStrengthMCTSPlayer(config=runtime.local_mcts_config))
+            # If a bid MLP is available, use the MLP bidder wrapper; otherwise fall back to hand-strength
+            if getattr(runtime, "bid_model", None) is not None:
+                players.append(_OurMCTSWithMLPBid(config=runtime.local_mcts_config, bid_model=runtime.bid_model, device=runtime.device))
+            else:
+                players.append(OurHandStrengthMCTSPlayer(config=runtime.local_mcts_config))
+            continue
+        if spec == "ruleexact":
+            # Hybrid: early use collaborator rule_v2, late use local truncated MCTS/exact
+            from strategy.rule_exact_player import RuleExactPlayer
+
+            ruleexact_config = replace(
+                runtime.local_mcts_config,
+                prior_oracle_spec="go_rule_2",
+                bid_checkpoint_path=_resolve_checkpoint_path(args.bid_checkpoint) if args.bid_checkpoint else "",
+            )
+            players.append(RuleExactPlayer(config=ruleexact_config))
             continue
         if spec == "go_random":
             players.append(GoPlayerAdapter(RandomPlayer(seed=game_seed + seat_index)))
@@ -538,7 +606,8 @@ def build_players(
         if spec == "go_rule":
             players.append(GoPlayerAdapter(RuleBasedPlayer()))
             continue
-        if spec == "go_rule_v2":
+        if spec in {"go_rule_v2", "go_rule_2"}:
+            # support both naming variants
             players.append(GoPlayerAdapter(RuleBasedPlayerV2()))
             continue
         if spec == "go_argmax":
@@ -782,12 +851,16 @@ def _play_single_game(
         players = [ProfilePlayerProxy(player, seat, game_profile) for seat, player in enumerate(players)]
 
     pbar = tqdm(total=52, desc=f"Seed {seed}", unit="card", leave=False, position=1)
+
+    def _on_card_played(_cur: int, _total: int) -> None:
+        pbar.update(1)
+
     runner = SpadesMatchRunner(
         players=players,
         seed=seed,
         verbose=False,
         rules=rules,
-        on_card_played=lambda cur, total: pbar.update(1),
+        on_card_played=_on_card_played,
     )
     game_start = time.perf_counter()
     result = runner.play_game()
