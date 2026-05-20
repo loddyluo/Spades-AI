@@ -421,6 +421,7 @@ class TruncatedMCTSStrategy:
             sim_state = self.exact_solver._deep_copy_state(node.state)
         except Exception:
             sim_state = copy.deepcopy(node.state)
+
         if self.config.use_determinization and root_observer_id is not None and not skip_determinization:
             if is_pool_hands is not None and is_pool_weights is not None:
                 self._apply_is_determinization(
@@ -435,13 +436,42 @@ class TruncatedMCTSStrategy:
             node.unexpanded_actions = []
             node.action_priors = {}
 
+        effective_leaf_threshold = self.config.leaf_threshold 
+        #print("root-obs-id", root_observer_id)
+        # if root_observer_id is not None:                                                    
+        #     _bids = None                                                                    
+        #     if hasattr(sim_state, "max_bid") and sim_state.max_bid:                         
+        #         _bids = sim_state.max_bid    
+        #         #print(sim_state.max_bid)
+        #         #print("sim_state.max_bid")
+        #     # if hasattr(sim_state, "bids") and sim_state.bids:   
+        #     #     print("sim_state.bids")
+        #     #     _bids = sim_state.bids                                                      
+        #     if _bids and len(_bids) == 4:  
+        #         _partner = (root_observer_id + 2) % 4      
+        #         if _bids[0] == "nil":
+        #             effective_leaf_threshold = 0
+        #         if _bids[1] == "nil":
+        #             effective_leaf_threshold = 0
+        #         if _bids[2] == "nil":
+        #             effective_leaf_threshold = 0
+        #         if _bids[3] == "nil":
+        #             effective_leaf_threshold = 0
+        #         # if _bids[root_observer_id] == "nil":  
+        #         #     #print("me nil, me is", root_observer_id)
+        #         #     effective_leaf_threshold = 0
+        #         # if _bids[_partner] == "nil":
+        #         #     #print("partner nil， partner is", _partner)
+        #         #     effective_leaf_threshold = 0
+                    
+        #print("effective_leaf_threshold=", effective_leaf_threshold)
         while True:
             if self._is_terminal(sim_state):
                 value = self._terminal_value(sim_state)
                 break
 
             remaining_cards = self._remaining_cards(sim_state)
-            if remaining_cards <= self.config.leaf_threshold:
+            if remaining_cards <= effective_leaf_threshold:
                 value = self._leaf_value(sim_state)
                 break
 

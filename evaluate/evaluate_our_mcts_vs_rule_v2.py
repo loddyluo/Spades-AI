@@ -370,17 +370,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cpu", help="Torch device for loaded models")
     parser.add_argument("--our-checkpoint", type=str, default="", help="Optional local MLP checkpoint")
     parser.add_argument("--our-exact-threshold", type=int, default=24, help="Exact solve threshold for our MCTS")
-    parser.add_argument("--our-leaf-threshold", type=int, default=24, help="Leaf threshold for our MCTS")
+    parser.add_argument("--our-leaf-threshold", type=int, default=0, help="Leaf threshold for our MCTS")
     parser.add_argument(
         "--our-simulations-per-action",
         type=int,
-        default=1,
+        default=256,
         help="Total MCTS samples per legal action; each sample determinizes hidden opponent hands once",
     )
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=100,
+        default=64,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(
@@ -429,7 +429,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-mcts-determinization-count",
         type=int,
-        default=20,
+        default=10,
         help="Number of importance-sampled determinizations to draw for each MCTS decision",
     )
     parser.add_argument(
@@ -854,12 +854,25 @@ def _play_single_game(
         players = [ProfilePlayerProxy(player, seat, game_profile) for seat, player in enumerate(players)]
 
     pbar = tqdm(total=52, desc=f"Seed {seed}", unit="card", leave=False, position=1)
+    def _on_bidding_finished():                                                                               
+      # 检测 our_mcts 方是否有人叫了 nil                                                                    
+      our_seats = [i for i, spec in enumerate(resolved_seat_specs) if spec == "our_mcts"]                   
+      for seat in our_seats:                                                                                
+          team = runner.state.teams[seat]                                                                   
+          teammates = [p for p in range(4) if runner.state.teams[p] == team]                                
+          for pid in teammates:                                                                             
+              bid = runner.state.max_bid[pid]                                                               
+              if bid in ("nil", "blind_nil"):                                                               
+                  runtime.local_mcts_config.leaf_threshold = 0                                              
+                  return  # 已经置 0，不需要再检查
+                  
     runner = SpadesMatchRunner(
         players=players,
         seed=seed,
         verbose=False,
         rules=rules,
         on_card_played=lambda cur, total: pbar.update(1),
+        on_bidding_finished=_on_bidding_finished,
     )
     game_start = time.perf_counter()
     result = runner.play_game()

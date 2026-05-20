@@ -93,6 +93,7 @@ class SpadesMatchRunner:
         rules: SpadesRules | None = None,
         encoder: SpadesFeatureEncoder | None = None,
         on_card_played: Callable[[int, int], None] | None = None,
+        on_bidding_finished: Callable[[], None] | None = None,  # ← 新增
     ) -> None:
         if len(players) != 4:
             raise ValueError(f"需要 4 名玩家，实际得到 {len(players)} 名")
@@ -106,12 +107,16 @@ class SpadesMatchRunner:
         self.state = build_random_state(seed)
         self.player_features: dict[int, Any] = {}
         self.records: list[PlayRecord] = []
+        self.on_bidding_finished = on_bidding_finished  # ← 新增  
 
     def play_game(self):
         """运行一整局黑桃王，并返回 GameResult。"""
         self._start_game()
         self._bidding_phase()
         self._set_teams()
+        
+        if self.on_bidding_finished is not None:   # ← 新增                                                   
+              self.on_bidding_finished()             # ← 新增
         self._play_phase()
         return self._score_game()
 

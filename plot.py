@@ -41,6 +41,8 @@ def parse_our_mcts_sums(log_path: str) -> list[float]:
             sums.append(1.0 * team_avg)
 
     # Adjacent pairs of games share the same seed; sum each pair.
+    if len(sums)%2 == 1:
+        sums.append(-sums[-1])
     paired_sums = [sums[i] + sums[i + 1] for i in range(0, len(sums), 2)]
     print("sigma for one single game", (sum((x - (sum(paired_sums) / len(paired_sums))) ** 2 for x in paired_sums) / len(paired_sums)) ** 0.5 / (len(paired_sums) ** 0.5) / 2.0)
     return paired_sums

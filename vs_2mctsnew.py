@@ -48,7 +48,33 @@ from strategy.truncated_mcts_strategy import TruncatedMCTSStrategy, TruncatedMCT
 from bridge import to_go_state
 from models import load_bid_mlp_model, MLPBidPlayer
 
+def _resolve_checkpoint_path(checkpoint_path: str) -> str:
+    """Resolve a checkpoint path against common repository locations.
 
+    Input:
+    - checkpoint_path: user-supplied path, which may be relative to the
+        current working directory or to common repo folders.
+
+    Output:
+    - A path string that exists if a matching file is found, otherwise the
+        original input string.
+    """
+    if not checkpoint_path:
+            return checkpoint_path
+
+    candidate = Path(checkpoint_path)
+    if candidate.is_file():
+            return str(candidate)
+
+    search_roots = [REPO_ROOT, REPO_ROOT / "result", REPO_ROOT / "evaluate", GO_MCTS_DIR]
+    for root in search_roots:
+            resolved = root / candidate
+            if resolved.is_file():
+                    return str(resolved)
+
+    return checkpoint_path
+
+    
 def card_to_str(card: Card) -> str:
     return f"{card.suit.short}{card.rank.short}"
 
@@ -66,11 +92,11 @@ def normalize_bid(raw: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="双 MCTS 玩家 vs 人类 (MLP 叫牌 + prior oracle)")
-    parser.add_argument("--checkpoint", type=str, default="result/mlp_test_5.pth")
+    parser.add_argument("--checkpoint", type=str, default="result/mlp_test_3.pth")
     parser.add_argument("--bid-checkpoint", type=str, default="Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt")
-    parser.add_argument("--simulations-per-action", type=int, default=32)
+    parser.add_argument("--simulations-per-action", type=int, default=40)
     parser.add_argument("--mcts-determinization-count", type=int, default=8)
-    parser.add_argument("--exact-determinization-count", type=int, default=128)
+    parser.add_argument("--exact-determinization-count", type=int, default=64)
     args = parser.parse_args()
 
     # ── Load bid model ──
@@ -160,8 +186,12 @@ def main() -> None:
         checkpoint_path=args.checkpoint,
         simulations_per_action=args.simulations_per_action,
         mcts_determinization_count=args.mcts_determinization_count,
+        exact_threshold=24,
+        leaf_threshold=24,
         determinization_count=args.exact_determinization_count,
-        prior_oracle_spec="rule",
+        exploration_constant=25.0,
+        prior_oracle_spec="go_rule_2",
+        bid_checkpoint_path=_resolve_checkpoint_path("./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt")
     )
     strategies = {seat: TruncatedMCTSStrategy(shared_config) for seat in mcts_seats}
     rules = SpadesRules()
