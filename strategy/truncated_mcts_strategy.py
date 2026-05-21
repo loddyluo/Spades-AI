@@ -318,6 +318,7 @@ class TruncatedMCTSStrategy:
             if mcts_pool_hands:
                 K = self.config.mcts_determinization_count
                 det_states = []
+                drawn_distinct: set[tuple] = set()
                 for _ in range(K):
                     chosen = self._draw_is_sample(mcts_pool_hands, mcts_pool_weights, mcts_is_rng)
                     if chosen is not None:
@@ -327,6 +328,13 @@ class TruncatedMCTSStrategy:
                             det_state = copy.deepcopy(state)
                         self._apply_proposal(det_state, state.turn, chosen)
                         det_states.append(det_state)
+                        # Track distinctness of drawn samples
+                        drawn_key = tuple(
+                            tuple(sorted(c.card_id for c in chosen[p]))
+                            for p in range(4)
+                        )
+                        drawn_distinct.add(drawn_key)
+                print(f"  [DEBUG sample] {K} draws, {len(drawn_distinct)} distinct initial-deal hands from pool of {len(mcts_pool_hands)}", flush=True)
                 if not det_states:
                     det_states = [state]  # fallback: full-info (no determinization)
 
@@ -1142,6 +1150,7 @@ class TruncatedMCTSStrategy:
         rng = random.Random()
         id_to_card = {c.card_id: c for c in STANDARD_52}
 
+        drawn_distinct: set[tuple] = set()
         # Build IS pool once, then draw determinization_count samples from it
         pool_hands, pool_weights = self._build_is_pool(state, state.turn, rng)
         t1 = time.time()
@@ -1151,6 +1160,12 @@ class TruncatedMCTSStrategy:
             sim_state = copy.deepcopy(state)
             observer = state.turn
             self._apply_is_determinization(sim_state, observer, pool_hands, pool_weights, rng)
+            # Track distinctness: encode opponent remaining hands
+            drawn_key = tuple(
+                tuple(sorted(c.card_id for c in sim_state.hands[p]))
+                for p in range(4) if p != observer
+            )
+            drawn_distinct.add(drawn_key)
             t2 = time.time()
             res = self.exact_solver.solve_with_q(sim_state)
             t3 = time.time()
@@ -1160,6 +1175,8 @@ class TruncatedMCTSStrategy:
             for action, q in res.get("action_q_values", {}).items():
                 aid = action.card_id
                 agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+
+        print(f"  [DEBUG sample exact] {self.config.determinization_count} draws, {len(drawn_distinct)} distinct opponent-hand configs from pool of {len(pool_hands)}", flush=True)
 
         # Average Qs
         for k in list(agg_q.keys()):
@@ -1277,19 +1294,12 @@ class TruncatedMCTSStrategy:
             return value
 
         if self.model is None:
-            # 考虑叫牌信息的轻量启发式：基础是毛墩差，叠加已确定的 nil 奖惩。
-            team0_tricks = state.tricks_won[0] + state.tricks_won[2]
-            team1_tricks = state.tricks_won[1] + state.tricks_won[3]
-            value = float(team0_tricks - team1_tricks)
-            # 对已经失败的 nil 施加惩罚（已赢墩的 nil 玩家不可能挽回了）
-            for pid in range(state.num_players):
-                bid = state.max_bid[pid] if pid < len(state.max_bid) else None
-                if bid in ("nil", "blind_nil") and state.tricks_won[pid] > 0:
-                    penalty = 100.0 if bid == "blind_nil" else 50.0
-                    if state.teams[pid] == 0:
-                        value -= penalty
-                    else:
-                        value += penalty
+            # checkpoint_path is None: directly use the exact solver for Q value.
+            # The exact solver operates on the full-information state (including
+            # determinized opponent hands if called from within a simulation).
+            self._exact_calls += 1
+            result = self.exact_solver.solve_with_q(state)
+            value = float(result["value"])
             self._leaf_value_cache[cache_key] = value
             if self._decision_leaf_value_cache is not None:
                 self._decision_leaf_value_cache[id(state)] = value

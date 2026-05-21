@@ -368,7 +368,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--p2", type=str, default="our_mcts", help="Seat 2 model spec")
     parser.add_argument("--p3", type=str, default="go_rule_2", help="Seat 3 model spec")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device for loaded models")
-    parser.add_argument("--our-checkpoint", type=str, default="", help="Optional local MLP checkpoint")
+    parser.add_argument("--our-checkpoint", type=str, default=None, help="Optional local MLP checkpoint")
     parser.add_argument("--our-exact-threshold", type=int, default=24, help="Exact solve threshold for our MCTS")
     parser.add_argument("--our-leaf-threshold", type=int, default=0, help="Leaf threshold for our MCTS")
     parser.add_argument(
