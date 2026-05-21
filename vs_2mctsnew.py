@@ -92,11 +92,13 @@ def normalize_bid(raw: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="双 MCTS 玩家 vs 人类 (MLP 叫牌 + prior oracle)")
-    parser.add_argument("--checkpoint", type=str, default="result/mlp_test_3.pth")
+    parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--bid-checkpoint", type=str, default="Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt")
-    parser.add_argument("--simulations-per-action", type=int, default=40)
+    parser.add_argument("--simulations-per-action", type=int, default=50)
     parser.add_argument("--mcts-determinization-count", type=int, default=8)
     parser.add_argument("--exact-determinization-count", type=int, default=64)
+
+    
     args = parser.parse_args()
 
     # ── Load bid model ──
@@ -189,7 +191,7 @@ def main() -> None:
         exact_threshold=24,
         leaf_threshold=24,
         determinization_count=args.exact_determinization_count,
-        exploration_constant=25.0,
+        exploration_constant=20.0,
         prior_oracle_spec="go_rule_2",
         bid_checkpoint_path=_resolve_checkpoint_path("./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt")
     )

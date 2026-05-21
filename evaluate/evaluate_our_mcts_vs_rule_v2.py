@@ -380,7 +380,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--our-number-of-exact-solvers",
         type=int,
-        default=64,
+        default=32,
         help="Number of determinized exact solves per exact-decision step",
     )
     parser.add_argument(

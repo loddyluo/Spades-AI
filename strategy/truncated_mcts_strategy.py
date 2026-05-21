@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import random
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -513,7 +514,8 @@ class TruncatedMCTSStrategy:
                 if oracle_action_card is not None:
                     action = oracle_action_card
                 else:
-                    action = node.unexpanded_actions.pop(0)
+                    idx = random.randrange(len(node.unexpanded_actions))
+                    action = node.unexpanded_actions.pop(idx)
 
                 child_state = self._apply_action(sim_state, action)
                 n_actions = len(node.unexpanded_actions) + 1
@@ -898,7 +900,7 @@ class TruncatedMCTSStrategy:
                     match = 1.0 if oracle_local.card_id == card.card_id else 0.0
                 except Exception:
                     match = 0.0
-                p_step = 0.4 * (1.0 / legal_count) + 0.6 * match
+                p_step = 1/ legal_count * (1 - 1.0 / pow(legal_count,0.5)) + 1.0 / pow(legal_count,0.5) * match
                 # print(p_step)
             else:
                 if self._oracle_requested and self._fallback_print_count < 5:
@@ -930,7 +932,7 @@ class TruncatedMCTSStrategy:
         state: GameState,
         observer_id: int,
         rng: random.Random | None = None,
-        num_proposals: int = 1234,
+        num_proposals: int = 6789,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build importance-sampling pool once per decision.
 
@@ -944,7 +946,7 @@ class TruncatedMCTSStrategy:
         - state: current game state.
         - observer_id: player whose hand is fully known.
         - rng: optional seeded random generator.
-        - num_proposals: number of initial deal proposals to sample (default 1234).
+        - num_proposals: number of initial deal proposals to sample (default 6789).
 
         Output:
         - (proposals, weights) where proposals[i] is 4 initial hands, weights[i] is p.
@@ -1141,46 +1143,52 @@ class TruncatedMCTSStrategy:
                 state.hand_bitsets[pid] = bit
 
     def _solve_with_determinization(self, state: GameState) -> dict[str, Any]:
-        """Approximate solve_with_q by averaging results across determinized samples."""
+        """Approximate solve_with_q by weighted averaging across top-weighted determinized samples."""
         t0 = time.time()
-        agg_q: dict[int, float] = {}
-        agg_value = 0.0
-        counts = 0
-
         rng = random.Random()
         id_to_card = {c.card_id: c for c in STANDARD_52}
 
-        drawn_distinct: set[tuple] = set()
-        # Build IS pool once, then draw determinization_count samples from it
+        # Build IS pool once
         pool_hands, pool_weights = self._build_is_pool(state, state.turn, rng)
         t1 = time.time()
-        #print(f"  [TIMING] IS pool built: {len(pool_hands)} valid proposals in {t1-t0:.2f}s")
 
-        for _ in range(self.config.determinization_count):
-            sim_state = copy.deepcopy(state)
-            observer = state.turn
-            self._apply_is_determinization(sim_state, observer, pool_hands, pool_weights, rng)
-            # Track distinctness: encode opponent remaining hands
-            drawn_key = tuple(
-                tuple(sorted(c.card_id for c in sim_state.hands[p]))
-                for p in range(4) if p != observer
-            )
-            drawn_distinct.add(drawn_key)
-            t2 = time.time()
-            res = self.exact_solver.solve_with_q(sim_state)
-            t3 = time.time()
-            #print(f"  [TIMING]   determinization {_}: solve_with_q in {t3-t2:.2f}s")
-            counts += 1
-            agg_value += float(res.get("value", 0.0))
-            for action, q in res.get("action_q_values", {}).items():
-                aid = action.card_id
-                agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+        K = min(self.config.determinization_count, len(pool_hands))
+        if K == 0:
+            # Fallback: no valid proposals, uniform determinization
+            agg_value = 0.0
+            agg_q: dict[int, float] = {}
+            counts = 0
+            for _ in range(self.config.determinization_count):
+                sim_state = copy.deepcopy(state)
+                self._determinize_state(sim_state, state.turn, rng)
+                res = self.exact_solver.solve_with_q(sim_state)
+                counts += 1
+                agg_value += float(res.get("value", 0.0))
+                for action, q in res.get("action_q_values", {}).items():
+                    aid = action.card_id
+                    agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+            for k in agg_q:
+                agg_q[k] /= max(1, counts)
+            avg_value = agg_value / max(1, counts)
+        else:
+            # Take top K proposals by weight, no random sampling
+            paired = list(zip(pool_hands, pool_weights))
+            paired.sort(key=lambda x: x[1], reverse=True)
+            top_hands, top_weights = zip(*paired[:K])
+            weight_sum = sum(top_weights)
+            norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / K] * K
 
-        print(f"  [DEBUG sample exact] {self.config.determinization_count} draws, {len(drawn_distinct)} distinct opponent-hand configs from pool of {len(pool_hands)}", flush=True)
-
-        # Average Qs
-        for k in list(agg_q.keys()):
-            agg_q[k] = agg_q[k] / max(1, counts)
+            agg_value = 0.0
+            agg_q: dict[int, float] = {}
+            for hand_proposal, norm_w in zip(top_hands, norm_factors):
+                sim_state = copy.deepcopy(state)
+                self._apply_proposal(sim_state, state.turn, hand_proposal)
+                res = self.exact_solver.solve_with_q(sim_state)
+                agg_value += norm_w * float(res.get("value", 0.0))
+                for action, q in res.get("action_q_values", {}).items():
+                    aid = action.card_id
+                    agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * float(q)
+            avg_value = agg_value  # Already weighted; no further division needed
 
         # Reconstruct action -> q mapping using Card objects
         action_q_values: dict[Card, float] = {}
@@ -1188,9 +1196,7 @@ class TruncatedMCTSStrategy:
             if aid in id_to_card:
                 action_q_values[id_to_card[aid]] = q
 
-        avg_value = agg_value / max(1, counts)
-
-        # Choose best action by averaged Q for root team
+        # Choose best action by weighted Q for root team
         root_team = state.teams[state.turn]
         if action_q_values:
             if root_team == 0:

@@ -10,7 +10,7 @@ python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 5190001 --num-games 100 -
 python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 5201001 --num-games 128 --num-workers 32 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-checkpoint mlp_test_3.pth --our-exploration-constant 25 --our-simulations-per-action 40 --our-mcts-determinization-count 10
 
 
-python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 5201001 --num-games 128 --num-workers 32 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-checkpoint mlp_test_3.pth --our-exploration-constant 25 --our-mcts-determinization-count 4 --our-simulations-per-action 256
+python evaluate/evaluate_our_mcts_vs_rule_v2.py --seed 5211001 --num-games 128 --num-workers 32 --torch-num-threads 1 --torch-num-interop-threads 1 --trace-log-dir logs --symmetric-seat-swap 1 --p0 our_mcts --p1 go_rule_2 --p2 our_mcts --p3 go_rule_2 --our-exploration-constant 25 --our-simulations-per-action 40 --our-mcts-determinization-count 5 --our-leaf-threshold 24 
 
 ## Trouble Shooting
 
