@@ -1,0 +1,3 @@
+# Compiled library output (rebuild with build_dds.sh)
+*.dylib
+*.so
