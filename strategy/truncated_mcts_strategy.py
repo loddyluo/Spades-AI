@@ -51,7 +51,7 @@ from trick_taking.card import Card, Suit
 from trick_taking.game_state import GameState
 from trick_taking.games.spades import SpadesRules
 from trick_taking.solvers.exact_double_dummy import ExactDoubleDummySolver
-from trick_taking.solvers.exact_double_dummy_cpp_opt1 import ExactDoubleDummyCppOpt1Solver
+from trick_taking.solvers.exact_double_dummy_cpp_fastest import ExactDoubleDummyCppFastestSolver
 from trick_taking.utils.feature_encoder import SpadesFeatureEncoder
 from trick_taking.card import _STANDARD_CARDS as STANDARD_52
 import random
@@ -123,9 +123,8 @@ class TruncatedMCTSStrategy:
     def __init__(self, config: TruncatedMCTSConfig | None = None) -> None:
         self.config = config or TruncatedMCTSConfig()
         self.rules = SpadesRules()
-        # Prefer C++ opt1 exact solver for speed; fall back to Python reference
-        # only when native compilation/loading is unavailable.
-        cpp_solver = ExactDoubleDummyCppOpt1Solver()
+        # Use fastest C++ exact solver (10-100x faster than opt1)
+        cpp_solver = ExactDoubleDummyCppFastestSolver()
         self.exact_solver = cpp_solver if cpp_solver.native_available else ExactDoubleDummySolver()
         self.encoder = SpadesFeatureEncoder()
         self._leaf_value_cache: dict[int, float] = {}
