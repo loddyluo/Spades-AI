@@ -62,9 +62,9 @@ class ExactDoubleDummySolver:
     def _get_cpp_solver(self):
         """懒加载 C++ 求解器，避免模块导入循环。"""
         if self._cpp_solver is None:
-            from trick_taking.solvers.exact_double_dummy_cpp_native import ExactDoubleDummyCppNativeSolver
+            from trick_taking.solvers.exact_double_dummy_cpp_fastest import ExactDoubleDummyCppFastestSolver
 
-            self._cpp_solver = ExactDoubleDummyCppNativeSolver()
+            self._cpp_solver = ExactDoubleDummyCppFastestSolver()
         return self._cpp_solver
 
     def solve(self, state: GameState) -> float:
