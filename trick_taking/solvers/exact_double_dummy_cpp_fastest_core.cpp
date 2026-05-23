@@ -286,7 +286,7 @@ static uint64_t compute_normalized_verify(const NativeState* s) {
 // Transposition Table
 // ============================================================
 
-static constexpr int TT_SIZE_BITS = 21;  // 2M entries (optimal for ≤40 cards, fits in cache)
+static constexpr int TT_SIZE_BITS = 21;  // 2M entries (fits in L3 cache for best hit rate)
 static constexpr int TT_SIZE = 1 << TT_SIZE_BITS;
 static constexpr int TT_MASK = TT_SIZE - 1;
 
@@ -1509,12 +1509,11 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         q_values[0] = minimax(&s, -std::numeric_limits<double>::infinity(),
                               std::numeric_limits<double>::infinity(), ctx);
         unmake_move(&s, undo);
-    } else if (n <= 3 || remaining <= 32) {
-        // Sequential: share one TT across all actions (accumulate knowledge)
-        // For medium games (≤32 cards), sequential is faster than parallel because:
-        // 1. No TT allocation overhead (parallel allocates 80MB per thread)
-        // 2. Shared TT means later actions benefit from earlier searches
-        // 3. Aspiration window (best_val) narrows with each action
+    } else if (n <= 3 || remaining <= 52) {
+        // Sequential for ALL practical sizes. Parallel path disabled because:
+        // 1. Thread TT allocation (160MB each) dwarfs search time for ≤44 cards
+        // 2. Shared TT accumulates knowledge across actions (huge benefit)
+        // 3. Aspiration window (best_val) provides natural pruning
         gen_wq++;
         SolverCtx ctx;
         ctx.tt = g_tt_buffer;
