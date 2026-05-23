@@ -1509,8 +1509,12 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         q_values[0] = minimax(&s, -std::numeric_limits<double>::infinity(),
                               std::numeric_limits<double>::infinity(), ctx);
         unmake_move(&s, undo);
-    } else if (n <= 3 || remaining <= 24) {
+    } else if (n <= 3 || remaining <= 32) {
         // Sequential: share one TT across all actions (accumulate knowledge)
+        // For medium games (≤32 cards), sequential is faster than parallel because:
+        // 1. No TT allocation overhead (parallel allocates 80MB per thread)
+        // 2. Shared TT means later actions benefit from earlier searches
+        // 3. Aspiration window (best_val) narrows with each action
         gen_wq++;
         SolverCtx ctx;
         ctx.tt = g_tt_buffer;
