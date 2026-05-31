@@ -1,5 +1,6 @@
 ## 核心概念
 
+前4墩强化学习： python rl/train_rl_multicpu.py --num-games 100000 --seed 42 --lr 0.0003  --num-workers 32 --update-interval 300 --load-checkpoint rl_checkpoints/policy_final.pt
 PUCT
 exact求解
 mcts_determinization_count: int = 4 

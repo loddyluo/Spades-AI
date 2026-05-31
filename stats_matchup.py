@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stats_matchup.py: 统计 log 文件中 our_mcts vs go_rule_2 的得墩/叫牌分布。
+"""stats_matchup.py: 统计 log 文件中 cheat_mcts vs go_rule_2 的得墩/叫牌分布。
 
 Usage:
     python stats_matchup.py <log_file>
@@ -27,9 +27,9 @@ def parse_log(path: str) -> dict:
     """解析 log 文件，返回每场比赛的定约统计。
 
     返回:
-        our_contracts: list of (sum_bid, sum_tricks) for our_mcts team per game
+        our_contracts: list of (sum_bid, sum_tricks) for cheat_mcts team per game
         go_contracts:  list of (sum_bid, sum_tricks) for go_rule_2 team per game
-        our_nils:      list of tricks_won for nil contracts (x/0) by our_mcts
+        our_nils:      list of tricks_won for nil contracts (x/0) by cheat_mcts
         go_nils:       list of tricks_won for nil contracts (x/0) by go_rule_2
     """
     text = Path(path).read_text()
@@ -37,13 +37,13 @@ def parse_log(path: str) -> dict:
     # Read seat_specs from header
     seat_specs_line = re.search(r"# seat_specs=(.*)", text)
     if seat_specs_line:
-        specs = eval(seat_specs_line.group(1))  # ['our_mcts', 'go_rule_2', ...]
+        specs = eval(seat_specs_line.group(1))  # ['cheat_mcts', 'go_rule_2', ...]
     else:
-        specs = ["our_mcts", "go_rule_2", "our_mcts", "go_rule_2"]
+        specs = ["dds", "cheat_mcts", "dds", "cheat_mcts"]
 
-    # Determine which seats belong to our_mcts in game 0
-    base_our_seats = {i for i, s in enumerate(specs) if s == "our_mcts"}
-    base_go_seats = {i for i, s in enumerate(specs) if s == "go_rule_2"}
+    # Determine which seats belong to cheat_mcts in game 0
+    base_our_seats = {i for i, s in enumerate(specs) if s == "dds"}
+    base_go_seats = {i for i, s in enumerate(specs) if s == "cheat_mcts"}
 
     # Seats alternate every game (偶数游戏: 按 base_our_seats; 奇数游戏: 交换)
     def get_our_seats(game_idx: int) -> set[int]:
@@ -84,7 +84,7 @@ def parse_log(path: str) -> dict:
 
         total_bid = sum(bid for _, _, bid in seats_info)
 
-        # Sum for our_mcts team
+        # Sum for cheat_mcts team
         our_bid_sum = 0
         our_trick_sum = 0
         go_bid_sum = 0
@@ -171,12 +171,12 @@ def plot_results(
     ax_go_nil = fig.add_subplot(gs[1, 1])
     ax_total = fig.add_subplot(gs[2, :])  # span both columns
 
-    # --- our_mcts heatmap ---
+    # --- cheat_mcts heatmap ---
     ax = ax_our_heat
     max_bid = min(14, our_arr.shape[0])
     max_trick = min(14, our_arr.shape[1])
     im = ax.imshow(our_arr[:max_bid, :max_trick], cmap="YlOrRd", aspect="auto")
-    ax.set_title("our_mcts (bid_sum x tricks_sum)", fontsize=13)
+    ax.set_title("cheat_mcts (bid_sum x tricks_sum)", fontsize=13)
     ax.set_xlabel("tricks_sum")
     ax.set_ylabel("bid_sum")
     for b in range(max_bid):
@@ -192,14 +192,18 @@ def plot_results(
     ax.set_title("go_rule_2 (bid_sum x tricks_sum)", fontsize=13)
     ax.set_xlabel("tricks_sum")
     ax.set_ylabel("bid_sum")
+    sum_cheng = 0
     for b in range(max_bid):
         for t in range(max_trick):
             v = go_arr[b, t]
             if v > 0:
                 ax.text(t, b, str(v), ha="center", va="center", fontsize=8)
+            if t>=b:
+                sum_cheng+=v
     fig.colorbar(im, ax=ax)
+    print(sum_cheng)
 
-    # --- our_mcts nil distribution ---
+    # --- cheat_mcts nil distribution ---
     ax = ax_our_nil
     our_nil_tricks = [t for t, _ in our_nils]
     if our_nil_tricks:
@@ -209,12 +213,12 @@ def plot_results(
             if count > 0:
                 ax.text(patch.get_x() + patch.get_width() / 2, patch.get_height(),
                         str(int(count)), ha="center", va="bottom", fontsize=10)
-        ax.set_title(f"our_mcts nil tricks (n={len(our_nil_tricks)})", fontsize=13)
+        ax.set_title(f"cheat_mcts nil tricks (n={len(our_nil_tricks)})", fontsize=13)
         ax.set_xlabel("tricks")
         ax.set_ylabel("count")
     else:
         ax.text(0.5, 0.5, "no nil contracts", ha="center", va="center", transform=ax.transAxes)
-        ax.set_title("our_mcts nil", fontsize=13)
+        ax.set_title("cheat_mcts nil", fontsize=13)
 
     # --- go_rule_2 nil distribution ---
     ax = ax_go_nil
@@ -270,19 +274,25 @@ def plot_subset(
     max_bid = min(14, our_arr.shape[0])
     max_trick = min(14, our_arr.shape[1])
 
-    for ax, arr, team in [(ax_our, our_arr, "our_mcts"), (ax_go, go_arr, "go_rule_2")]:
+    for ax, arr, team in [(ax_our, our_arr, "cheat_mcts"), (ax_go, go_arr, "go_rule_2")]:
         im = ax.imshow(arr[:max_bid, :max_trick], cmap="YlOrRd", aspect="auto")
         ax.set_title(f"{team} (total_bid={total_bid}, n={count})", fontsize=12)
         ax.set_xlabel("tricks_sum")
         ax.set_ylabel("bid_sum")
+        sum_cheng = 0
+        sum_sum = 0
         for b in range(max_bid):
             for t in range(max_trick):
                 v = arr[b, t]
                 if v > 0:
                     ax.text(t, b, str(v), ha="center", va="center", fontsize=8)
+                sum_sum += v
+                if b<=t:
+                    sum_cheng += v
         fig.colorbar(im, ax=ax)
+        print(sum_cheng, " / ", sum_sum)
 
-    for ax, nils, team in [(ax_our_nil, our_nils, "our_mcts"),
+    for ax, nils, team in [(ax_our_nil, our_nils, "cheat_mcts"),
                            (ax_go_nil, go_nils, "go_rule_2")]:
         if nils:
             bins = range(max(nils) + 2)
@@ -320,13 +330,13 @@ def main() -> None:
     A = len(data["our_contracts"])
 
     print(f"\n总游戏数: {A}")
-    print(f"our_mcts 队伍记录数: {our_total}  (应为 {A})")
+    print(f"cheat_mcts 队伍记录数: {our_total}  (应为 {A})")
     print(f"go_rule_2 队伍记录数: {go_total}  (应为 {A})")
 
-    print_2d_array(our_arr, "our_mcts", our_total)
+    print_2d_array(our_arr, "cheat_mcts", our_total)
     print_2d_array(go_arr, "go_rule_2", go_total)
 
-    print_nil_dist(data["our_nils"], "our_mcts")
+    print_nil_dist(data["our_nils"], "cheat_mcts")
     print_nil_dist(data["go_nils"], "go_rule_2")
 
     # 打印总叫墩分布
@@ -371,7 +381,7 @@ def main() -> None:
 
         our_arr_tb = build_2d_array(our_filtered)
         go_arr_tb = build_2d_array(go_filtered)
-        print_2d_array(our_arr_tb, f"our_mcts (总叫{tb})", our_arr_tb.sum())
+        print_2d_array(our_arr_tb, f"cheat_mcts (总叫{tb})", our_arr_tb.sum())
         print_2d_array(go_arr_tb, f"go_rule_2 (总叫{tb})", go_arr_tb.sum())
 
         plot_subset(

@@ -30,6 +30,7 @@ class GameResult:
     winner: int  # player with best score
     game_name: str = ""
     round_number: int = 0
+    bids: list[str | None] = field(default_factory=lambda: [None, None, None, None])  # 每个玩家的叫牌
 
 
 @dataclass
@@ -314,4 +315,5 @@ class GeneralCardGame:
             tricks_won=list(self.state.tricks_won),
             winner=best,
             game_name=self.rules.game_name,
+            bids=[self.state.max_bid[i] if i < len(self.state.max_bid) else None for i in range(4)],
         )

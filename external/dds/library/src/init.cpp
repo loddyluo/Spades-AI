@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cstdio>
 #include <sstream>
+#include <iomanip>
 
 #include <calc_tables.hpp>
 #include "init.hpp"

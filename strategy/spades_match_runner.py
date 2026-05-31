@@ -236,7 +236,8 @@ class SpadesMatchRunner:
             for pid, score in enumerate(scores):
                 print(f"  玩家{pid}: {score:.1f}")
             print(f"  本局赢家: 玩家{winner}")
-        return GameResult(scores=scores, tricks_won=list(self.state.tricks_won), winner=winner, game_name=self.rules.game_name)
+        return GameResult(scores=scores, tricks_won=list(self.state.tricks_won), winner=winner, game_name=self.rules.game_name,
+                          bids=[self.state.max_bid[i] if i < len(self.state.max_bid) else None for i in range(4)])
 
     def _build_view(self, player_id: int) -> dict[str, Any]:
         """构造当前玩家的 1229 维输入视图。"""

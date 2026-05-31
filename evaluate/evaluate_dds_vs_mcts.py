@@ -8,11 +8,11 @@ This measures how close our MCTS player is to theoretical perfect play.
 Usage:
     python evaluate/evaluate_dds_vs_mcts.py \
         --p0 dds --p1 our_mcts --p2 dds --p3 our_mcts \
-        --num-games 50 --seed 42 --symmetric-seat-swap 1
+        --num-games 128 --num-workers 32 --seed 5231001 --symmetric-seat-swap 1 --our-exact-threshold 36
 
     python evaluate/evaluate_dds_vs_mcts.py \
         --p0 dds --p1 go_rule_2 --p2 dds --p3 go_rule_2 \
-        --num-games 50 --seed 42 --symmetric-seat-swap 1
+        --num-games 128 --num-workers 32 --seed 5230001 --symmetric-seat-swap 1
 """
 
 # This script reuses the infrastructure from evaluate_our_mcts_vs_rule_v2.py
@@ -141,9 +141,9 @@ def parse_args():
     parser.add_argument("--p3", type=str, default="our_mcts", help="Seat 3 model spec")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device")
     parser.add_argument("--our-checkpoint", type=str, default=None)
-    parser.add_argument("--our-exact-threshold", type=int, default=24)
-    parser.add_argument("--our-leaf-threshold", type=int, default=0)
-    parser.add_argument("--our-simulations-per-action", type=int, default=256)
+    parser.add_argument("--our-exact-threshold", type=int, default=36)
+    parser.add_argument("--our-leaf-threshold", type=int, default=32)
+    parser.add_argument("--our-simulations-per-action", type=int, default=40)
     parser.add_argument("--our-number-of-exact-solvers", type=int, default=32)
     parser.add_argument("--symmetric-seat-swap", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -153,7 +153,7 @@ def parse_args():
                         choices=["fork", "spawn", "forkserver"])
     parser.add_argument("--our-exploration-constant", type=float, default=25.0)
     parser.add_argument("--our-policy-temperature", type=float, default=1.0)
-    parser.add_argument("--our-mcts-determinization-count", type=int, default=10)
+    parser.add_argument("--our-mcts-determinization-count", type=int, default=5)
     parser.add_argument("--our-value-scale", type=float, default=25.0)
     parser.add_argument("--go-pv-checkpoint", type=str, default="")
     parser.add_argument("--go-bid-checkpoint", type=str, default="")

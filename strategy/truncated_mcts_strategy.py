@@ -899,7 +899,9 @@ class TruncatedMCTSStrategy:
                     match = 1.0 if oracle_local.card_id == card.card_id else 0.0
                 except Exception:
                     match = 0.0
-                p_step = 1/ legal_count * (1 - 1.0 / pow(legal_count,0.5)) + 1.0 / pow(legal_count,0.5) * match
+                # p_step = 1/ legal_count * (1 - 1.0 / pow(legal_count,0.5)) + 1.0 / pow(legal_count,0.5) * match
+                p_step = 1.0 / legal_count
+
                 # print(p_step)
             else:
                 if self._oracle_requested and self._fallback_print_count < 5:

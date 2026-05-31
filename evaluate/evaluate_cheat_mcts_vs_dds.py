@@ -9,9 +9,9 @@ when information asymmetry is removed.
 
 Usage:
     python evaluate/evaluate_cheat_mcts_vs_dds.py \
-        --num-games 10 --seed 42 \
+        --num-games 128 --seed 42 \
         --our-simulations-per-action 64 \
-        --our-exact-threshold 24
+        --our-exact-threshold 36 --num-workers 32 --our-simulations-per-action 2048 --our-mcts-determinization-count 16 
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def _patched_build_players(args, runtime, game_seed, seat_specs=None):
                 policy_temperature=getattr(args, 'our_policy_temperature', 1.0),
                 value_scale=getattr(args, 'our_value_scale', 25.0),
                 checkpoint_path=_resolve_checkpoint_path(args.our_checkpoint) if args.our_checkpoint else None,
-                prior_oracle_spec=getattr(args, 'prior_oracle_spec', 'go_rule_2'),
+                prior_oracle_spec=None, #getattr(args, 'prior_oracle_spec', 'go_rule_2'),
                 bid_checkpoint_path=_resolve_checkpoint_path(args.bid_checkpoint) if args.bid_checkpoint else "",
                 # KEY: disable determinization = sees true hands
                 use_determinization=False,
@@ -138,10 +138,10 @@ def parse_args():
                         help="Seat 3 spec")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--our-checkpoint", type=str, default=None)
-    parser.add_argument("--our-exact-threshold", type=int, default=28,
+    parser.add_argument("--our-exact-threshold", type=int, default=36,
                         help="Exact solve threshold (cheating MCTS can use higher since it sees true hands)")
-    parser.add_argument("--our-leaf-threshold", type=int, default=0)
-    parser.add_argument("--our-simulations-per-action", type=int, default=64,
+    parser.add_argument("--our-leaf-threshold", type=int, default=28)
+    parser.add_argument("--our-simulations-per-action", type=int, default=256,
                         help="MCTS sims per action (fewer needed since no sampling noise)")
     parser.add_argument("--our-number-of-exact-solvers", type=int, default=1,
                         help="Only 1 needed (no need to resample, true hands are known)")
@@ -151,7 +151,7 @@ def parse_args():
     parser.add_argument("--torch-num-interop-threads", type=int, default=1)
     parser.add_argument("--mp-start-method", type=str, default="fork",
                         choices=["fork", "spawn", "forkserver"])
-    parser.add_argument("--our-exploration-constant", type=float, default=25.0)
+    parser.add_argument("--our-exploration-constant", type=float, default=5.0)
     parser.add_argument("--our-policy-temperature", type=float, default=1.0)
     parser.add_argument("--our-mcts-determinization-count", type=int, default=1,
                         help="1 = no resampling (true hands used directly)")
