@@ -51,8 +51,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exact-threshold", type=int, default=36,
                         help="剩余牌数 <= 该值时使用精确求解器（默认 36 = 前16张用RL）")
     parser.add_argument("--gamma", type=float, default=0.99, help="折扣因子（当前未使用，完整 REINFORCE 可加）")
-    parser.add_argument("--update-interval", type=int, default=120,
-                        help="每多少 episode 做一次梯度更新")
+    parser.add_argument("--update-interval", type=int, default=200,
+                        help="每多少 episode 做一次梯度更新（默认 200 ≈ 3200 trajectories ≥ 3000）")
+    parser.add_argument("--num-epochs", type=int, default=10,
+                        help="每个 batch 的轨迹被复用的 epoch 数（每条轨迹学习 num_epochs 次）")
     parser.add_argument("--save-dir", type=str, default="rl_checkpoints",
                         help="模型保存目录")
     parser.add_argument("--save-interval", type=int, default=5000,
@@ -401,62 +403,109 @@ def train(args: argparse.Namespace) -> None:
 
             # ── 梯度更新 ──────────────────────────────────────────
             if accumulated_trajectories:
-                optimizer.zero_grad()
-
-              
                 rewards_batch = np.array(batch_game_rewards)
                 baseline = float(np.mean(rewards_batch))
+                total_trajs = len(accumulated_trajectories)
 
-                reinforce_terms = []
-                raw_advantages = []
+                # ── 多 epoch 复用同一批轨迹（每条轨迹学习 num_epochs 次）──
+                # 注: epoch >= 2 时 logits 已被前一个 epoch 的更新改动，严格意义上
+                # 已不是采样时的 on-policy 分布；这里按用户要求做朴素 REINFORCE 复用，
+                # 不加 PPO-style importance ratio 修正。
+                last_reinforce_loss = 0.0
+                last_grad_norm = 0.0
+                last_n_pos_adv = 0
+                last_mean_max_prob = 0.0
+                last_mean_entropy = 0.0
+                last_mean_norm_entropy = 0.0
+
                 has_entropy = "entropy_val" in accumulated_trajectories[0]
-                entropy_terms = []
 
-                for traj in accumulated_trajectories:
-                    feature = traj["feature"]
-                    feat_tensor = torch.from_numpy(feature).float().unsqueeze(0)
-                    logits = policy_net(feat_tensor).squeeze(0)
+                for epoch in range(args.num_epochs):
+                    optimizer.zero_grad()
 
-                    mask = torch.full((52,), float("-inf"))
-                    for cid in traj["legal_card_ids"]:
-                        mask[cid] = 0.0
-                    masked_logits = logits + mask
-                    log_probs = torch.log_softmax(masked_logits, dim=0)
-                    log_prob = log_probs[traj["action_id"]]
+                    reinforce_terms = []
+                    raw_advantages = []
+                    entropy_terms = []
+                    # ── 监控分布塌缩：合法动作上的 max prob / 熵 / 归一化熵 ──
+                    max_probs_legal: list[float] = []
+                    entropies_legal: list[float] = []
+                    norm_entropies_legal: list[float] = []
 
-                    raw_adv = traj["_game_reward"] - baseline
-                    raw_advantages.append(raw_adv)
-                    reinforce_terms.append(-log_prob * raw_adv)
+                    for traj in accumulated_trajectories:
+                        feature = traj["feature"]
+                        feat_tensor = torch.from_numpy(feature).float().unsqueeze(0)
+                        logits = policy_net(feat_tensor).squeeze(0)
 
-                    # ⚠️ 熵必须从当前 logits 重新计算，确保梯度流经 policy_net
-                    if has_entropy:
+                        legal_ids = traj["legal_card_ids"]
+                        mask = torch.full((52,), float("-inf"))
+                        for cid in legal_ids:
+                            mask[cid] = 0.0
+                        masked_logits = logits + mask
+                        log_probs = torch.log_softmax(masked_logits, dim=0)
+                        log_prob = log_probs[traj["action_id"]]
+
+                        raw_adv = traj["_game_reward"] - baseline
+                        raw_advantages.append(raw_adv)
+                        reinforce_terms.append(-log_prob * raw_adv)
+
+                        # 熵（用于熵正则 + 塌缩监控）
                         probs = torch.exp(log_probs)
                         safe_log_probs = torch.where(probs > 0, log_probs, torch.zeros_like(log_probs))
                         entropy = -torch.sum(probs * safe_log_probs)
-                        entropy_terms.append(-args.entropy_coef * entropy)
+                        if has_entropy:
+                            entropy_terms.append(-args.entropy_coef * entropy)
 
-                reinforce_loss = torch.stack(reinforce_terms).mean()
-                loss = reinforce_loss
-                if has_entropy and entropy_terms:
-                    entropy_loss = torch.mean(torch.stack(entropy_terms))
-                    loss = reinforce_loss + entropy_loss
+                        # ── 塌缩监控（不参与反传，只取标量）──
+                        with torch.no_grad():
+                            n_legal = max(len(legal_ids), 1)
+                            # 在合法动作上取 max prob（非法动作 prob=0，不影响 max）
+                            max_probs_legal.append(float(probs.max().item()))
+                            ent_val = float(entropy.item())
+                            entropies_legal.append(ent_val)
+                            # 归一化熵：除以 log(n_legal)，n_legal=1 时定义为 0
+                            if n_legal > 1:
+                                norm_entropies_legal.append(ent_val / float(np.log(n_legal)))
+                            else:
+                                norm_entropies_legal.append(0.0)
 
-                loss.backward()
-                grad_norm = nn.utils.clip_grad_norm_(policy_net.parameters(), max_norm=args.max_grad_norm)
-                optimizer.step()
+                    reinforce_loss = torch.stack(reinforce_terms).mean()
+                    loss = reinforce_loss
+                    if has_entropy and entropy_terms:
+                        entropy_loss = torch.mean(torch.stack(entropy_terms))
+                        loss = reinforce_loss + entropy_loss
 
-                n_pos_adv = sum(1 for a in raw_advantages if a > 0)
-                total_trajs = len(accumulated_trajectories)
-                print(f"  [Update] ep {batch_start+1}-{batch_end}, "
-                      f"loss={reinforce_loss.item():.3f}, "
-                      f"gn={grad_norm:.3f}, bl={baseline:.1f}, "
+                    loss.backward()
+                    grad_norm = nn.utils.clip_grad_norm_(policy_net.parameters(), max_norm=args.max_grad_norm)
+                    optimizer.step()
+
+                    # 保存最后一个 epoch 的统计用于打印
+                    last_reinforce_loss = reinforce_loss.item()
+                    last_grad_norm = float(grad_norm)
+                    last_n_pos_adv = sum(1 for a in raw_advantages if a > 0)
+                    last_mean_max_prob = float(np.mean(max_probs_legal))
+                    last_mean_entropy = float(np.mean(entropies_legal))
+                    last_mean_norm_entropy = float(np.mean(norm_entropies_legal))
+
+                    # 每个 epoch 都写 TensorBoard，step 用 batch_end * num_epochs + epoch 防止覆盖
+                    if writer is not None:
+                        tb_step = batch_end * args.num_epochs + epoch
+                        writer.add_scalar("update/reinforce_loss", last_reinforce_loss, tb_step)
+                        writer.add_scalar("update/grad_norm", last_grad_norm, tb_step)
+                        writer.add_scalar("update/baseline", baseline, tb_step)
+                        # ── 分布塌缩监控 ──
+                        writer.add_scalar("policy/mean_max_prob", last_mean_max_prob, tb_step)
+                        writer.add_scalar("policy/mean_entropy", last_mean_entropy, tb_step)
+                        writer.add_scalar("policy/mean_norm_entropy", last_mean_norm_entropy, tb_step)
+
+                print(f"  [Update] ep {batch_start+1}-{batch_end} (×{args.num_epochs} epochs, "
+                      f"trajs={total_trajs}), "
+                      f"loss={last_reinforce_loss:.3f}, "
+                      f"gn={last_grad_norm:.3f}, bl={baseline:.1f}, "
                       f"avg_game_rew={np.mean(batch_game_rewards):+.1f}, "
-                      f"pos={n_pos_adv}/{total_trajs}", flush=True)
-
-                if writer is not None:
-                    writer.add_scalar("update/reinforce_loss", reinforce_loss.item(), batch_end)
-                    writer.add_scalar("update/grad_norm", grad_norm, batch_end)
-                    writer.add_scalar("update/baseline", baseline, batch_end)
+                      f"pos={last_n_pos_adv}/{total_trajs}, "
+                      f"max_p={last_mean_max_prob:.3f}, "
+                      f"H={last_mean_entropy:.3f}, "
+                      f"H_norm={last_mean_norm_entropy:.3f}", flush=True)
 
                 accumulated_trajectories = []
                 batch_game_rewards = []
