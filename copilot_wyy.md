@@ -218,6 +218,63 @@
 
 ### 2026-04-27｜会话5（阶段1-步骤2已落地：精确求解器公开接口扩展 + 加速尝试）
 
+### 2026-06-01｜会话6（牌类界面仓库检索与可行性评估）
+
+#### 已确认事实
+- 没有搜到一个“可以直接拿来当黑桃王网页 UI”的成熟仓库；更现实的做法是复用卡牌组件库，再参考 trick-taking 游戏壳自己实现黑桃王交互。
+- `indubitablysrivathsan/One-Armed-Pirate` 最接近完整可复用前端：React + TypeScript + Vite，已经有可点击手牌、桌面牌、叫牌、定 trump、阶段机、规则面板，以及 `useGameEngine` 作为状态适配层。
+- `danielkimcs/chinese-hearts-game` 也是完整的 trick-taking 网页游戏，有可点击出牌、玩家列表、回合状态、Socket.IO 房间同步和服务端规则判断，但更偏多人联机和旧式 React/webpack 架构。
+- `heruka-urgyen/react-playing-cards` 只提供卡牌 SVG/组件，不是完整游戏，但非常适合当作卡牌渲染层复用。
+
+#### 未确认假设/风险
+- `One-Armed-Pirate` 的规则和牌型不是黑桃王原生规则，只能当 UI / 状态机骨架，不能直接当最终实现。
+- `chinese-hearts-game` 依赖联机同步，改成单机 AI UI 需要较多裁剪；它更适合作为“玩家列表 + 出牌交互 + 状态推送”的参考。
+- 现阶段还没有验证这些仓库的许可证是否允许直接搬运 UI 代码；若要落地，建议“参考架构，自行重写”。
+
+#### 关键命令与入口
+- GitHub 检索：
+  - `https://github.com/search?q=playing+cards+react+component&type=repositories`
+  - `https://github.com/search?q=drag+and+drop+card+game+react&type=repositories`
+  - `https://github.com/search?q=trick+taking+card+game+react&type=repositories`
+- 重点候选：
+  - `indubitablysrivathsan/One-Armed-Pirate`
+  - `danielkimcs/chinese-hearts-game`
+  - `heruka-urgyen/react-playing-cards`
+- 可复用入口：
+  - `src/components/cards/PlayerHand.tsx`（可点击手牌）
+  - `src/game/engine.ts`（阶段机与规则推进）
+  - `src/components/cards/Card.tsx`（卡牌渲染）
+
+#### 下一步行动
+- 优先选 React/Vite 路线做网页 UI，复用卡牌组件库 + 自己实现黑桃王的手牌/桌面/合法出牌/比分显示。
+- 如果要快速出原型，优先照着 `One-Armed-Pirate` 的拆分方式做：`GameLayout` / `PlayerHand` / `TablePlayArea` / `CenterPanel`。
+- 下一轮建议直接推进到：1) 画出 UI 技术方案；2) 在本仓库里搭最小可运行的网页界面骨架。
+
+### 2026-06-01｜会话7（GUI 可运行方案：是否需要 clone 参考仓库）
+
+#### 已确认事实
+- `gui/` 当前是空目录，可以直接作为新前端的落点，不需要先清理旧代码。
+- 当前仓库里已经存在一个可直接迁移的 Vite 参考骨架：`Spades_AI_GO-MCTS/label_ui`，它本身就是 `React + Vite`，而且有 `package.json`、`vite.config.js`、`src/main.jsx` 这类最小可运行入口。
+- `One-Armed-Pirate` 更适合当 UI/状态机参考，而不是整仓 clone 到 `gui/`；它对黑桃王规则并不匹配。
+- 如果主要目的是“不同牌面的图片建模 + 合法出牌 UI”，`heruka-urgyen/react-playing-cards` 比完整游戏仓库更适合作为卡牌图片/组件来源。
+
+#### 未确认假设/风险
+- 还没有确认 `gui/` 最终是单机本地桌面界面，还是要连后端调用现有 AI；这会影响是否需要 socket / API 层。
+- 还没有确认卡牌图片是“直接复用第三方 SVG 组件库”还是“导入本仓库自绘牌面资源”；前者最快，后者最可控。
+- 如果未来要把 UI 做成完整联机版，当前最小骨架还需要再补通信层，但这不是第一步必须做的。
+
+#### 关键命令与入口
+- 当前可复用的本地前端模板：`Spades_AI_GO-MCTS/label_ui`
+- 推荐借鉴的外部仓库：
+  - `indubitablysrivathsan/One-Armed-Pirate`（页面结构、手牌点击、桌面牌展示）
+  - `heruka-urgyen/react-playing-cards`（卡牌 SVG/组件）
+- `gui/` 目标位置：以后前端骨架直接落在这里，避免把 UI 散落到仓库其他目录。
+
+#### 下一步行动
+- 不建议先 clone `One-Armed-Pirate` 到 `gui/`。
+- 建议先把 `Spades_AI_GO-MCTS/label_ui` 作为模板思路迁移到 `gui/`，再按需引入卡牌组件库。
+- 如果你确认要做，我下一步可以直接给出一个“`gui/` 目录下的最小可运行 React/Vite 方案”，并明确哪些文件复制自现有模板、哪些文件自己新建。
+
 #### 已确认事实
 - 已在不破坏旧接口的前提下扩展精确求解器公开能力：
   - 保持 `solve(state) -> float` 兼容旧调用方。
