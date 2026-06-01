@@ -93,7 +93,8 @@ class SpadesMatchRunner:
         rules: SpadesRules | None = None,
         encoder: SpadesFeatureEncoder | None = None,
         on_card_played: Callable[[int, int], None] | None = None,
-        on_bidding_finished: Callable[[], None] | None = None,  # ← 新增
+        on_bidding_finished: Callable[[], None] | None = None,
+        max_tricks: int | None = None,
     ) -> None:
         if len(players) != 4:
             raise ValueError(f"需要 4 名玩家，实际得到 {len(players)} 名")
@@ -107,17 +108,24 @@ class SpadesMatchRunner:
         self.state = build_random_state(seed)
         self.player_features: dict[int, Any] = {}
         self.records: list[PlayRecord] = []
-        self.on_bidding_finished = on_bidding_finished  # ← 新增  
+        self.on_bidding_finished = on_bidding_finished
+        self.max_tricks = max_tricks  # None = 打满全场, N = 只打前 N 墩
 
     def play_game(self):
         """运行一整局黑桃王，并返回 GameResult。"""
         self._start_game()
         self._bidding_phase()
         self._set_teams()
-        
-        if self.on_bidding_finished is not None:   # ← 新增                                                   
-              self.on_bidding_finished()             # ← 新增
+
+        if self.on_bidding_finished is not None:
+              self.on_bidding_finished()
         self._play_phase()
+        # 如果 max_tricks 提前截断，不执行正常计分，返回 dummy result
+        if self.max_tricks is not None:
+            from trick_taking.driver import GameResult
+            return GameResult(scores=[0, 0, 0, 0], tricks_won=[0, 0, 0, 0], winner=0,
+                              game_name=self.rules.game_name,
+                              bids=[None, None, None, None])
         return self._score_game()
 
     def _start_game(self) -> None:
@@ -169,6 +177,9 @@ class SpadesMatchRunner:
         turn_count = 0
         trick_index = 0
         while not self.rules.end_trickgame(self.state):
+            # max_tricks 截断：打满指定墩数后提前退出
+            if self.max_tricks is not None and trick_index >= self.max_tricks:
+                break
             trick_index += 1
             if self.verbose:
                 print(f"\n--- 第{trick_index:02d}墩开始 | 首攻玩家={self.state.turn} ---")

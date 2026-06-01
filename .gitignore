@@ -13,3 +13,9 @@ data/*.pt
 logs/
 logs_old/
 *.png
+runs/
+rl_checkpoints/
+rl_checkpoints0531*/
+logs_mid/
+*.zip
+.ipynb_ch*

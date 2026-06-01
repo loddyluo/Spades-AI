@@ -1,10 +1,12 @@
 """
-RL policy gradient 训练脚本（多核版本）：rl_exact vs DDS。
+预训练 RL policy gradient 脚本（多核版本）：前4墩逐牌奖励。
 
-使用 multiprocessing.Pool 并行化打牌（数据收集），汇总到主进程做梯度更新。
+只打前4墩（16张牌），每张出牌计算逐牌奖励：
+  - 赢墩（成为下一墩首攻）：+5
+  - 输墩（未赢）：按点数扣分 A=18, K=12, Q=8, J=3, T=1, 其余0
 
 用法:
-    python rl/train_rl_multicpu.py --num-games 10000 --seed 42 --lr 0.001 --num-workers 8
+    python rl/pretrain_rl_multicpu.py --num-games 10000 --seed 42 --lr 0.001 --num-workers 8
 """
 
 from __future__ import annotations
@@ -39,23 +41,23 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="RL policy gradient training (multi-CPU): rl_exact vs DDS",
+        description="Pretrain RL policy gradient (multi-CPU): 前4墩逐牌奖励",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
     parser.add_argument("--num-games", type=int, default=10000,
                         help="训练总对局数（每 episode 2 局，共 num_games/2 次更新）")
     parser.add_argument("--lr", type=float, default=0.001, help="学习率")
-    parser.add_argument("--hidden-dims", type=int, nargs="+", default=[512,256],
+    parser.add_argument("--hidden-dims", type=int, nargs="+", default=[512, 256],
                         help="策略网络隐藏层维度")
     parser.add_argument("--exact-threshold", type=int, default=36,
                         help="剩余牌数 <= 该值时使用精确求解器（默认 36 = 前16张用RL）")
-    parser.add_argument("--gamma", type=float, default=0.99, help="折扣因子（当前未使用，完整 REINFORCE 可加）")
+    parser.add_argument("--gamma", type=float, default=0.99, help="折扣因子（当前未使用）")
     parser.add_argument("--update-interval", type=int, default=200,
-                        help="每多少 episode 做一次梯度更新（默认 200 ≈ 3200 trajectories ≥ 3000）")
+                        help="每多少 episode 做一次梯度更新")
     parser.add_argument("--num-epochs", type=int, default=10,
-                        help="每个 batch 的轨迹被复用的 epoch 数（每条轨迹学习 num_epochs 次）")
-    parser.add_argument("--save-dir", type=str, default="rl_checkpoints",
+                        help="每个 batch 的轨迹被复用的 epoch 数")
+    parser.add_argument("--save-dir", type=str, default="rl_checkpoints/pretrain",
                         help="模型保存目录")
     parser.add_argument("--save-interval", type=int, default=5000,
                         help="每多少 episode 保存一次 checkpoint")
@@ -69,57 +71,15 @@ def parse_args() -> argparse.Namespace:
                         help="熵奖励系数")
     parser.add_argument("--max-grad-norm", type=float, default=15.0,
                         help="梯度裁剪最大范数")
-    parser.add_argument("--baseline-decay", type=float, default=0.95,
-                        help="全局 EMA 基线衰减系数")
     parser.add_argument("--num-workers", type=int, default=30,
                         help="并行打牌的进程数")
     parser.add_argument("--tensorboard", action="store_true", default=True,
                         help="启用 TensorBoard 日志")
-    parser.add_argument("--log-dir", type=str, default="runs/rl_train",
+    parser.add_argument("--log-dir", type=str, default="runs/pretrain_rl",
                         help="TensorBoard 日志目录")
     parser.add_argument("--load-checkpoint", type=str, default=None,
                         help="从指定路径加载之前训练过的 checkpoint（.pt 文件），在此基础上继续训练")
     return parser.parse_args()
-
-
-def _compute_team_scores(result: Any) -> tuple[float, float]:
-    """从游戏结果计算队伍得分（仅看是否完成叫牌）。
-
-    得墩 ≥ 叫墩总和 → 0分，否则 → -100分。
-    返回 (队伍0的payoff, 队伍1的payoff)。
-    """
-    ### Mode 1
-    # scores = result.scores
-    # t0 = scores[0]
-    # t1 = scores[1]
-
-    # return t0/2.0, t1/2.0
-
-    ### Mode 2
-    bids = result.bids
-    tricks = result.tricks_won
-    teams = [0, 1, 0, 1]
-
-    def numeric_bid(bid) -> int:
-        if bid is None:
-            return 0
-        if isinstance(bid, str):
-            if bid in ("nil", "blind_nil"):
-                return 0
-            if bid.startswith("bid_"):
-                return int(bid.split("_")[1])
-        return 0
-
-    team0_bid = sum(numeric_bid(bids[i]) for i in range(4) if teams[i] == 0)
-    team1_bid = sum(numeric_bid(bids[i]) for i in range(4) if teams[i] == 1)
-    team0_tricks = sum(tricks[i] for i in range(4) if teams[i] == 0)
-    team1_tricks = sum(tricks[i] for i in range(4) if teams[i] == 1)
-
-    diff0 = team0_tricks - team0_bid
-    diff1 = team1_tricks - team1_bid
-    t0 = -100.0 if team0_tricks < team0_bid else 0.0
-    t1 = -100.0 if team1_tricks < team1_bid else 0.0
-    return t0 - t1, t1 - t0
 
 
 def _build_dds_player(bid_model=None) -> DDSPlayer:
@@ -158,7 +118,7 @@ def play_one_game(
     bid_device: str = "cpu",
     swap_seats: bool = False,
 ) -> tuple[Any, list[dict[str, Any]]]:
-    """打一局：rl_exact vs DDS，返回结果和 RL 轨迹。"""
+    """打一局：rl_exact vs DDS，只打前4墩，返回结果和 RL 轨迹。"""
     if not swap_seats:
         players = [
             _build_rl_exact_player(policy_net, exact_solver, encoder, exact_threshold, is_training,
@@ -183,16 +143,17 @@ def play_one_game(
         seed=seed,
         verbose=False,
         rules=rules,
+        max_tricks=4,  # 只打前4墩，后9墩跳过
     )
-    result = runner.play_game()
+    _ = runner.play_game()  # 我们不使用 result，只收集 trajectory
     all_trajectories: list[dict[str, Any]] = []
     for player in players:
         if isinstance(player, RLExactPlayer):
             all_trajectories.extend(player.trajectory)
-    return result, all_trajectories
+    return None, all_trajectories
 
 
-# ── 工作进程函数 ─────────────────────────────────────────────────────
+# ── 工作进程函数 ────────────────────────────────────────────────────
 def _load_bid_model_worker(bid_checkpoint: str, device: str):
     """worker 中加载叫牌模型。"""
     try:
@@ -211,16 +172,17 @@ def _load_bid_model_worker(bid_checkpoint: str, device: str):
 def worker_batch(args_tuple: tuple) -> list[dict]:
     """在 worker 进程中打一批 episode，返回纯数据（无 torch tensor 图）。
 
-    args_tuple: (episode_indices, base_seed, policy_state_dict, hidden_dims,
-                 exact_threshold, rules_args, bid_checkpoint, device, entropy_coef)
+    每个 trajectory entry 包含 per-step reward_val 而非 _game_reward。
     """
     (episode_indices, base_seed, policy_state_dict, hidden_dims,
      exact_threshold, rules_args, bid_checkpoint, device, entropy_coef) = args_tuple
     # 每个 worker 独立创建自己的资源
     policy_net = PolicyMLP(input_dim=331, hidden_dims=hidden_dims)
     policy_net.load_state_dict(policy_state_dict)
-    #print("policy_net_loaded_state_dict")
     policy_net.to(device)
+
+    # 标记 pretrain_mode（RLExactPlayer 通过 getattr 读取 policy_net 上的属性）
+    policy_net.pretrain_mode = True
 
     exact_solver = ExactDoubleDummyCppFastestSolver()
     if not exact_solver.native_available:
@@ -233,11 +195,8 @@ def worker_batch(args_tuple: tuple) -> list[dict]:
 
     results = []
     for ep_idx in episode_indices:
-        # 和原始代码一致: seed = base_seed + ep_idx * 2
         game_seed = base_seed + ep_idx * 2
 
-        episode_our_score = 0.0
-        episode_opp_score = 0.0
         episode_trajs: list[dict] = []
 
         for game_idx in range(2):
@@ -255,39 +214,19 @@ def worker_batch(args_tuple: tuple) -> list[dict]:
                 swap_seats=(game_idx == 1),
             )
 
-            team0_score, team1_score = _compute_team_scores(result)
-
-            if game_idx == 0:
-                our_score = team0_score
-                opp_score = team1_score
-            else:
-                our_score = team1_score
-                opp_score = team0_score
-
-            episode_our_score += our_score
-            episode_opp_score += opp_score
-
             # 提取纯数据（不要 torch tensor 图）
             for traj in trajectories:
+                reward_val = traj.get("reward", 0.0)
                 episode_trajs.append({
                     "feature": traj["feature"].copy(),
                     "action_id": traj["action"].card_id,
                     "legal_card_ids": traj["legal_card_ids"],
                     "log_prob_val": traj["log_prob"].item(),
                     "entropy_val": traj["entropy"].item() if "entropy" in traj else 0.0,
+                    "reward_val": reward_val,
                 })
 
-        episode_reward = episode_our_score - episode_opp_score
-        episode_game_reward = episode_reward / 2.0
-
-        for traj in episode_trajs:
-            traj["_game_reward"] = episode_game_reward
-
         results.append({
-            "episode_game_reward": episode_game_reward,
-            "episode_reward": episode_reward,
-            "episode_our_score": episode_our_score,
-            "episode_opp_score": episode_opp_score,
             "trajectories": episode_trajs,
         })
 
@@ -310,7 +249,6 @@ def train(args: argparse.Namespace) -> None:
         cp_path = Path(args.load_checkpoint)
         if cp_path.exists():
             policy_net.load(str(cp_path.resolve()), device=args.device)
-            # 加载后切回训练模式
             policy_net.train()
             print(f"从 checkpoint 加载模型: {cp_path.resolve()}")
         else:
@@ -318,7 +256,7 @@ def train(args: argparse.Namespace) -> None:
 
     optimizer = optim.Adam(policy_net.parameters(), lr=args.lr)
 
-    # ── 叫牌模型（主进程加载一次用于验证存在性） ─────────────────────
+    # ── 叫牌模型 ──────────────────────────────────────────────────────
     if args.bid_checkpoint:
         cp = Path(args.bid_checkpoint)
         if cp.exists():
@@ -333,35 +271,29 @@ def train(args: argparse.Namespace) -> None:
 
     num_episodes = args.num_games // 2
 
-    episode_rewards: list[float] = []
-    our_team_scores: list[float] = []
-    opp_team_scores: list[float] = []
+    all_rewards_flat: list[float] = []
 
     print("=" * 72, flush=True)
-    print("RL Policy Gradient Training (MULTI-CPU): rl_exact vs DDS", flush=True)
+    print("Pretrain RL Policy Gradient (MULTI-CPU): 前4墩逐牌奖励", flush=True)
     print(f"总对局数: {args.num_games} ({num_episodes} episodes × 2 games)", flush=True)
     print(f"学习率: {args.lr}", flush=True)
     print(f"隐藏层: {args.hidden_dims}", flush=True)
     print(f"精确阈值: {args.exact_threshold} (前 {52 - args.exact_threshold} 张用 RL)", flush=True)
     print(f"熵系数: {args.entropy_coef}", flush=True)
     print(f"Workers: {args.num_workers}", flush=True)
+    print(f"保存目录: {save_dir}", flush=True)
+    print(f"TensorBoard: {args.log_dir}", flush=True)
     print("=" * 72, flush=True)
 
     writer = None
     if args.tensorboard:
-        log_path = Path(args.log_dir) / f"05312213_seed{args.seed}_lr{args.lr}_hid{'_'.join(str(h) for h in args.hidden_dims)}_w{args.num_workers}"
-        writer = SummaryWriter(log_dir=str(log_path)+"[0531]")
+        log_path = Path(args.log_dir) / f"pretrain_seed{args.seed}_lr{args.lr}_hid{'_'.join(str(h) for h in args.hidden_dims)}_w{args.num_workers}"
+        writer = SummaryWriter(log_dir=str(log_path))
         print(f"TensorBoard 日志: {log_path}", flush=True)
 
     t_start = time.perf_counter()
-    all_episode_rewards_flat: list[float] = []
 
     accumulated_trajectories: list[dict] = []
-    batch_game_rewards: list[float] = []
-
-    # 全局 EMA 基线
-    global_baseline = 0.0
-    global_baseline_init = False
 
     ctx = mp.get_context("spawn")
     with ctx.Pool(args.num_workers) as pool:
@@ -385,32 +317,24 @@ def train(args: argparse.Namespace) -> None:
                  args.device, args.entropy_coef)
                 for chunk in chunks
             ]
-            print("worker args")
+
             # 并行打牌
             results = pool.map(worker_batch, worker_args)
-            print("Summarizing\n")
+
             # 汇总
+            batch_rewards: list[float] = []
             for worker_results in results:
                 for ep_res in worker_results:
-                    batch_game_rewards.append(ep_res["episode_game_reward"])
-                    episode_rewards.append(ep_res["episode_reward"])
-                    all_episode_rewards_flat.append(ep_res["episode_reward"])
-                    our_team_scores.append(ep_res["episode_our_score"])
-                    opp_team_scores.append(ep_res["episode_opp_score"])
-
                     for traj in ep_res["trajectories"]:
                         accumulated_trajectories.append(traj)
+                        batch_rewards.append(traj["reward_val"])
+                        all_rewards_flat.append(traj["reward_val"])
 
             # ── 梯度更新 ──────────────────────────────────────────
             if accumulated_trajectories:
-                rewards_batch = np.array(batch_game_rewards)
-                baseline = float(np.mean(rewards_batch))
+                baseline = float(np.mean(batch_rewards)) if batch_rewards else 0.0
                 total_trajs = len(accumulated_trajectories)
 
-                # ── 多 epoch 复用同一批轨迹（每条轨迹学习 num_epochs 次）──
-                # 注: epoch >= 2 时 logits 已被前一个 epoch 的更新改动，严格意义上
-                # 已不是采样时的 on-policy 分布；这里按用户要求做朴素 REINFORCE 复用，
-                # 不加 PPO-style importance ratio 修正。
                 last_reinforce_loss = 0.0
                 last_grad_norm = 0.0
                 last_n_pos_adv = 0
@@ -426,7 +350,6 @@ def train(args: argparse.Namespace) -> None:
                     reinforce_terms = []
                     raw_advantages = []
                     entropy_terms = []
-                    # ── 监控分布塌缩：合法动作上的 max prob / 熵 / 归一化熵 ──
                     max_probs_legal: list[float] = []
                     entropies_legal: list[float] = []
                     norm_entropies_legal: list[float] = []
@@ -444,25 +367,24 @@ def train(args: argparse.Namespace) -> None:
                         log_probs = torch.log_softmax(masked_logits, dim=0)
                         log_prob = log_probs[traj["action_id"]]
 
-                        raw_adv = traj["_game_reward"] - baseline
+                        # 逐牌奖励优势
+                        raw_adv = traj["reward_val"] - baseline
                         raw_advantages.append(raw_adv)
                         reinforce_terms.append(-log_prob * raw_adv)
 
-                        # 熵（用于熵正则 + 塌缩监控）
+                        # 熵
                         probs = torch.exp(log_probs)
                         safe_log_probs = torch.where(probs > 0, log_probs, torch.zeros_like(log_probs))
                         entropy = -torch.sum(probs * safe_log_probs)
                         if has_entropy:
                             entropy_terms.append(-args.entropy_coef * entropy)
 
-                        # ── 塌缩监控（不参与反传，只取标量）──
+                        # 塌缩监控
                         with torch.no_grad():
                             n_legal = max(len(legal_ids), 1)
-                            # 在合法动作上取 max prob（非法动作 prob=0，不影响 max）
                             max_probs_legal.append(float(probs.max().item()))
                             ent_val = float(entropy.item())
                             entropies_legal.append(ent_val)
-                            # 归一化熵：除以 log(n_legal)，n_legal=1 时定义为 0
                             if n_legal > 1:
                                 norm_entropies_legal.append(ent_val / float(np.log(n_legal)))
                             else:
@@ -478,7 +400,6 @@ def train(args: argparse.Namespace) -> None:
                     grad_norm = nn.utils.clip_grad_norm_(policy_net.parameters(), max_norm=args.max_grad_norm)
                     optimizer.step()
 
-                    # 保存最后一个 epoch 的统计用于打印
                     last_reinforce_loss = reinforce_loss.item()
                     last_grad_norm = float(grad_norm)
                     last_n_pos_adv = sum(1 for a in raw_advantages if a > 0)
@@ -486,13 +407,11 @@ def train(args: argparse.Namespace) -> None:
                     last_mean_entropy = float(np.mean(entropies_legal))
                     last_mean_norm_entropy = float(np.mean(norm_entropies_legal))
 
-                    # 每个 epoch 都写 TensorBoard，step 用 batch_end * num_epochs + epoch 防止覆盖
                     if writer is not None:
                         tb_step = batch_end * args.num_epochs + epoch
                         writer.add_scalar("update/reinforce_loss", last_reinforce_loss, tb_step)
                         writer.add_scalar("update/grad_norm", last_grad_norm, tb_step)
                         writer.add_scalar("update/baseline", baseline, tb_step)
-                        # ── 分布塌缩监控 ──
                         writer.add_scalar("policy/mean_max_prob", last_mean_max_prob, tb_step)
                         writer.add_scalar("policy/mean_entropy", last_mean_entropy, tb_step)
                         writer.add_scalar("policy/mean_norm_entropy", last_mean_norm_entropy, tb_step)
@@ -501,69 +420,49 @@ def train(args: argparse.Namespace) -> None:
                       f"trajs={total_trajs}), "
                       f"loss={last_reinforce_loss:.3f}, "
                       f"gn={last_grad_norm:.3f}, bl={baseline:.1f}, "
-                      f"avg_game_rew={np.mean(batch_game_rewards):+.1f}, "
+                      f"avg_rew={np.mean(batch_rewards):+.2f}, "
                       f"pos={last_n_pos_adv}/{total_trajs}, "
                       f"max_p={last_mean_max_prob:.3f}, "
                       f"H={last_mean_entropy:.3f}, "
                       f"H_norm={last_mean_norm_entropy:.3f}", flush=True)
 
                 accumulated_trajectories = []
-                batch_game_rewards = []
 
             # ── 日志 ──────────────────────────────────────────────
-            if batch_end % 40 == 0 and episode_rewards:
-                recent = episode_rewards[-40:]
+            if batch_end % 40 == 0 and all_rewards_flat:
+                recent = all_rewards_flat[-40 * 8:]  # 约40步 × 8 traj/步
                 avg_reward = np.mean(recent)
-                print("[recent]" , recent, flush=True)
-                avg_our = np.mean(our_team_scores[-40:])
-                avg_opp = np.mean(opp_team_scores[-40:])
                 elapsed = time.perf_counter() - t_start
                 print(
                     f"Episode {batch_end:5d}/{num_episodes} | "
-                    f"AvgEpReward={avg_reward:+7.1f} | "
-                    f"AvgGameReward={avg_reward/2:+7.1f} | "
-                    f"AvgOur={avg_our:+7.1f} | AvgOpp={avg_opp:+7.1f} | "
+                    f"AvgReward={avg_reward:+7.2f} | "
                     f"Time={elapsed:.0f}s", flush=True
                 )
 
             # ── TensorBoard ──────────────────────────────────────
-            if writer is not None and batch_end % 300 == 0 and episode_rewards:
-                recent300 = episode_rewards[-300:]
-                writer.add_scalar("train/avg_episode_reward", np.mean(recent300), batch_end)
-                writer.add_scalar("train/avg_game_reward", np.mean(recent300) / 2.0, batch_end)
+            if writer is not None and batch_end % 300 == 0 and all_rewards_flat:
+                recent = all_rewards_flat[-300 * 8:]
+                writer.add_scalar("train/avg_reward", np.mean(recent), batch_end)
 
             # ── 保存 checkpoint ──────────────────────────────────
             if batch_end % args.save_interval == 0:
-                cp_path = save_dir / f"312212policy_ep{batch_end}.pt"
+                cp_path = save_dir / f"pretrain_policy_ep{batch_end}.pt"
                 policy_net.save(str(cp_path))
                 print(f"  -> 保存: {cp_path}", flush=True)
 
     # ── 训练结束 ──────────────────────────────────────────────────────
     t_elapsed = time.perf_counter() - t_start
-    final_path = save_dir / "policy_final.pt"
+    final_path = save_dir / "pretrain_policy_final.pt"
     policy_net.save(str(final_path))
 
-    all_game_rewards = [r / 2 for r in all_episode_rewards_flat]
-    n_games = len(all_game_rewards)
+    n_rewards = len(all_rewards_flat)
 
     print(flush=True)
     print("=" * 72, flush=True)
-    print("训练完成！", flush=True)
-    print(f"总耗时: {t_elapsed:.0f}s (平均 {t_elapsed/max(num_episodes,1):.1f}s/episode)", flush=True)
+    print("预训练完成！", flush=True)
+    print(f"总耗时: {t_elapsed:.0f}s", flush=True)
     print(f"最终模型: {final_path}", flush=True)
-    print(f"全场平均 game 奖励: {np.mean(all_game_rewards):+7.1f}", flush=True)
-
-    if n_games >= 500:
-        first_200 = np.mean(all_game_rewards[:100])
-        last_200 = np.mean(all_game_rewards[400:500])
-        print(f"第1~200局: {first_200:+7.1f}", flush=True)
-        print(f"第801~1000局: {last_200:+7.1f}", flush=True)
-        impr = last_200 - first_200
-        print(f"改进: {impr:+7.1f}", flush=True)
-        if impr >= 12:
-            print("✅ 目标达成！", flush=True)
-        else:
-            print(f"❌ 还需 {12-impr:.1f} 分", flush=True)
+    print(f"全场平均逐牌奖励: {np.mean(all_rewards_flat):+7.2f}", flush=True)
     print("=" * 72, flush=True)
 
     if writer is not None:

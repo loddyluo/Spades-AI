@@ -1,11 +1,11 @@
 """
 Policy MLP 网络。
 
-将 1229 维局面特征映射为 52 张牌的出牌 logits，
+将 331 维局面特征映射为 52 张牌的出牌 logits，
 用于 RL policy gradient 训练。
 
 网络结构:
-- 输入: 1229 维 float32 特征向量
+- 输入: 331 维 float32 特征向量（前4墩RL特征，详见 rl_feature_encoder.py）
 - 隐藏层: [512, 256] 带 ReLU
 - 输出: 52 维 logits (每张牌一个)
 """
@@ -22,7 +22,7 @@ class PolicyMLP(nn.Module):
 
     def __init__(
         self,
-        input_dim: int = 1229,
+        input_dim: int = 331,
         hidden_dims: list[int] | None = None,
     ) -> None:
         super().__init__()

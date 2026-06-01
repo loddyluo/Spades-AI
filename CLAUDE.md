@@ -33,9 +33,23 @@ rl_exact的叫牌方式模仿/root/Spades-AI/evaluate/evaluate_cheat_mcts_vs_dds
 ## 开展训练
 下面的指令必须能运行
 ```bash
-python rl/train_rl_multicpu.py --num-games 100000 --seed 42 --lr 0.0003  --num-workers 32 --update-interval 300
+python rl/train_rl_multicpu.py --num-games 100000 --seed 114514 --lr 0.000001  --num-workers 30 --update-interval 300 --num-epochs 1 --load-checkpoint ./rl_checkpoints/pretrain/pretrain_best.pt
+
+python rl/pretrain_rl_multicpu.py --num-games 20000 --seed 42 --lr 0.001  --num-workers 32 --update-interval 120 --num-epochs 1 --entropy-coef 0.05
 tensorboard --logdir runs/rl_train --port 6011
+tensorboard --logdir runs/pretrain_rl --port 6011
 ```
 现在的问题是rl了5000局以后，模型表现没有任何改进。您需要帮我找出问题出在哪？找出问题之后，运行python rl/train_rl.py --num-games 5000 --seed 123 --lr 0.001。（该指令运行不会超过10分钟）
 【修改目标】RL初期应该有较明显的表现提升，因此，您必须使得第1~1000局的平均reward比第4001~5000局的平均reward大至少12分，而且这个目标必须对多个随机数种子都验证成立. 
 请一直解决问题直到【修改目标】达成，如果【修改目标】没有被达成，接着修改，做实验，直到修改目标被达成。
+
+python rl/pretrain_rl_multicpu.py --num-games 500000 --seed 42 --lr 0.0001 --num-workers 32 --update-interval 300 --num-epochs 1 --entropy-coef 0.05 --load-checkpoint ./rl_checkpoints/pretrain/pretrain_policy_final.pt
+
+
+python rl/eval_rl_multicpu.py --num-games 1500 --seed 61 --num-workers 30 --load-checkpoint ./rl_checkpoints/best.pt
+
+--load-checkpoint ./rl_checkpoints/pretrain/pretrain_best.pt
+
+
+
+-1.09→-1.05

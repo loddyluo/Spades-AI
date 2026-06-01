@@ -17,14 +17,14 @@ from typing import Any
 import numpy as np
 import torch
 
-from trick_taking.card import Card
+from trick_taking.card import Card, Suit
 from trick_taking.game_state import GameState
 from trick_taking.player import AIPlayer
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
     ExactDoubleDummyCppFastestSolver,
 )
-from trick_taking.utils.feature_encoder import SpadesFeatureEncoder
 from rl.policy_network import PolicyMLP
+from rl.rl_feature_encoder import RLFeatureEncoder
 
 
 class RLExactPlayer(AIPlayer):
@@ -40,14 +40,14 @@ class RLExactPlayer(AIPlayer):
         self,
         policy_net: PolicyMLP,
         exact_solver: ExactDoubleDummyCppFastestSolver | None = None,
-        encoder: SpadesFeatureEncoder | None = None,
+        encoder: RLFeatureEncoder | None = None,
         exact_threshold: int = 36,
         is_training: bool = True,
         bid_model=None,
         bid_device: str = "cpu",
     ) -> None:
         self.policy_net = policy_net
-        self.encoder = encoder or SpadesFeatureEncoder()
+        self.encoder = encoder or RLFeatureEncoder()
         self.exact_threshold = exact_threshold
         self.is_training = is_training
         self._bid_model = bid_model
@@ -69,11 +69,18 @@ class RLExactPlayer(AIPlayer):
         # 训练轨迹（每局重置）
         self.trajectory: list[dict[str, Any]] = []
 
+        # 预训练模式（前4墩逐牌奖励）
+        self.pretrain_mode = getattr(policy_net, "pretrain_mode", False)
+        self._current_trick_cards: list[tuple[int, Card]] = []
+        self._pending_entry_idx: int = -1
+
     def start_game(self, position: int, hand: list[Card], num_players: int) -> None:
         self.position = position
         self.hand = list(hand)
         self.last_play_info = {}
         self.trajectory = []
+        self._current_trick_cards = []
+        self._pending_entry_idx = -1
 
     def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
         """使用 MLP bid model 叫牌（与 evaluate_cheat_mcts_vs_dds.py 中的 DDSPlayer 相同）。"""
@@ -167,13 +174,17 @@ class RLExactPlayer(AIPlayer):
                 chosen_card = legal_cards[0]
 
             # 记录轨迹
-            self.trajectory.append({
+            entry = {
                 "feature": feature.copy(),
                 "action": chosen_card,
                 "log_prob": log_prob,
                 "entropy": entropy,
                 "legal_card_ids": [c.card_id for c in legal_cards],
-            })
+            }
+            if self.pretrain_mode:
+                entry["reward"] = 0.0  # 占位，后续在 card_played 中更新
+                self._pending_entry_idx = len(self.trajectory)
+            self.trajectory.append(entry)
 
             self.last_play_info = {"mode": "rl_policy_sample"}
             return chosen_card
@@ -215,4 +226,65 @@ class RLExactPlayer(AIPlayer):
         pass
 
     def card_played(self, player_id: int, card: Card) -> None:
-        pass
+        if not self.pretrain_mode:
+            return
+
+        # 跟踪当前墩的所有出牌
+        self._current_trick_cards.append((player_id, card))
+
+        # 一墩结束（4张牌出完），计算奖励
+        if len(self._current_trick_cards) == 4:
+            self._compute_pretrain_reward()
+            self._current_trick_cards = []
+
+    def _compute_pretrain_reward(self) -> None:
+        """计算当前已完成一墩的对抗性逐牌奖励。
+
+        新规则：
+        1. 每张牌的积分 = (赢墩? +18 : 0) - rank扣分 (A→17, K→12, Q→8, J→3, T→1)
+        2. 我方两张牌的奖励 = 该牌积分 - 0.5 × 对方两张牌积分之和
+        """
+        entries = self._current_trick_cards  # list of (player_id, Card)
+
+        # 找出该墩赢家
+        lead_suit = entries[0][1].suit
+        best_idx = 0
+        best_card = entries[0][1]
+        for i in range(1, 4):
+            pid, card = entries[i]
+            if card.suit == Suit.SPADES:
+                if best_card.suit != Suit.SPADES or card.rank.value > best_card.rank.value:
+                    best_idx = i
+                    best_card = card
+            elif card.suit == lead_suit and best_card.suit != Suit.SPADES:
+                if card.rank.value > best_card.rank.value:
+                    best_idx = i
+                    best_card = card
+
+        # 计算每张牌的积分 = 赢墩加分 - 点数扣分
+        def card_score(card: Card, is_winner: bool) -> float:
+            base = 18.0 if is_winner else 0.0
+            deduction = {14: 17.0, 13: 12.0, 12: 8.0, 11: 3.0, 10: 1.0}.get(card.rank.value, 0.0)
+            return base - deduction
+
+        scores = [card_score(card, i == best_idx) for i, (_, card) in enumerate(entries)]
+
+        # 对方（DDS 位置 1 和 3）积分之和
+        opp_sum = sum(scores[i] for i, (pid, _) in enumerate(entries) if pid in (1, 3))
+
+        # 我方该牌 reward = 该牌积分 - 0.5 × 对方积分和
+        our_score = None
+        for i, (pid, _) in enumerate(entries):
+            if pid == self.position:
+                our_score = scores[i]
+                break
+
+        if our_score is None:
+            return
+
+        reward = our_score - 0.2 * opp_sum
+
+        # 将奖励赋给对应的 trajectory 条目
+        if 0 <= self._pending_entry_idx < len(self.trajectory):
+            self.trajectory[self._pending_entry_idx]["reward"] = reward
+            self._pending_entry_idx = -1
