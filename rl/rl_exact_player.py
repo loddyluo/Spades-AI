@@ -282,7 +282,7 @@ class RLExactPlayer(AIPlayer):
         if our_score is None:
             return
 
-        reward = our_score - 0.2 * opp_sum
+        reward = our_score - 0.5 * opp_sum
 
         # 将奖励赋给对应的 trajectory 条目
         if 0 <= self._pending_entry_idx < len(self.trajectory):

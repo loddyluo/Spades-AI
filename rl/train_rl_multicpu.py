@@ -217,9 +217,8 @@ def worker_batch(args_tuple: tuple) -> list[dict]:
     (episode_indices, base_seed, policy_state_dict, hidden_dims,
      exact_threshold, rules_args, bid_checkpoint, device, entropy_coef) = args_tuple
     # 每个 worker 独立创建自己的资源
-    policy_net = PolicyMLP(input_dim=331, hidden_dims=hidden_dims)
+    policy_net = PolicyMLP(input_dim=387, hidden_dims=hidden_dims)
     policy_net.load_state_dict(policy_state_dict)
-    #print("policy_net_loaded_state_dict")
     policy_net.to(device)
 
     exact_solver = ExactDoubleDummyCppFastestSolver()
@@ -304,7 +303,7 @@ def train(args: argparse.Namespace) -> None:
     torch.manual_seed(args.seed)
 
     # ── 主进程网络 ────────────────────────────────────────────────────
-    policy_net = PolicyMLP(input_dim=331, hidden_dims=args.hidden_dims).to(device)
+    policy_net = PolicyMLP(input_dim=387, hidden_dims=args.hidden_dims).to(device)
 
     if args.load_checkpoint:
         cp_path = Path(args.load_checkpoint)

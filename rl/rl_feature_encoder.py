@@ -1,15 +1,15 @@
 """
-RL 特征编码器（331 维），仅用于 rl_exact 前 4 墩的强化学习模型。
+RL 特征编码器（387 维），仅用于 rl_exact 前 4 墩的强化学习模型。
 
-设计文档: 特征设计.md
-注意事项: 该编码器仅用于 RL 模型输入，不影响到其他模型或方法。
-
-编码方式（331 维）:
+编码方式（387 维）:
   前 16 维: 已出牌数的 one-hot (0~15)
-  后 315 维: 15 张牌 × 21 维/张
+  中间 315 维: 15 张牌 × 21 维/张
     - 前 13 维: 点数 one-hot (2,3,4,5,6,7,8,9,10,J,Q,K,A)
     - 中间 4 维: 花色 one-hot (S,H,D,C)
     - 后 4 维: 出牌人 one-hot (我=1000, 上家=0100, 上上家=0010, 下家=0001)
+  后 56 维: 自己手牌信息
+    - 前 52 维: 手牌 bitmap (card_id 0~51, 1 表示在手)
+    - 后 4 维: 手牌中黑桃数 (one-hot, 0~3, ≥4 统一归入 3)
 
   忽略叫牌信息。
 
@@ -28,21 +28,27 @@ _STANDARD_CARDS: list[Card] = [Card(s, r) for s in Suit for r in Rank]
 
 
 class RLFeatureEncoder:
-    """前 4 墩 RL 策略的 331 维特征编码器。"""
+    """前 4 墩 RL 策略的 387 维特征编码器。"""
 
     DIM_PLAYED_COUNT = 16   # 已出牌数 one-hot
     DIM_PER_CARD = 21       # 每张牌: 13 rank + 4 suit + 4 player
     MAX_CARDS = 15          # 最多编码 15 张已出牌
+    DIM_HAND = 56           # 手牌信息: 52 bitmap + 4 黑桃数
 
-    TOTAL_DIM = DIM_PLAYED_COUNT + MAX_CARDS * DIM_PER_CARD  # 16 + 315 = 331
+    TOTAL_DIM = DIM_PLAYED_COUNT + MAX_CARDS * DIM_PER_CARD + DIM_HAND  # 16 + 315 + 56 = 387
 
     RANK_OFFSET = 0                     # 13 维 rank one-hot 起始位置
     SUIT_OFFSET = 13                    # 4 维 suit one-hot 起始位置
     PLAYER_OFFSET = 17                  # 4 维 player one-hot 起始位置
     CARD_TOTAL = 21                     # 每张牌总维度
 
+    # 手牌部分偏移
+    HAND_START = DIM_PLAYED_COUNT + MAX_CARDS * DIM_PER_CARD  # 331
+    HAND_BITMAP_OFFSET = 0              # 52 维手牌 bitmap
+    HAND_SPADE_OFFSET = 52              # 4 维黑桃数 one-hot
+
     def encode(self, state: GameState, player_id: int) -> np.ndarray:
-        """将 GameState 编码为 331 维特征向量。"""
+        """将 GameState 编码为 387 维特征向量。"""
         feature = np.zeros(self.TOTAL_DIM, dtype=np.float32)
 
         # 1. 收集所有已出牌（严格按时间顺序）
@@ -86,6 +92,19 @@ class RLFeatureEncoder:
             rel_idx = (pid - player_id + 4) % 4
             feature[card_start + self.PLAYER_OFFSET + rel_idx] = 1.0
 
+        # 4. 手牌 56 维
+        hand = state.hands[player_id]
+        hand_start = self.HAND_START
+
+        # 4a. 52 维手牌 bitmap
+        for card in hand:
+            feature[hand_start + self.HAND_BITMAP_OFFSET + card.card_id] = 1.0
+
+        # 4b. 4 维黑桃数 one-hot (0~3, ≥4 归入 3)
+        n_spades = sum(1 for card in hand if card.suit == Suit.SPADES)
+        spade_idx = min(n_spades, 3)
+        feature[hand_start + self.HAND_SPADE_OFFSET + spade_idx] = 1.0
+
         return feature
 
     def encode_dim_info(self) -> dict[str, tuple[int, int]]:
@@ -96,4 +115,5 @@ class RLFeatureEncoder:
         for i in range(self.MAX_CARDS):
             start = self.DIM_PLAYED_COUNT + i * self.CARD_TOTAL
             info[f"card_{i}"] = (start, start + self.CARD_TOTAL)
+        info["hand"] = (self.HAND_START, self.TOTAL_DIM)
         return info

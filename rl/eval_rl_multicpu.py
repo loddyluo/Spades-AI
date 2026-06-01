@@ -175,7 +175,7 @@ def worker_eval_batch(args_tuple: tuple) -> list[dict]:
      exact_threshold, rules_args, bid_checkpoint, device) = args_tuple
 
     # 每个 worker 独立创建自己的资源
-    policy_net = PolicyMLP(input_dim=331, hidden_dims=hidden_dims)
+    policy_net = PolicyMLP(input_dim=387, hidden_dims=hidden_dims)
     policy_net.load_state_dict(policy_state_dict)
     policy_net.to(device)
     policy_net.eval()
@@ -245,7 +245,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     # ── 加载策略网络 ────────────────────────────────────────────────
-    policy_net = PolicyMLP(input_dim=331, hidden_dims=args.hidden_dims).to(device)
+    policy_net = PolicyMLP(input_dim=387, hidden_dims=args.hidden_dims).to(device)
     policy_net.eval()
 
     if args.load_checkpoint:
