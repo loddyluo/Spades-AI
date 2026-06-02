@@ -35,7 +35,7 @@ def parse_our_mcts_sums(log_path: str) -> list[float]:
 
     sums: list[float] = []
     for block in game_blocks:
-        m = re.search(r'^Team our_mcts:\s*([+-]?\d+\.?\d*)', block, re.MULTILINE)
+        m = re.search(r'^Team rl_exact:\s*([+-]?\d+\.?\d*)', block, re.MULTILINE)
         if m:
             team_avg = float(m.group(1))
             sums.append(1.0 * team_avg)

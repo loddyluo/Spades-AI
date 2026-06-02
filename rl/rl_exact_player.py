@@ -647,7 +647,7 @@ class RLExactPlayer(AIPlayer):
                 legal_count = (sum(1 for c in hand if c.suit == led_suit)
                                if has_led else len(hand))
 
-            weight *= 1.0 / legal_count
+            weight *= 1.0 #/ legal_count
             hand.pop(idx)
 
             if card.suit == Suit.SPADES:
@@ -656,7 +656,7 @@ class RLExactPlayer(AIPlayer):
             if pos_in_trick == 0:
                 led_suit = None
         #print(weight)
-        return weight * bid_prod
+        return weight * bid_prod * math.exp(random.uniform(0, 0.4))
         #return (weight* math.exp(random.uniform(0, 8)))**0.3 * bid_prod  # 0.3 是经验值，调小一些以增加多样性
 
     def _build_is_pool(
@@ -735,7 +735,7 @@ class RLExactPlayer(AIPlayer):
         pool_hands, pool_weights = self._build_is_pool(state, state.turn, rng)
 
         agg_q: dict[int, float] = {}
-
+        my_team = 0 if self.position in (0, 2) else 1
         if not pool_hands:
             # Fallback: uniform determinization
             counts = 0
@@ -744,12 +744,9 @@ class RLExactPlayer(AIPlayer):
                 self._determinize_state(sim_state, state.turn, rng)
                 result = self.exact_solver.solve_with_q(sim_state)
                 counts += 1
-                action_q_dict = result.get("action_q_values", {})
-                if action_q_dict:
-                    max_q = max(float(q) for q in action_q_dict.values())
-                    for action, q in action_q_dict.items():
-                        aid = action.card_id
-                        agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * (float(q) - max_q)
+                for action, q in result.get("action_q_values", {}).items():
+                    aid = action.card_id
+                    agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
         else:
@@ -759,9 +756,7 @@ class RLExactPlayer(AIPlayer):
             top_hands, top_weights = zip(*paired[:K])
             weight_sum = sum(top_weights)
             norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / K] * K
-            max_norm = max(norm_factors)
-            min_norm = min(norm_factors)
-            #print(f"norm_factors 中的最大值: {max_norm:.3f}, 最小值: {min_norm:.3f}")
+
             for hand_proposal, norm_w in zip(top_hands, norm_factors):
                 sim_state = copy.deepcopy(state)
                 self._apply_proposal(sim_state, state.turn, hand_proposal)
@@ -769,12 +764,19 @@ class RLExactPlayer(AIPlayer):
                 action_q_dict = result.get("action_q_values", {})
                 if action_q_dict:
                     max_q = max(float(q) for q in action_q_dict.values())
+                    min_q = min(float(q) for q in action_q_dict.values())
                     for action, q in action_q_dict.items():
                         aid = action.card_id
-                        multiplier = float(q) - max_q
-                        if multiplier < -50.0:
-                            multiplier *= 10.0
-                        agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+                        if my_team == 0:
+                            multiplier = float(q) - max_q  # Subtract max_q for numerical stability
+                            if multiplier < -40.0:
+                                multiplier *= 10.0
+                            agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+                        else:
+                            multiplier = float(q) - min_q
+                            if multiplier > 40.0:
+                                multiplier *= 10.0
+                            agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
 
         # Reconstruct action -> q using Card objects
         action_q_values: dict[Card, float] = {}
@@ -785,7 +787,7 @@ class RLExactPlayer(AIPlayer):
         # 根据玩家所在队伍选择动作：
         #   队伍 0 (座位 0,2) → max Q (Q 是 team0 - team1，越大越好)
         #   队伍 1 (座位 1,3) → min Q (分差越小，对 team1 越有利)
-        my_team = 0 if self.position in (0, 2) else 1
+        
         if my_team == 0:
             best_action = max(action_q_values, key=action_q_values.get) if action_q_values else None
         else:
