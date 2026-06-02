@@ -63,6 +63,13 @@ def _compute_team_scores(result: Any) -> tuple[float, float]:
 
     叫墩达成 → 0 分; 未达成 → -100 分。返回 (team0 payoff, team1 payoff)。
     """
+    ## Mode 1
+    scores = result.scores
+    t0 = scores[0]
+    t1 = scores[1]
+
+    return t0/2.0, t1/2.0
+
     bids = result.bids
     tricks = result.tricks_won
     teams = [0, 1, 0, 1]

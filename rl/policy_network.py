@@ -1,13 +1,17 @@
 """
 Policy MLP 网络。
 
-将 387 维局面特征映射为 52 张牌的出牌 logits，
+将 387 维局面特征映射为 52 或 55 维出牌 logits，
 用于 RL policy gradient 训练。
+
+输出维度说明:
+- 52: 标准模式，所有输出对应 52 张牌的 card_id
+- 55: 前4墩专用模式，前52维对应领出（52 张牌），后3维对应跟牌（3 个策略选项）
 
 网络结构:
 - 输入: 387 维 float32 特征向量（前4墩RL特征，详见 rl_feature_encoder.py）
 - 隐藏层: [512, 256] 带 ReLU
-- 输出: 52 维 logits (每张牌一个)
+- 输出: 52 或 55 维 logits
 """
 
 from __future__ import annotations
@@ -18,14 +22,16 @@ import torch.nn as nn
 
 
 class PolicyMLP(nn.Module):
-    """策略网络: 局面特征 -> 52 张牌的 logits。"""
+    """策略网络: 局面特征 -> 52/55 维 logits。"""
 
     def __init__(
         self,
         input_dim: int = 387,
         hidden_dims: list[int] | None = None,
+        output_dim: int = 52,
     ) -> None:
         super().__init__()
+        self.output_dim = output_dim
         if hidden_dims is None:
             hidden_dims = [512, 256]
 
@@ -37,7 +43,7 @@ class PolicyMLP(nn.Module):
             prev = h
 
         self.backbone = nn.Sequential(*layers)
-        self.policy_head = nn.Linear(prev, 52)
+        self.policy_head = nn.Linear(prev, output_dim)
 
         self._init_weights()
 
@@ -48,13 +54,13 @@ class PolicyMLP(nn.Module):
                 nn.init.zeros_(module.bias)
 
     def forward(self, x: torch.Tensor | np.ndarray) -> torch.Tensor:
-        """前向传播，返回 52 维 logits。
+        """前向传播，返回 output_dim 维 logits。
 
         输入:
         - x: (N, input_dim) 或 (input_dim,) 的特征
 
         输出:
-        - logits: (N, 52) 或 (52,) 未归一化的策略 logits
+        - logits: (N, output_dim) 或 (output_dim,) 未归一化的策略 logits
         """
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).float()

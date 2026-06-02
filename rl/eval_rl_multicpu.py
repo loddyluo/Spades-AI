@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
     parser.add_argument("--num-games", type=int, default=1500,
                         help="评估总对局数（每 episode 2 局，共 num_games/2 次队式赛）")
-    parser.add_argument("--hidden-dims", type=int, nargs="+", default=[512, 256],
+    parser.add_argument("--hidden-dims", type=int, nargs="+", default=[1024, 512, 512],
                         help="策略网络隐藏层维度")
     parser.add_argument("--exact-threshold", type=int, default=36,
                         help="剩余牌数 <= 该值时使用精确求解器")
@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=30,
                         help="并行打牌的进程数")
     parser.add_argument("--load-checkpoint", type=str, default=None,
-                        help="要评估的 policy checkpoint 路径（.pt 文件）")
+                        help="要评估的 policy 路径。单个 .pt 文件加载到所有牌位，目录加载 16 个独立模型 pos*/pretrain_policy_final.pt")
     return parser.parse_args()
 
 
@@ -63,6 +63,13 @@ def _compute_team_scores(result: Any) -> tuple[float, float]:
     和 train_rl_multicpu.py 完全一致：得墩 ≥ 叫墩总和 → 0分，否则 → -100分。
     返回 (队伍0的payoff, 队伍1的payoff)。
     """
+    # Mode 1
+    # scores = result.scores
+    # t0 = scores[0]
+    # t1 = scores[1]
+
+    # return t0/2.0, t1/2.0
+
     bids = result.bids
     tricks = result.tricks_won
     teams = [0, 1, 0, 1]
@@ -92,7 +99,7 @@ def _build_dds_player(bid_model=None) -> DDSPlayer:
 
 
 def _build_rl_exact_player(
-    policy_net: PolicyMLP,
+    policy_nets: list[PolicyMLP],
     exact_solver: ExactDoubleDummyCppFastestSolver,
     encoder: RLFeatureEncoder,
     exact_threshold: int,
@@ -100,7 +107,7 @@ def _build_rl_exact_player(
     bid_device: str = "cpu",
 ) -> RLExactPlayer:
     return RLExactPlayer(
-        policy_net=policy_net,
+        policy_nets=policy_nets,
         exact_solver=exact_solver,
         encoder=encoder,
         exact_threshold=exact_threshold,
@@ -111,7 +118,7 @@ def _build_rl_exact_player(
 
 
 def play_one_game(
-    policy_net: PolicyMLP,
+    policy_nets: list[PolicyMLP],
     exact_solver: ExactDoubleDummyCppFastestSolver,
     encoder: RLFeatureEncoder,
     exact_threshold: int,
@@ -124,20 +131,20 @@ def play_one_game(
     """打一局：rl_exact (argmax) vs DDS，返回结果。"""
     if not swap_seats:
         players = [
-            _build_rl_exact_player(policy_net, exact_solver, encoder, exact_threshold,
+            _build_rl_exact_player(policy_nets, exact_solver, encoder, exact_threshold,
                                    bid_model=bid_model, bid_device=bid_device),
             _build_dds_player(bid_model=bid_model),
-            _build_rl_exact_player(policy_net, exact_solver, encoder, exact_threshold,
+            _build_rl_exact_player(policy_nets, exact_solver, encoder, exact_threshold,
                                    bid_model=bid_model, bid_device=bid_device),
             _build_dds_player(bid_model=bid_model),
         ]
     else:
         players = [
             _build_dds_player(bid_model=bid_model),
-            _build_rl_exact_player(policy_net, exact_solver, encoder, exact_threshold,
+            _build_rl_exact_player(policy_nets, exact_solver, encoder, exact_threshold,
                                    bid_model=bid_model, bid_device=bid_device),
             _build_dds_player(bid_model=bid_model),
-            _build_rl_exact_player(policy_net, exact_solver, encoder, exact_threshold,
+            _build_rl_exact_player(policy_nets, exact_solver, encoder, exact_threshold,
                                    bid_model=bid_model, bid_device=bid_device),
         ]
 
@@ -168,17 +175,29 @@ def _load_bid_model_worker(bid_checkpoint: str, device: str):
 def worker_eval_batch(args_tuple: tuple) -> list[dict]:
     """在 worker 进程中打一批 episode（评估模式，argmax，不收集轨迹，不计算梯度）。
 
-    args_tuple: (episode_indices, base_seed, policy_state_dict, hidden_dims,
-                 exact_threshold, rules_args, bid_checkpoint, device)
+    args_tuple: (episode_indices, base_seed, policy_states, n_policies,
+                 hidden_dims, exact_threshold, rules_args, bid_checkpoint, device)
     """
-    (episode_indices, base_seed, policy_state_dict, hidden_dims,
-     exact_threshold, rules_args, bid_checkpoint, device) = args_tuple
+    (episode_indices, base_seed, policy_states, n_policies,
+     hidden_dims, exact_threshold, rules_args, bid_checkpoint, device) = args_tuple
 
-    # 每个 worker 独立创建自己的资源
-    policy_net = PolicyMLP(input_dim=387, hidden_dims=hidden_dims)
-    policy_net.load_state_dict(policy_state_dict)
-    policy_net.to(device)
-    policy_net.eval()
+    # 创建 1 个或 16 个策略网络
+    if n_policies == 1:
+        # 新架构: 170 维输入, 55 维输出 (52 领出 + 3 跟牌)
+        policy_net = PolicyMLP(input_dim=170, hidden_dims=hidden_dims, output_dim=55)
+        policy_net.load_state_dict(policy_states)
+        policy_net.to(device)
+        policy_net.eval()
+        policy_nets = [policy_net]
+    else:
+        # 旧架构: 16 个独立模型, 387 维输入, 52 维输出
+        policy_nets = []
+        for i in range(n_policies):
+            net = PolicyMLP(input_dim=387, hidden_dims=hidden_dims)
+            net.load_state_dict(policy_states[i])
+            net.to(device)
+            net.eval()
+            policy_nets.append(net)
 
     exact_solver = ExactDoubleDummyCppFastestSolver()
     if not exact_solver.native_available:
@@ -198,7 +217,7 @@ def worker_eval_batch(args_tuple: tuple) -> list[dict]:
 
         for game_idx in range(2):
             result = play_one_game(
-                policy_net=policy_net,
+                policy_nets=policy_nets,
                 exact_solver=exact_solver,
                 encoder=encoder,
                 exact_threshold=exact_threshold,
@@ -244,19 +263,39 @@ def main() -> None:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    # ── 加载策略网络 ────────────────────────────────────────────────
-    policy_net = PolicyMLP(input_dim=387, hidden_dims=args.hidden_dims).to(device)
-    policy_net.eval()
-
+    # ── 加载策略网络（支持单个 .pt 文件或 16 模型目录）───────────
+    n_policies = 1
     if args.load_checkpoint:
         cp_path = Path(args.load_checkpoint)
-        if cp_path.exists():
-            policy_net.load(str(cp_path.resolve()), device=args.device)
-            policy_net.eval()
-            print(f"已加载 checkpoint: {cp_path.resolve()}", flush=True)
+        if cp_path.is_dir():
+            # 从目录加载 16 个独立模型
+            policy_nets_host: list[PolicyMLP] = []
+            for i in range(16):
+                net = PolicyMLP(input_dim=387, hidden_dims=args.hidden_dims).to(device)
+                net.eval()
+                model_file = cp_path / f"pos{i:02d}" / "pretrain_policy_final.pt"
+                if model_file.exists():
+                    net.load(str(model_file.resolve()), device=args.device)
+                    net.eval()
+                else:
+                    print(f"  警告: {model_file} 不存在，pos{i:02d} 使用随机权重", flush=True)
+                policy_nets_host.append(net)
+            n_policies = 16
+            print(f"已从目录加载 16 个模型: {cp_path.resolve()}", flush=True)
+        elif cp_path.is_file():
+            policy_nets_host = [PolicyMLP(input_dim=170, hidden_dims=args.hidden_dims, output_dim=55).to(device)]
+            policy_nets_host[0].eval()
+            policy_nets_host[0].load(str(cp_path.resolve()), device=args.device)
+            policy_nets_host[0].eval()
+            n_policies = 1
+            print(f"已加载单个 checkpoint: {cp_path.resolve()}", flush=True)
         else:
-            print(f"警告: checkpoint 不存在: {cp_path}，将使用随机初始化权重", flush=True)
+            policy_nets_host = [PolicyMLP(input_dim=170, hidden_dims=args.hidden_dims, output_dim=55).to(device)]
+            policy_nets_host[0].eval()
+            print(f"警告: checkpoint 不存在: {cp_path}，使用随机初始化权重", flush=True)
     else:
+        policy_nets_host = [PolicyMLP(input_dim=170, hidden_dims=args.hidden_dims, output_dim=55).to(device)]
+        policy_nets_host[0].eval()
         print("未指定 --load-checkpoint，使用随机初始化权重", flush=True)
 
     # ── 叫牌模型 ──────────────────────────────────────────────────
@@ -272,14 +311,11 @@ def main() -> None:
 
     num_episodes = args.num_games // 2
 
-    episode_rewards: list[float] = []
-    our_team_scores: list[float] = []
-    opp_team_scores: list[float] = []
-
     print("=" * 72, flush=True)
     print("RL Policy Evaluation (MULTI-CPU, ARGMAX): rl_exact vs DDS", flush=True)
     print(f"总对局数: {args.num_games} ({num_episodes} episodes × 2 games)", flush=True)
     print(f"隐藏层: {args.hidden_dims}", flush=True)
+    print(f"策略网络数: {n_policies}", flush=True)
     print(f"精确阈值: {args.exact_threshold} (前 {52 - args.exact_threshold} 张用 RL argmax)", flush=True)
     print(f"Workers: {args.num_workers}", flush=True)
     print("=" * 72, flush=True)
@@ -305,10 +341,15 @@ def main() -> None:
             n_workers = min(args.num_workers, len(batch_episodes))
             chunks = np.array_split(batch_episodes, n_workers)
 
-            policy_state_dict = policy_net.state_dict()
+            # 发送 1 个或 16 个 state_dict
+            if n_policies == 1:
+                policy_states = policy_nets_host[0].state_dict()
+            else:
+                policy_states = [net.state_dict() for net in policy_nets_host]
+
             worker_args = [
                 (chunk.tolist() if hasattr(chunk, 'tolist') else chunk,
-                 args.seed, policy_state_dict, args.hidden_dims,
+                 args.seed, policy_states, n_policies, args.hidden_dims,
                  args.exact_threshold, rules_args, bid_checkpoint,
                  args.device)
                 for chunk in chunks
