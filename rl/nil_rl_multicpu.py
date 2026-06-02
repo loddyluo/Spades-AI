@@ -201,37 +201,58 @@ def worker_batch(args_tuple: tuple) -> list[dict]:
 
     results = []
     for ep_idx in episode_indices:
-        game_seed = base_seed + ep_idx * 2
+        base_game_seed = base_seed + ep_idx * 2
         episode_trajs: list[dict] = []
 
-        for game_idx in range(2):
-            # 队式赛：两局使用完全相同的牌面（相同 seed），只互换座位
-            _, trajectories = play_one_game(
-                policy_net=policy_net,
-                exact_solver=exact_solver,
-                encoder=encoder,
-                exact_threshold=exact_threshold,
-                seed=game_seed,
-                is_training=True,
-                rules=rules,
-                bid_model=bid_model,
-                bid_device=device,
-                swap_seats=(game_idx == 1),
-            )
+        # 重试：直到有人叫 0 为止（最多尝试 30 次不同种子）
+        nil_found = False
+        for attempt in range(30):
+            episode_trajs = []
+            nil_found = False
+            game_seed = base_game_seed + attempt * 10000  # 每次重试用不同的种子
 
-            # 提取纯数据（不要 torch tensor 图）
-            for traj in trajectories:
-                reward_val = traj.get("reward", 0.0)
-                episode_trajs.append({
-                    "feature": traj["feature"].copy(),
-                    "action_logit_idx": traj["action_logit_idx"],
-                    "legal_logit_indices": list(traj["legal_logit_indices"]),
-                    "log_prob_val": traj["log_prob"].item(),
-                    "entropy_val": traj["entropy"].item() if "entropy" in traj else 0.0,
-                    "reward_val": reward_val,
-                    "card_idx": traj["card_idx"],
-                    "is_leading": traj["is_leading"],
-                })
+            for game_idx in range(2):
+                _, trajectories = play_one_game(
+                    policy_net=policy_net,
+                    exact_solver=exact_solver,
+                    encoder=encoder,
+                    exact_threshold=exact_threshold,
+                    seed=game_seed,
+                    is_training=True,
+                    rules=rules,
+                    bid_model=bid_model,
+                    bid_device=device,
+                    swap_seats=(game_idx == 1),
+                )
+
+                # 检查这局是否有人叫了 0
+                for traj in trajectories:
+                    feat = traj["feature"]
+                    # 新 264 维特征中 nil_me=224, nil_upper=234, nil_partner=244, nil_lower=254
+                    if len(feat) > 254 and (feat[224] > 0 or feat[234] > 0 or feat[244] > 0 or feat[254] > 0):
+                        nil_found = True
+                        break
+
+                # 提取纯数据（不要 torch tensor 图）
+                for traj in trajectories:
+                    reward_val = traj.get("reward", 0.0)
+                    episode_trajs.append({
+                        "feature": traj["feature"].copy(),
+                        "action_logit_idx": traj["action_logit_idx"],
+                        "legal_logit_indices": list(traj["legal_logit_indices"]),
+                        "log_prob_val": traj["log_prob"].item(),
+                        "entropy_val": traj["entropy"].item() if "entropy" in traj else 0.0,
+                        "reward_val": reward_val,
+                        "card_idx": traj["card_idx"],
+                        "is_leading": traj["is_leading"],
+                    })
+
+            if nil_found:
+                break  # 有人叫 0，保留这轮数据
+
+        if not nil_found:
+            # 30 次都没找到（极不可能），用空轨迹
+            episode_trajs = []
 
         results.append({
             "trajectories": episode_trajs,
@@ -275,7 +296,7 @@ def train(args: argparse.Namespace) -> None:
         else:
             print(f"警告: 叫牌模型 checkpoint 不存在: {cp}", flush=True)
 
-    rules_args = (False, not args.disable_blind_nil)
+    rules_args = (True, not args.disable_blind_nil)
 
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)

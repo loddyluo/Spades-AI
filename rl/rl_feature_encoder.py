@@ -1,5 +1,5 @@
 """
-RL 特征编码器（170 维），仅用于 rl_exact 前 4 墩的强化学习模型。
+RL 特征编码器（短特征 264 维），仅用于 rl_exact 前 4 墩的强化学习模型。
 
 Part 1 (164 维, 4+1+90+52+4+13):
   前 4 维: 叫牌（整数，nil 用 0 表示）
@@ -14,24 +14,12 @@ Part 1 (164 维, 4+1+90+52+4+13):
   之后 4 维: 每门花色的张数 (S, H, D, C, 整数)
   之后 13 维: 当前墩领出花色跟踪（不是领出时，用 1/0 表示领出花色的每张牌是否已打过）
 
-Part 2 (6 维):
-  [164]: 本墩出牌位置 (1=第一个出, 2=第二个出, 3=第三个出, 4=第四个出)
-  [165]: 队友是否大过当前墩（仅第3/4个出牌时有效, 0/1）
-  [166]: 队友牌在领出花色是否不可击败（仅第3/4个出牌时有效, 0/1）
-  [167-169]: 三个跟牌选项是否合法（领出时全0, 否则0/1）
-
-编码方式（4+1+90+52+4+13=164 维）:
-  前 4 维: 叫牌（整数，nil 用 0 表示）
-    - [0]: 我的叫牌
-    - [1]: 我的上家的叫牌
-    - [2]: 我的上上家的叫牌
-    - [3]: 我的下家的叫牌
-  第 5 维: 已出牌数 (0~15, 标量)
-  之后 15×6=90 维: 每张打出来的牌 (最多 15 张, 时间倒序)
-    - 每个牌 6 维: [点数(2~14), 花色S(0/1), 花色H, 花色D, 花色C, 出牌人(0=我,1=上家,2=上上家,3=下家)]
-  之后 52 维: 手牌 bitmap (card_id 0~51, 1 表示在手)
-  之后 4 维: 每门花色的张数 (S, H, D, C, 整数)
-  最后 13 维: 当前墩领出花色跟踪（不是领出时，用 1/0 表示领出花色的每张牌是否已打过）
+Part 2 (100 维): 10 个基础维度各重复 10 遍
+  (1) 1 维: 本墩出牌位置 (1~4)
+  (2) 1 维: 队友是否大过当前墩（第3/4个出牌时有效, 0/1）
+  (3) 1 维: 队友牌在领出花色是否不可击败（第3/4个出牌时有效, 0/1）
+  (4) 3 维: 三个跟牌选项是否合法（领出时全0）
+  (5) 4 维: 我、我的上家、我的队友、我的下家是否叫了 0
 """
 
 from __future__ import annotations
@@ -43,9 +31,9 @@ from trick_taking.game_state import GameState
 
 
 class RLFeatureEncoder:
-    """前 4 墩 RL 策略的 170 维特征编码器。"""
+    """前 4 墩 RL 策略的 264 维短特征编码器。"""
 
-    TOTAL_DIM = 170  # 164 (Part 1) + 6 (Part 2)
+    TOTAL_DIM = 264  # 164 (Part 1) + 100 (Part 2: 10 base dims × 10 repeats)
 
     # Part 1: 各分段起始位置
     BID_START = 0
@@ -67,11 +55,19 @@ class RLFeatureEncoder:
     LED_SUIT_START = SUIT_COUNT_START + SUIT_COUNT_DIM  # 151
     LED_SUIT_DIM = 13
 
-    # Part 2: 额外 6 维
-    TRICK_POS_START = 164
-    PARTNER_BEAT_START = 165
-    PARTNER_UNBEAT_START = 166
-    OPTION_LEGAL_START = 167  # 3 dims (167, 168, 169)
+    # Part 2: 短特征 — 10 个基础维度各重复 10 遍
+    # 第 164~173: trick_position × 10
+    # 第 174~183: partner_beat_all × 10
+    # 第 184~193: partner_unbeatable × 10
+    # 第 194~203: option_legal[0] × 10
+    # 第 204~213: option_legal[1] × 10
+    # 第 214~223: option_legal[2] × 10
+    # 第 224~233: nil_me × 10
+    # 第 234~243: nil_upper × 10
+    # 第 244~253: nil_partner × 10
+    # 第 254~263: nil_lower × 10
+    SHORT_FEAT_START = 164
+    SHORT_FEAT_REPEAT = 10
 
     # 花色顺序: S=0, H=1, D=2, C=3
 
@@ -90,7 +86,7 @@ class RLFeatureEncoder:
         return 0
 
     def encode(self, state: GameState, player_id: int) -> np.ndarray:
-        """将 GameState 编码为 164 维特征向量。"""
+        """将 GameState 编码为 264 维短特征向量。"""
         feature = np.zeros(self.TOTAL_DIM, dtype=np.float32)
 
         # 1. 叫牌 (4 维): [自己, 上家, 上上家, 下家]
@@ -127,7 +123,6 @@ class RLFeatureEncoder:
             feature[start + 1 + suit_idx] = 1.0
 
             # 出牌人 (0=我, 1=上家, 2=上上家, 3=下家)
-            # (player_id - pid) 逆时针偏移: +1=上家, +2=上上家, +3=下家
             rel_idx = (player_id - pid + 4) % 4
             feature[start + 5] = rel_idx
 
@@ -162,11 +157,12 @@ class RLFeatureEncoder:
                     feature[self.LED_SUIT_START + (rank_val - 2)] = 1.0
         # 领出时，13 维保持为 0（已在初始化为零时处理）
 
-        # ── Part 2: 6 维额外特征 ──────────────────────────────────────
+        # ── Part 2: 短特征 100 维 (10 基础维 × 10 遍) ──────────────
+        base = [0.0] * 10
+
         # (1) 我是这墩第几个出牌的 (1~4)
-        n_on_table = len(state.table_cards)
         trick_position = n_on_table + 1
-        feature[self.TRICK_POS_START] = float(trick_position)
+        base[0] = float(trick_position)
 
         # (2)(3) 队友信息（仅当第3或第4个出牌时有意义）
         partner_beat_all = 0.0
@@ -195,7 +191,6 @@ class RLFeatureEncoder:
                     partner_beat_all = 1.0
 
                 # (3) 队友的牌在该花色是否不可击败
-                # 检查所有更高牌是否都被看到（已出或在我手中）
                 partner_suit = partner_card.suit
                 partner_rank = partner_card.rank.value
                 played_ranks_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
@@ -219,8 +214,8 @@ class RLFeatureEncoder:
                 if not higher_visible:
                     partner_unbeatable = 1.0
 
-        feature[self.PARTNER_BEAT_START] = partner_beat_all
-        feature[self.PARTNER_UNBEAT_START] = partner_unbeatable
+        base[1] = partner_beat_all
+        base[2] = partner_unbeatable
 
         # (4) 三个跟牌选项是否合法
         option_legal = [0.0, 0.0, 0.0]
@@ -270,9 +265,23 @@ class RLFeatureEncoder:
             # 选项2: 出最大牌 — 总是合法
             option_legal[2] = 1.0
 
-        feature[self.OPTION_LEGAL_START] = option_legal[0]
-        feature[self.OPTION_LEGAL_START + 1] = option_legal[1]
-        feature[self.OPTION_LEGAL_START + 2] = option_legal[2]
+        base[3] = option_legal[0]
+        base[4] = option_legal[1]
+        base[5] = option_legal[2]
+
+        # (5) 四个 nil 指示器：我、上家、队友、下家
+        my_team_pids = {player_id, (player_id + 2) % 4}
+        nil_order = [0, 3, 2, 1]  # 自己、上家、队友、下家
+        for i, offset in enumerate(nil_order):
+            pid = (player_id + offset) % 4
+            bid_val = state.max_bid[pid] if pid < len(state.max_bid) else None
+            base[6 + i] = 1.0 if (isinstance(bid_val, str) and bid_val in ("nil", "blind_nil")) else 0.0
+
+        # 每个基础维度重复 10 遍
+        for i in range(10):
+            start = self.SHORT_FEAT_START + i * self.SHORT_FEAT_REPEAT
+            for j in range(10):
+                feature[start + j] = base[i]
 
         return feature
 
@@ -288,8 +297,11 @@ class RLFeatureEncoder:
         info["hand_bitmap"] = (self.HAND_START, self.HAND_START + self.HAND_BITMAP_DIM)
         info["suit_counts"] = (self.SUIT_COUNT_START, self.SUIT_COUNT_START + self.SUIT_COUNT_DIM)
         info["led_suit"] = (self.LED_SUIT_START, self.LED_SUIT_START + self.LED_SUIT_DIM)
-        info["trick_position"] = (self.TRICK_POS_START, self.TRICK_POS_START + 1)
-        info["partner_beat"] = (self.PARTNER_BEAT_START, self.PARTNER_BEAT_START + 1)
-        info["partner_unbeatable"] = (self.PARTNER_UNBEAT_START, self.PARTNER_UNBEAT_START + 1)
-        info["option_legal"] = (self.OPTION_LEGAL_START, self.OPTION_LEGAL_START + 3)
+        # Part 2: 短特征 10 基础维各重复 10 遍
+        short_labels = ["trick_pos", "partner_beat", "partner_unbeat",
+                        "opt_min", "opt_winmin", "opt_max",
+                        "nil_me", "nil_upper", "nil_partner", "nil_lower"]
+        for i, label in enumerate(short_labels):
+            start = self.SHORT_FEAT_START + i * self.SHORT_FEAT_REPEAT
+            info[f"short_{label}"] = (start, start + self.SHORT_FEAT_REPEAT)
         return info

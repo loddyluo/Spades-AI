@@ -14,14 +14,17 @@ RL + Exact 混合出牌玩家。
 
 from __future__ import annotations
 
+import copy
+import random
 import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
+import math
 
-from trick_taking.card import Card, Suit
+from trick_taking.card import Card, Suit, _STANDARD_CARDS as STANDARD_52
 from trick_taking.game_state import GameState
 from trick_taking.player import AIPlayer
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
@@ -91,6 +94,7 @@ class RLExactPlayer(AIPlayer):
         self.pretrain_mode = any(getattr(net, "pretrain_mode", False) for net in self.policy_nets)
         self._current_trick_cards: list[tuple[int, Card]] = []
         self._pending_entry_idx: int = -1
+        self._nil_bidders: set[int] = set()  # 叫 0 的玩家 id，用于奖励调整
 
     def start_game(self, position: int, hand: list[Card], num_players: int) -> None:
         self.position = position
@@ -99,6 +103,7 @@ class RLExactPlayer(AIPlayer):
         self.trajectory = []
         self._current_trick_cards = []
         self._pending_entry_idx = -1
+        self._nil_bidders = set()
 
     def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
         """使用 MLP bid model 叫牌（与 evaluate_cheat_mcts_vs_dds.py 中的 DDSPlayer 相同）。"""
@@ -379,24 +384,437 @@ class RLExactPlayer(AIPlayer):
             return chosen_card
 
     def _exact_play(self, state: GameState, legal_cards: list[Card]) -> Card:
-        """使用精确求解器选择动作。"""
+        """使用精确求解器选择动作（对对手手牌做 32 次确定化采样后平均）。"""
         if self.exact_solver is None:
-            # 无精确求解器时的 fallback
             self.last_play_info = {"mode": "no_exact_solver_fallback"}
             return legal_cards[0]
 
-        result = self.exact_solver.solve_with_q(state)
-        best_action = result.get("best_action")
-        if best_action is not None and best_action in legal_cards:
-            self.last_play_info = {"mode": "exact"}
+        rng = random.Random()
+        K = 32
+        agg_q: dict[int, float] = {}
+
+        for _ in range(K):
+            sim_state = copy.deepcopy(state)
+            self._determinize_state(sim_state, state.turn, rng)
+            result = self.exact_solver.solve_with_q(sim_state)
+            for action, q in result.get("action_q_values", {}).items():
+                aid = action.card_id
+                agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+
+        # 求平均
+        for k in agg_q:
+            agg_q[k] /= K
+
+        # 选 Q 值最高的合法动作
+        best_action = None
+        best_q = float("-inf")
+        for card in legal_cards:
+            q = agg_q.get(card.card_id, float("-inf"))
+            if q > best_q:
+                best_q = q
+                best_action = card
+
+        if best_action is not None:
+            self.last_play_info = {"mode": "exact_determinized", "samples": K}
             return best_action
 
-        # 精确求解返回的动作不在合法列表中（理论上不会发生）
+        self.last_play_info = {"mode": "exact_no_match_fallback"}
+        return legal_cards[0]
+
+    def _determinize_state(self, state: GameState, observer_id: int,
+                           rng: random.Random | None = None) -> None:
+        """替换对手手牌为随机未露面牌（保留己方手牌和已打出的牌）。"""
+        if rng is None:
+            rng = random.Random()
+
+        # 收集已占用的牌：观察者手牌 + 已打出牌
+        used_ids: set[int] = set()
+        for c in state.hands[observer_id]:
+            used_ids.add(c.card_id)
+
+        bitset = getattr(state, "played_bitset", 0)
+        for cid in range(52):
+            if bitset & (1 << cid):
+                used_ids.add(cid)
+
+        for pair in getattr(state, "table_cards", []):
+            used_ids.add(pair[1].card_id)
+
+        for record in getattr(state, "trick_history", []):
+            for _, c in getattr(record, "cards", []):
+                used_ids.add(c.card_id)
+
+        pool = [c for c in STANDARD_52 if c.card_id not in used_ids]
+        rng.shuffle(pool)
+
+        indices = [pid for pid in range(state.num_players) if pid != observer_id]
+        counts = {pid: len(state.hands[pid]) for pid in indices}
+
+        pos = 0
+        for pid in indices:
+            n = counts[pid]
+            assigned = pool[pos: pos + n]
+            pos += n
+            state.hands[pid] = list(assigned)
+
+        if hasattr(state, "hand_bitsets"):
+            for pid in range(state.num_players):
+                bit = 0
+                for c in state.hands[pid]:
+                    bit |= (1 << c.card_id)
+                state.hand_bitsets[pid] = bit
+
+    # ── IS 确定化（重要性采样 + top-K 加权精确求解）─────────────────────────
+    # 与 TruncatedMCTSStrategy._solve_with_determinization 一致
+
+    @staticmethod
+    def _build_play_sequence(state: GameState) -> list[tuple[int, Card]]:
+        """Extract ordered (player_id, Card) sequence from trick_history + table_cards."""
+        sequence: list[tuple[int, Card]] = []
+        for record in state.trick_history:
+            for pid, card in record.cards:
+                sequence.append((pid, card))
+        for pid, card in state.table_cards:
+            sequence.append((pid, card))
+        return sequence
+
+    @staticmethod
+    def _bid_str_to_mlp_index(bid_str: str) -> int:
+        if bid_str == "nil":
+            return 14
+        if bid_str == "blind_nil":
+            return 15
+        if bid_str.startswith("bid_"):
+            return int(bid_str.split("_")[1])
+        return 0
+
+    def _compute_bid_probs_product(
+        self, initial_hands: list[list[Card]], max_bid: list[str],
+    ) -> float:
+        """∏ P(bid_p | hand_p) from BidMLP softmax."""
+        # lazy-load BidMLP for IS weighting (separate from self._bid_model)
+        if not hasattr(self, "_bid_model_is") or self._bid_model_is is None:
+            ckpt_path = ""
+            if hasattr(self, "_bid_model") and self._bid_model is not None:
+                pass  # use the already-loaded bid model if compatible
+            # Try to load from standard path
+            try:
+                go_dir = Path(__file__).resolve().parents[1] / "evaluate" / "GO-MCTS"
+                if str(go_dir) not in sys.path:
+                    sys.path.insert(0, str(go_dir))
+                from spades_ai.models.bid_mlp import BidMLP
+                from spades_ai.models.bid_encoder import BidEncoder
+
+                # Find checkpoint
+                possible_paths = [
+                    Path("./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt"),
+                    Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt",
+                ]
+                ckpt = None
+                for p in possible_paths:
+                    if p.exists():
+                        ckpt = str(p.resolve())
+                        break
+                if ckpt:
+                    self._bid_model_is = BidMLP()
+                    sd = torch.load(ckpt, weights_only=True, map_location="cpu")
+                    self._bid_model_is.load_state_dict(sd)
+                    self._bid_model_is.eval()
+                    self._bid_encoder_is = BidEncoder()
+                else:
+                    self._bid_model_is = None
+                    return 1.0
+            except Exception:
+                self._bid_model_is = None
+                return 1.0
+
+        if not hasattr(self, "_bid_encoder_is") or self._bid_encoder_is is None:
+            return 1.0
+
+        from spades_ai.game.card import Card as GoCard
+        from spades_ai.game.card import Rank as GoRank, Suit as GoSuit
+        from spades_ai.game.state import Bid as GoBid
+        from spades_ai.game.scoring import BidType as GoBidType
+
+        def _to_go_bid(bid_str: str) -> GoBid:
+            if bid_str == "nil":
+                return GoBid(value=0, bid_type=GoBidType.NIL)
+            if bid_str == "blind_nil":
+                return GoBid(value=0, bid_type=GoBidType.BLIND_NIL)
+            if bid_str.startswith("bid_"):
+                return GoBid(value=int(bid_str.split("_")[1]), bid_type=GoBidType.NORMAL)
+            return GoBid(value=0, bid_type=GoBidType.NORMAL)
+
+        go_bids = [_to_go_bid(b) for b in max_bid]
+
+        features_list = []
+        for p in range(4):
+            hand = [GoCard(GoRank(c.rank.value), GoSuit[c.suit.name]) for c in initial_hands[p]]
+            prev = go_bids[:p]
+            position = min(p, 2)
+            features = self._bid_encoder_is.encode(hand, prev, position)
+            features_list.append(features.unsqueeze(0))
+
+        x = torch.cat(features_list, dim=0)
+        with torch.no_grad():
+            logits = self._bid_model_is(x)
+        probs = torch.softmax(logits, dim=-1)
+        uniform = 1.0 / 14
+        smoothed = 0.99 * probs + 0.01 * uniform
+
+        product = 1.0
+        for p in range(4):
+            idx = self._bid_str_to_mlp_index(max_bid[p])
+            product *= float(smoothed[p, idx].item())
+        return product
+
+    def _generate_proposal(
+        self, all_cards: list[Card], observer_id: int,
+        observer_current_hand: list[Card],
+        played_by_player: dict[int, list[Card]], rng: random.Random,
+    ) -> list[list[Card]]:
+        """Generate one random initial deal consistent with observed play."""
+        obs_set: set[int] = set(c.card_id for c in observer_current_hand)
+        obs_set.update(c.card_id for c in played_by_player[observer_id])
+        id_to_card = {c.card_id: c for c in all_cards}
+        observer_initial = [id_to_card[cid] for cid in obs_set]
+
+        used_ids: set[int] = set(obs_set)
+        for p in range(4):
+            if p != observer_id:
+                used_ids.update(c.card_id for c in played_by_player[p])
+
+        pool = [c for c in all_cards if c.card_id not in used_ids]
+        rng.shuffle(pool)
+
+        initial_hands: list[list[Card]] = [None] * 4  # type: ignore
+        initial_hands[observer_id] = list(observer_initial)
+
+        idx = 0
+        for p in range(4):
+            if p == observer_id:
+                continue
+            initial_hands[p] = list(played_by_player[p])
+            need = 13 - len(played_by_player[p])
+            initial_hands[p].extend(pool[idx: idx + need])
+            idx += need
+
+        return initial_hands
+
+    def _compute_importance_weight(
+        self, initial_hands: list[list[Card]],
+        play_sequence: list[tuple[int, Card]],
+        max_bid: list[str] | None = None,
+    ) -> float:
+        """Replay play_sequence against initial_hands; compute p = ∏(p_step).
+
+        p = P_bid * ∏_{step} (1 / legal_count).
+        Returns 0 if any move was illegal given this deal.
+        """
+        if max_bid is not None:
+            bid_prod = self._compute_bid_probs_product(initial_hands, max_bid)
+        else:
+            bid_prod = 1.0
+
+        hands = [list(h) for h in initial_hands]
+        spades_broken = False
+        pos_in_trick = 0
+        led_suit: Suit | None = None
+        weight = 1.0
+
+        for step_idx, (player, card) in enumerate(play_sequence):
+            hand = hands[player]
+            try:
+                idx = hand.index(card)
+            except ValueError:
+                return 0.0
+
+            if pos_in_trick == 0:  # Leading
+                if not spades_broken and card.suit == Suit.SPADES:
+                    has_non_spade = any(c.suit != Suit.SPADES for c in hand)
+                    if has_non_spade:
+                        return 0.0
+                if not spades_broken:
+                    non_spades = [c for c in hand if c.suit != Suit.SPADES]
+                    legal_count = len(non_spades) if non_spades else len(hand)
+                else:
+                    legal_count = len(hand)
+                led_suit = card.suit
+            else:  # Following
+                has_led = any(c.suit == led_suit for c in hand)
+                if has_led and card.suit != led_suit:
+                    return 0.0
+                legal_count = (sum(1 for c in hand if c.suit == led_suit)
+                               if has_led else len(hand))
+
+            weight *= 1.0 / legal_count
+            hand.pop(idx)
+
+            if card.suit == Suit.SPADES:
+                spades_broken = True
+            pos_in_trick = (pos_in_trick + 1) % 4
+            if pos_in_trick == 0:
+                led_suit = None
+        #print(weight)
+        return weight * bid_prod
+        #return (weight* math.exp(random.uniform(0, 8)))**0.3 * bid_prod  # 0.3 是经验值，调小一些以增加多样性
+
+    def _build_is_pool(
+        self, state: GameState, observer_id: int, rng: random.Random,
+        num_proposals: int = 6789,
+    ) -> tuple[list[list[list[Card]]], list[float]]:
+        """Build IS pool: generate proposals, compute weights."""
+        play_sequence = self._build_play_sequence(state)
+
+        max_bid: list[str] | None = None
+        raw_bids = None
+        if hasattr(state, "max_bid") and state.max_bid:
+            raw_bids = state.max_bid
+        elif hasattr(state, "bids") and state.bids:
+            raw_bids = state.bids
+        if raw_bids is not None and len(raw_bids) == 4:
+            if all(isinstance(b, str) for b in raw_bids):
+                max_bid = list(raw_bids)
+
+        played_by_player: dict[int, list[Card]] = {p: [] for p in range(4)}
+        for p, c in play_sequence:
+            played_by_player[p].append(c)
+
+        proposals: list[list[list[Card]]] = []
+        prop_weights: list[float] = []
+
+        for _ in range(num_proposals):
+            initial_hands = self._generate_proposal(
+                state.all_cards, observer_id, state.hands[observer_id],
+                played_by_player, rng,
+            )
+            w = self._compute_importance_weight(
+                initial_hands, play_sequence, max_bid=max_bid,
+            )
+            if w > 0.0:
+                proposals.append(initial_hands)
+                prop_weights.append(w)
+
+        return proposals, prop_weights
+
+    @staticmethod
+    def _apply_proposal(
+        state: GameState, observer_id: int, proposal: list[list[Card]],
+    ) -> None:
+        """Apply a proposal (set opponents' hands from proposal initial deal)."""
+        played_by_player: dict[int, set[int]] = {i: set() for i in range(4)}
+        for record in state.trick_history:
+            for pid, card in record.cards:
+                played_by_player[pid].add(card.card_id)
+        for pid, card in state.table_cards:
+            played_by_player[pid].add(card.card_id)
+
+        for p in range(4):
+            if p != observer_id:
+                remaining = [c for c in proposal[p] if c.card_id not in played_by_player[p]]
+                state.hands[p] = remaining
+
+        if hasattr(state, "hand_bitsets"):
+            for p in range(4):
+                bit = 0
+                for c in state.hands[p]:
+                    bit |= (1 << c.card_id)
+                state.hand_bitsets[p] = bit
+
+    def _exact_play(self, state: GameState, legal_cards: list[Card]) -> Card:
+        """使用精确求解器：IS proposal + top-K 加权平均（与 TruncatedMCTSStrategy 一致）。"""
+        if self.exact_solver is None:
+            self.last_play_info = {"mode": "no_exact_solver_fallback"}
+            return legal_cards[0]
+
+        rng = random.Random()
+        K = 32
+        id_to_card = {c.card_id: c for c in STANDARD_52}
+
+        # Build IS pool
+        pool_hands, pool_weights = self._build_is_pool(state, state.turn, rng)
+
+        agg_q: dict[int, float] = {}
+
+        if not pool_hands:
+            # Fallback: uniform determinization
+            counts = 0
+            for _ in range(K):
+                sim_state = copy.deepcopy(state)
+                self._determinize_state(sim_state, state.turn, rng)
+                result = self.exact_solver.solve_with_q(sim_state)
+                counts += 1
+                action_q_dict = result.get("action_q_values", {})
+                if action_q_dict:
+                    max_q = max(float(q) for q in action_q_dict.values())
+                    for action, q in action_q_dict.items():
+                        aid = action.card_id
+                        agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * (float(q) - max_q)
+            for k in agg_q:
+                agg_q[k] /= max(1, counts)
+        else:
+            # Top-K by weight, weighted average
+            paired = list(zip(pool_hands, pool_weights))
+            paired.sort(key=lambda x: x[1], reverse=True)
+            top_hands, top_weights = zip(*paired[:K])
+            weight_sum = sum(top_weights)
+            norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / K] * K
+            max_norm = max(norm_factors)
+            min_norm = min(norm_factors)
+            #print(f"norm_factors 中的最大值: {max_norm:.3f}, 最小值: {min_norm:.3f}")
+            for hand_proposal, norm_w in zip(top_hands, norm_factors):
+                sim_state = copy.deepcopy(state)
+                self._apply_proposal(sim_state, state.turn, hand_proposal)
+                result = self.exact_solver.solve_with_q(sim_state)
+                action_q_dict = result.get("action_q_values", {})
+                if action_q_dict:
+                    max_q = max(float(q) for q in action_q_dict.values())
+                    for action, q in action_q_dict.items():
+                        aid = action.card_id
+                        multiplier = float(q) - max_q
+                        if multiplier < -50.0:
+                            multiplier *= 10.0
+                        agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+
+        # Reconstruct action -> q using Card objects
+        action_q_values: dict[Card, float] = {}
+        for aid, q in agg_q.items():
+            if aid in id_to_card:
+                action_q_values[id_to_card[aid]] = q
+
+        # 根据玩家所在队伍选择动作：
+        #   队伍 0 (座位 0,2) → max Q (Q 是 team0 - team1，越大越好)
+        #   队伍 1 (座位 1,3) → min Q (分差越小，对 team1 越有利)
+        my_team = 0 if self.position in (0, 2) else 1
+        if my_team == 0:
+            best_action = max(action_q_values, key=action_q_values.get) if action_q_values else None
+        else:
+            best_action = min(action_q_values, key=action_q_values.get) if action_q_values else None
+
+        # 构造 action_scores 供 trace 日志记录（格式与 TruncatedMCTSStrategy 一致）
+        action_scores = sorted(
+            [{"action": card, "value": float(q)}
+             for card, q in action_q_values.items()],
+            key=lambda x: x["value"], reverse=True,
+        )
+        best_value = float(action_q_values.get(best_action, 0.0)) if best_action else 0.0
+
+        if best_action is not None and best_action in legal_cards:
+            self.last_play_info = {
+                "mode": "exact_is_determinized",
+                "samples": K,
+                "best_value": best_value,
+                "action_scores": action_scores,
+            }
+            return best_action
+
         self.last_play_info = {"mode": "exact_no_match_fallback"}
         return legal_cards[0]
 
     def bid_placed(self, bidder: int, bid: Any) -> None:
-        pass
+        if self.pretrain_mode:
+            if isinstance(bid, str) and bid in ("nil", "blind_nil"):
+                self._nil_bidders.add(bidder)
 
     def set_teams(self, teams: list[int], bid_values: list[Any]) -> None:
         pass
@@ -418,7 +836,8 @@ class RLExactPlayer(AIPlayer):
 
         新规则：
         1. 每张牌的积分 = (赢墩? +18 : 0) - rank扣分 (A→17, K→12, Q→8, J→3, T→1)
-        2. 我方两张牌的奖励 = 该牌积分 - 0.5 × 对方两张牌积分之和
+        2. 若出牌方队伍有人叫 0：叫 0 者赢墩则 -25，否则 +2
+        3. 我方两张牌的奖励 = 该牌积分 - 0.5 × 对方两张牌积分之和
         """
         entries = self._current_trick_cards  # list of (player_id, Card)
 
@@ -437,13 +856,29 @@ class RLExactPlayer(AIPlayer):
                     best_idx = i
                     best_card = card
 
-        # 计算每张牌的积分 = 赢墩加分 - 点数扣分
-        def card_score(card: Card, is_winner: bool) -> float:
-            base = 18.0 if is_winner else 0.0
-            deduction = {14: 17.0, 13: 12.0, 12: 8.0, 11: 3.0, 10: 1.0}.get(card.rank.value, 0.0)
-            return base - deduction
+        # 计算每张牌的积分（含 nil 调整）
+        scores = []
+        for i, (pid, card) in enumerate(entries):
+            # 基础分 = 赢墩加分 - 点数扣分 + 黑桃加分
+            base = 18.0 if i == best_idx else 0.0
+            deduction = {14: 16.0, 13: 12.0, 12: 8.0, 11: 3.0, 10: 1.0}.get(card.rank.value, 0.0)
+            spade_bonus = 2.0 if card.suit == Suit.SPADES else 0.0
+            score = base - deduction + spade_bonus
 
-        scores = [card_score(card, i == best_idx) for i, (_, card) in enumerate(entries)]
+            # nil 调整：这张牌的出牌方队伍有人叫了 0
+            for nil_pid in self._nil_bidders:
+                if nil_pid % 2 == pid % 2:  # 同一队伍
+                    # 找到叫 0 者在这墩中的位置
+                    for j, (entry_pid, _) in enumerate(entries):
+                        if entry_pid == nil_pid:
+                            if j == best_idx:
+                                score -= 50.0  # nil 者赢墩：扣 50
+                            else:
+                                score += 4.0   # nil 者没赢：加 4
+                            break
+                    break  # 同一队有多个叫 0 者也只调整一次
+
+            scores.append(score)
 
         # 确定对方队伍位置（基于本玩家的实际座位，适配队式赛互换座位）
         # 固定队伍分配：座位 {0, 2} 为队伍 0，{1, 3} 为队伍 1

@@ -39,11 +39,11 @@ def parse_log(path: str) -> dict:
     if seat_specs_line:
         specs = eval(seat_specs_line.group(1))  # ['cheat_mcts', 'go_rule_2', ...]
     else:
-        specs = ["dds", "cheat_mcts", "dds", "cheat_mcts"]
+        specs = ['dds', 'rl_exact', 'dds', 'rl_exact']
 
     # Determine which seats belong to cheat_mcts in game 0
     base_our_seats = {i for i, s in enumerate(specs) if s == "dds"}
-    base_go_seats = {i for i, s in enumerate(specs) if s == "cheat_mcts"}
+    base_go_seats = {i for i, s in enumerate(specs) if s == "rl_exact"}
 
     # Seats alternate every game (偶数游戏: 按 base_our_seats; 奇数游戏: 交换)
     def get_our_seats(game_idx: int) -> set[int]:

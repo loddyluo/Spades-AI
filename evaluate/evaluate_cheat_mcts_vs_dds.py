@@ -9,9 +9,9 @@ when information asymmetry is removed.
 
 Usage:
     python evaluate/evaluate_cheat_mcts_vs_dds.py \
-        --num-games 128 --seed 42 \
+        --num-games 256 --seed 42 \
         --our-simulations-per-action 64 \
-        --our-exact-threshold 36 --num-workers 32 --our-simulations-per-action 2048 --our-mcts-determinization-count 16 
+        --our-exact-threshold 36 --num-workers 32 --our-simulations-per-action 40 --our-mcts-determinization-count 16 
 """
 
 from __future__ import annotations
