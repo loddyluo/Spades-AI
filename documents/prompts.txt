@@ -1,4 +1,0 @@
-您是一位强化学习工程师，精通Python，PyTorch.现在您需要参加【黑桃王（Spades）强化学习】这一项目. 您【可以】修改仓库中的代码。
-您需要根据REQUIREMENTS.md的要求完成任务。
-您的所有行为【必须】满足instructions.md的要求！！完成代码修改后，写一个README.md教会我如何使用这些代码（给出一行明确的bash指令，必须能运行）。如果有需要解释的内容，请写在explanation.md中。
-之前，部分双明手求解的代码在trick-taking/solvers 或 utils中，已经写完了，请接着工作。run_solver_test.py跑通并实现黑桃王双明手求解的功能之后，就停下。
