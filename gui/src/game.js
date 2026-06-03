@@ -78,13 +78,17 @@ export function bidLabel(bid) {
 }
 
 /**
- * Sort cards by suit and rank.
+ * Sort cards for display: spades → hearts → clubs → diamonds, and within a
+ * suit from high rank to low (so left-to-right reads ♠A♠K… ♥… ♣… ♦…).
  * Input: array of cards.
  * Output: new sorted array.
  */
+const DISPLAY_SUIT_ORDER = { S: 0, H: 1, C: 2, D: 3 };
 function sortCards(cards) {
-  const order = (card) => SUITS.indexOf(card.suit) * 100 + RANK_VALUES[card.rank];
-  return [...cards].sort((a, b) => order(a) - order(b));
+  return [...cards].sort((a, b) =>
+    (DISPLAY_SUIT_ORDER[a.suit] - DISPLAY_SUIT_ORDER[b.suit])
+    || (RANK_VALUES[b.rank] - RANK_VALUES[a.rank]),
+  );
 }
 
 /**
@@ -314,6 +318,7 @@ function chooseAICard(state, seat) {
 export function applyBid(state, seat, bid, source = null) {
   const next = cloneState(state);
   next.bids[seat] = bid;
+  next.lastBidSeat = seat; // drives the bid-bubble pop animation
   next.log.push({ kind: 'bid', seat, text: `${PLAYER_NAMES[seat]} 叫牌 ${bidLabel(bid)}${source ? ` [${source}]` : ''}` });
 
   if (next.bids.every(Boolean)) {
@@ -333,6 +338,11 @@ export function applyBid(state, seat, bid, source = null) {
  * Apply a play action and advance the trick.
  * Input: a state snapshot, a seat, and a card code.
  * Output: the next immutable state.
+ *
+ * When the 4th card lands we do NOT clear the table immediately — instead we
+ * mark `trickComplete`/`trickWinner` so the UI can hold the full trick on the
+ * felt for a beat (and animate it flying to the winner). `finalizeTrick`
+ * performs the actual collection afterwards.
  */
 export function applyCard(state, seat, cardCode, source = null) {
   const next = cloneState(state);
@@ -351,6 +361,7 @@ export function applyCard(state, seat, cardCode, source = null) {
   hand.splice(cardIndex, 1);
   const ledSuit = next.currentTrick.length > 0 ? next.currentTrick[0].card.suit : card.suit;
   next.currentTrick.push({ seat, card });
+  next.lastPlayedSeat = seat; // drives the slide-in-from-seat animation
   next.spadesBroken = next.spadesBroken || (card.suit === 'S' && ledSuit !== 'S');
   next.log.push({ kind: 'play', seat, text: `${PLAYER_NAMES[seat]} 出牌 ${cardLabel(card)}${source ? ` [${source}]` : ''}` });
 
@@ -359,7 +370,23 @@ export function applyCard(state, seat, cardCode, source = null) {
     return next;
   }
 
-  const winner = determineTrickWinner(next.currentTrick);
+  // 4th card: freeze the full trick on the table; winner collects later.
+  next.trickComplete = true;
+  next.trickWinner = determineTrickWinner(next.currentTrick);
+  next.currentPlayer = -1; // nobody acts during the hold
+  return next;
+}
+
+/**
+ * Collect a completed trick (called after the hold-on-table beat).
+ * Input: a state with trickComplete=true.
+ * Output: the next immutable state with the table cleared and score updated.
+ */
+export function finalizeTrick(state) {
+  if (!state.trickComplete) return state;
+  const next = cloneState(state);
+  const winner = next.trickWinner;
+
   next.tricksWon[winner] += 1;
   next.completedTricks.push({
     trickNumber: next.trickNumber,
@@ -367,6 +394,9 @@ export function applyCard(state, seat, cardCode, source = null) {
     cards: next.currentTrick.map((entry) => ({ seat: entry.seat, card: entry.card })),
   });
   next.currentTrick = [];
+  next.trickComplete = false;
+  next.trickWinner = -1;
+  next.lastPlayedSeat = -1;
   next.currentPlayer = winner;
   next.leader = winner;
   next.log.push({ kind: 'system', text: `第 ${next.trickNumber} 墩由 ${PLAYER_NAMES[winner]} 赢下` });
@@ -404,46 +434,80 @@ export function createInitialGame(seed, humanSeat) {
     tricksWon: [0, 0, 0, 0],
     currentTrick: [],
     completedTricks: [],
+    trickComplete: false,
+    trickWinner: -1,
+    lastPlayedSeat: -1,
+    lastBidSeat: -1,
     score: null,
-    log: [{ kind: 'system', text: `新牌局已创建，seed=${seed}` }],
+    log: [{ kind: 'system', text: '新牌局已开始' }],
   };
 }
 
+/** Sleep helper for pacing AI turns into visible animation steps. */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/* Animation pacing (ms). The exact solver itself takes 1–4 s for the last
+ * 36 cards, so those beats are dominated by computation; these delays only
+ * shape the fast (policy / bidding) turns and the trick-collection hold. */
+export const PACE = {
+  aiStep: 800,        // pause after each AI bid / play
+  trickHold: 1500,    // hold a completed 4-card trick before collecting
+};
+
 /**
  * Resolve AI turns until the human seat needs attention or the hand ends.
- * Input: the current state.
+ * Input: the current state, and an optional onStep(state) callback that is
+ *        invoked after every visible change so the UI can render each beat.
  * Output: a state where it is either the human's turn or the game is finished.
+ *
+ * Each AI action and each trick collection is surfaced through onStep with a
+ * pause in between, turning the previously-instant resolution into animation.
  */
-export async function advanceUntilHuman(state) {
-  let next = cloneState(state);
+export async function advanceUntilHuman(state, onStep = null) {
+  let next = state;
+  const emit = (s) => { next = s; if (onStep) onStep(s); };
+
+  // helper: if a trick is sitting complete on the table, hold then collect.
+  const collectIfNeeded = async () => {
+    if (next.trickComplete) {
+      await sleep(PACE.trickHold);
+      emit(finalizeTrick(next));
+    }
+  };
+
+  await collectIfNeeded();
 
   while (next.phase !== 'finished' && next.currentPlayer !== next.humanSeat) {
     if (next.phase === 'bidding') {
-      // 优先尝试后端 AI，如果后端不可用则回退到简单 AI
+      let bidState;
       try {
         const action = await requestAiAction(next);
-        if (action.kind !== 'bid') {
-          throw new Error(`AI returned ${action.kind} during bidding`);
-        }
-        next = applyBid(next, next.currentPlayer, makeBid(action.bid.value, action.bid.type), action.ai);
+        if (action.kind !== 'bid') throw new Error(`AI returned ${action.kind} during bidding`);
+        bidState = applyBid(next, next.currentPlayer, makeBid(action.bid.value, action.bid.type), action.ai);
       } catch (err) {
         console.warn('Backend AI failed, using fallback AI:', err);
-        next = applyBid(next, next.currentPlayer, chooseAIBid(next, next.currentPlayer), 'fallback');
+        bidState = applyBid(next, next.currentPlayer, chooseAIBid(next, next.currentPlayer), 'fallback');
       }
+      emit(bidState);
+      await sleep(PACE.aiStep);
       continue;
     }
 
     if (next.phase === 'playing') {
+      let playState;
       try {
         const action = await requestAiAction(next);
-        if (action.kind !== 'play') {
-          throw new Error(`AI returned ${action.kind} during playing`);
-        }
-        next = applyCard(next, next.currentPlayer, action.card, action.ai);
+        if (action.kind !== 'play') throw new Error(`AI returned ${action.kind} during playing`);
+        playState = applyCard(next, next.currentPlayer, action.card, action.ai);
       } catch (err) {
         console.warn('Backend AI failed, using fallback AI:', err);
-        next = applyCard(next, next.currentPlayer, chooseAICard(next, next.currentPlayer).code, 'fallback');
+        playState = applyCard(next, next.currentPlayer, chooseAICard(next, next.currentPlayer).code, 'fallback');
       }
+      emit(playState);
+      await sleep(PACE.aiStep);
+      await collectIfNeeded();
       continue;
     }
 
@@ -454,23 +518,27 @@ export async function advanceUntilHuman(state) {
 }
 
 /**
- * Apply a human bid and then fast-forward AI turns.
- * Input: a state and the selected bid.
+ * Apply a human bid and then fast-forward AI turns (with animation steps).
+ * Input: a state, the selected bid, and an optional onStep(state) callback.
  * Output: the next playable state.
  */
-export async function submitHumanBid(state, bid) {
+export async function submitHumanBid(state, bid, onStep = null) {
   const afterBid = applyBid(state, state.humanSeat, bid);
-  return await advanceUntilHuman(afterBid);
+  if (onStep) onStep(afterBid);
+  await sleep(PACE.aiStep);
+  return await advanceUntilHuman(afterBid, onStep);
 }
 
 /**
- * Apply a human card and then fast-forward AI turns.
- * Input: a state and the chosen card code.
+ * Apply a human card and then fast-forward AI turns (with animation steps).
+ * Input: a state, the chosen card code, and an optional onStep(state) callback.
  * Output: the next playable state.
  */
-export async function submitHumanCard(state, cardCode) {
+export async function submitHumanCard(state, cardCode, onStep = null) {
   const afterCard = applyCard(state, state.humanSeat, cardCode);
-  return await advanceUntilHuman(afterCard);
+  if (onStep) onStep(afterCard);
+  await sleep(PACE.aiStep);
+  return await advanceUntilHuman(afterCard, onStep);
 }
 
 /**

@@ -1,259 +1,459 @@
 /*
- * Spades table UI with one human seat and Python-backed AI seats.
+ * Spades table UI — immersive felt table with one human seat at the bottom
+ * and three Python-backed AI seats around it.
+ *
+ * All game logic / API calls live in ./game.js and are reused unchanged.
+ * This file owns presentation + match flow (single hand vs. race-to-500):
+ * seat→screen mapping (you always sit at the bottom), real playing cards,
+ * a fanned hand, a central trick area, bidding chips, a status pill, the
+ * mode-select screen, the cumulative scoreboard, and the result overlays.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   advanceUntilHuman,
   bidLabel,
-  cardLabel,
   createInitialGame,
   getHumanLegalCards,
   makeBid,
-  submitHumanCard,
   submitHumanBid,
+  submitHumanCard,
   summarizeGame,
 } from './game';
 
 const SEAT_NAMES = ['North', 'East', 'South', 'West'];
+const SUIT_SYMBOL = { S: '♠', H: '♥', D: '♦', C: '♣' };
+const SUIT_IS_RED = { S: false, H: true, D: true, C: false };
+const TARGET_SCORE = 500;
 
-function SeatBadge({ seat, title, subtitle, active, count }) {
-  return (
-    <div className={`seat-badge seat-${seat} ${active ? 'active' : ''}`}>
-      <div className="seat-badge__title">
-        <span>{title}</span>
-        <strong>P{seat}</strong>
-      </div>
-      <div className="seat-badge__meta">{subtitle}</div>
-      <div className="seat-badge__count">{count} cards</div>
-    </div>
-  );
-}
+// team(0) = seats 0 & 2, team(1) = seats 1 & 3
+const teamOf = (seat) => seat % 2;
 
-function TrickCard({ entry }) {
-  return (
-    <div className={`trick-card suit-${entry.card.suit}`}>
-      <span>P{entry.seat}</span>
-      <strong>{cardLabel(entry.card)}</strong>
-    </div>
-  );
-}
+// fresh random seed for every new deal (no seed exposed in the UI)
+const randomSeed = () => Math.floor(Math.random() * 2_000_000_000) + 1;
 
-function HandCard({ card, legal, disabled, onPlay }) {
+/* ── A single rendered playing card (face up or face down) ──────────── */
+function PlayingCard({ card, faceDown = false, size = 'md', legal = false,
+                       disabled = false, onPlay = null, style = null,
+                       className = '' }) {
+  if (faceDown || !card) {
+    return <div className={`pcard pcard--back size-${size} ${className}`} style={style} />;
+  }
+  const red = SUIT_IS_RED[card.suit];
+  const sym = SUIT_SYMBOL[card.suit];
+  const clickable = legal && !disabled && onPlay;
   return (
     <button
-      className={`hand-card suit-${card.suit} ${legal ? 'legal' : 'locked'}`}
-      disabled={disabled || !legal}
-      onClick={() => legal && !disabled && onPlay(card.code)}
+      type="button"
+      className={`pcard size-${size} ${red ? 'is-red' : 'is-black'} ${legal ? 'is-legal' : ''} ${className}`}
+      style={style}
+      disabled={!clickable}
+      onClick={clickable ? () => onPlay(card.code) : undefined}
+      aria-label={`${card.rank}${card.suit}`}
     >
-      <span>{card.rank}</span>
-      <strong>{cardLabel(card)}</strong>
+      <span className="pcard__corner pcard__corner--tl">
+        <b>{card.rank}</b><i>{sym}</i>
+      </span>
+      <span className="pcard__pip">{sym}</span>
+      <span className="pcard__corner pcard__corner--br">
+        <b>{card.rank}</b><i>{sym}</i>
+      </span>
     </button>
   );
 }
 
-function ActionPanel({ game, onBid, onPlay, onNewGame, seedValue, setSeedValue, humanSeat, setHumanSeat, busy }) {
-  const summary = summarizeGame(game);
-  const legalCards = useMemo(() => getHumanLegalCards(game), [game]);
-
+/* ── A small fan of card-backs for an AI seat (count only) ──────────── */
+function CardBackFan({ count }) {
+  const shown = Math.min(count, 5);
+  const center = (shown - 1) / 2;
   return (
-    <section className="panel action-panel">
-      <div className="panel__header">
-        <div>
-          <p className="eyebrow">当前决策</p>
-          <h2>{summary.phase === 'bidding' ? '请选择叫牌' : summary.phase === 'playing' ? '请选择出牌' : '牌局已结束'}</h2>
-        </div>
-        <button className="ghost" onClick={onNewGame} disabled={busy}>重新发牌</button>
-      </div>
-
-      <div className="control-row">
-        <label>
-          Seed
-          <input value={seedValue} onChange={(event) => setSeedValue(event.target.value)} disabled={busy} />
-        </label>
-        <label>
-          人类座位
-          <select value={humanSeat} onChange={(event) => setHumanSeat(Number(event.target.value))} disabled={busy}>
-            {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} - {label}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div className="summary-grid">
-        <div><span>阶段</span><strong>{summary.phase}</strong></div>
-        <div><span>当前玩家</span><strong>P{summary.currentPlayer}</strong></div>
-        <div><span>墩数</span><strong>{summary.trickNumber}</strong></div>
-        <div><span>黑桃已断</span><strong>{summary.spadesBroken ? '是' : '否'}</strong></div>
-      </div>
-
-      <div className="bid-strip">
-        <button className="bid-chip special" onClick={() => onBid(makeBid(0, 'nil'))} disabled={busy || summary.phase !== 'bidding'}>Nil</button>
-        {Array.from({ length: 13 }, (_, index) => index + 1).map((bid) => (
-          <button key={bid} className="bid-chip" onClick={() => onBid(makeBid(bid))} disabled={busy || summary.phase !== 'bidding'}>
-            {bid}
-          </button>
-        ))}
-      </div>
-
-      {summary.phase === 'playing' && (
-        <div>
-          <p className="hint">当前可出牌只显示合法牌。点击即可落子。{busy ? ' 后端 AI 正在计算下一步。' : ''}</p>
-          <div className="hand-grid compact">
-            {legalCards.map((card) => (
-              <HandCard key={card.code} card={card} legal disabled={busy} onPlay={onPlay} />
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
+    <div className="back-fan" aria-label={`${count} cards`}>
+      {Array.from({ length: shown }, (_, i) => (
+        <div
+          key={i}
+          className="pcard pcard--back size-xs back-fan__card"
+          style={{ '--i': i - center }}
+        />
+      ))}
+      <span className="back-fan__count">{count}</span>
+    </div>
   );
 }
 
+/* ── Bid / Won badges (shared by AI seats and the human) ────────────── */
+function TallyBadges({ bid, won, hideBid, justBid }) {
+  const numericBid = bid && bid.type !== 'nil' ? bid.value : null;
+  const isNil = bid && bid.type === 'nil';
+  const made = numericBid != null && won >= numericBid;       // contract met
+  const nilOk = isNil && won === 0;
+  return (
+    <div className="tally">
+      <span className={`tally__bid ${justBid ? 'is-pop' : ''}`}>
+        叫 {hideBid ? '·' : (isNil ? 'Nil' : numericBid != null ? numericBid : '—')}
+      </span>
+      <span className={`tally__won ${made || nilOk ? 'is-made' : ''} ${isNil && won > 0 ? 'is-broken' : ''}`}>
+        吃 {won}
+      </span>
+    </div>
+  );
+}
+
+/* ── One AI seat badge (top / left / right) ─────────────────────────── */
+function AiSeat({ pos, seat, summary, game, active }) {
+  const hasBid = !!game.bids[seat];
+  const justBid = game.phase === 'bidding' && game.lastBidSeat === seat && hasBid;
+  return (
+    <div className={`seat seat--${pos} ${active ? 'is-active' : ''} team-${teamOf(seat)}`}>
+      <div className="seat__plate">
+        <span className="seat__avatar">{SEAT_NAMES[seat][0]}</span>
+        <div className="seat__meta">
+          <strong>{SEAT_NAMES[seat]}</strong>
+          <TallyBadges bid={game.bids[seat]} won={summary.tricksWon[seat]}
+                       hideBid={game.phase === 'bidding' && !hasBid} justBid={justBid} />
+        </div>
+      </div>
+      <CardBackFan count={game.hands[seat].length} />
+    </div>
+  );
+}
+
+/* ── The played card for a seat sitting at screen position `pos` ────── */
+function TrickSlot({ pos, entry, justPlayed, collecting, winnerPos }) {
+  if (!entry) return <div className={`slot slot--${pos}`} />;
+  const cls = [
+    'slot__card',
+    justPlayed ? `slot__card--in-${pos}` : '',
+    collecting ? `slot__card--collect-${winnerPos}` : '',
+  ].join(' ');
+  return (
+    <div className={`slot slot--${pos}`}>
+      <PlayingCard card={entry.card} size="md" className={cls} />
+    </div>
+  );
+}
+
+/* ── Mode-select screen ─────────────────────────────────────────────── */
+function ModeMenu({ onPick }) {
+  return (
+    <div className="menu">
+      <div className="menu__brand"><span className="brand__pip">♠</span> Spades AI</div>
+      <p className="menu__sub">选择对战模式</p>
+      <div className="menu__cards">
+        <button className="mode-card" onClick={() => onPick('single')}>
+          <span className="mode-card__icon">🃏</span>
+          <strong>一局制</strong>
+          <span className="mode-card__desc">打完一局即结算，看本局胜负。</span>
+        </button>
+        <button className="mode-card mode-card--gold" onClick={() => onPick('match500')}>
+          <span className="mode-card__icon">🏆</span>
+          <strong>500 分赛</strong>
+          <span className="mode-card__desc">逐局累计，先到 500 分且领先者获胜。</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── main app ──────────────────────────────────────────────────────── */
 export default function App() {
-  const [seedValue, setSeedValue] = useState('42');
+  const [screen, setScreen] = useState('menu');     // 'menu' | 'game'
+  const [mode, setMode] = useState('single');        // 'single' | 'match500'
   const [humanSeat, setHumanSeat] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [game, setGame] = useState(() => createInitialGame(42, 0));
+  const [game, setGame] = useState(() => createInitialGame(randomSeed(), 0));
 
-  const startNewGame = async (seed, seat) => {
+  // 500-match cumulative state
+  const [matchScore, setMatchScore] = useState({ ns: 0, ew: 0 });
+  const [handNo, setHandNo] = useState(1);
+  const [matchOver, setMatchOver] = useState(false);
+  const settledSeedRef = useRef(null);   // guards against double-counting a hand
+
+  // Deal a fresh random hand; AI turns stream in via onStep=setGame.
+  const dealHand = async (seat) => {
     setBusy(true);
     try {
-      setGame(await advanceUntilHuman(createInitialGame(seed, seat)));
+      const fresh = createInitialGame(randomSeed(), seat);
+      setGame(fresh);
+      setGame(await advanceUntilHuman(fresh, setGame));
     } finally {
       setBusy(false);
     }
   };
 
-  useEffect(() => {
-    void startNewGame(42, 0);
-  }, []);
+  // Start a brand-new match in the given mode (resets cumulative score).
+  const startMatch = async (chosenMode, seat = humanSeat) => {
+    setMode(chosenMode);
+    setMatchScore({ ns: 0, ew: 0 });
+    setHandNo(1);
+    setMatchOver(false);
+    settledSeedRef.current = null;
+    setScreen('game');
+    await dealHand(seat);
+  };
 
-  const newGame = () => {
-    const parsedSeed = Number.parseInt(seedValue, 10);
-    const nextSeed = Number.isFinite(parsedSeed) ? parsedSeed : 42;
-    void startNewGame(nextSeed, humanSeat);
+  // Next hand within a running 500-match (keeps cumulative score).
+  const nextHand = async () => {
+    setHandNo((n) => n + 1);
+    await dealHand(humanSeat);
   };
 
   const handleBid = async (bid) => {
-    if (busy || game.phase !== 'bidding' || game.currentPlayer !== humanSeat) {
-      return;
-    }
+    if (busy || game.phase !== 'bidding' || game.currentPlayer !== humanSeat) return;
     setBusy(true);
     try {
-      setGame(await submitHumanBid(game, bid));
+      setGame(await submitHumanBid(game, bid, setGame));
     } finally {
       setBusy(false);
     }
   };
 
   const handlePlay = async (cardCode) => {
-    if (busy || game.phase !== 'playing' || game.currentPlayer !== humanSeat) {
-      return;
-    }
+    if (busy || game.phase !== 'playing' || game.currentPlayer !== humanSeat) return;
     setBusy(true);
     try {
-      setGame(await submitHumanCard(game, cardCode));
+      setGame(await submitHumanCard(game, cardCode, setGame));
     } finally {
       setBusy(false);
     }
   };
 
-  const currentHumanHand = game.hands[humanSeat];
-  const legalCards = game.phase === 'playing' ? getHumanLegalCards(game) : [];
-  const legalSet = new Set(legalCards.map((card) => card.code));
   const summary = summarizeGame(game);
+  const finished = game.phase === 'finished';
+
+  // ── 500-match: accumulate this hand's score exactly once ─────────────
+  useEffect(() => {
+    if (mode !== 'match500' || screen !== 'game') return;
+    if (!finished || !summary.score) return;
+    if (settledSeedRef.current === game.seed) return;  // already counted
+    settledSeedRef.current = game.seed;
+    setMatchScore((prev) => {
+      const ns = prev.ns + summary.score.northSouth;
+      const ew = prev.ew + summary.score.eastWest;
+      if ((ns >= TARGET_SCORE || ew >= TARGET_SCORE) && ns !== ew) {
+        setMatchOver(true);
+      }
+      return { ns, ew };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finished, game.seed, mode, screen]);
+
+  const legalCards = game.phase === 'playing' ? getHumanLegalCards(game) : [];
+  const legalSet = useMemo(() => new Set(legalCards.map((c) => c.code)), [legalCards]);
+
+  // seat → screen position (you are always at the bottom)
+  const posOf = (seat) => ['bottom', 'left', 'top', 'right'][(seat - humanSeat + 4) % 4];
+  const seatAt = (pos) => [0, 1, 2, 3].find((s) => posOf(s) === pos);
+
+  const humanHand = game.hands[humanSeat];
+  const myTurn = game.currentPlayer === humanSeat;
+  const isBidding = game.phase === 'bidding';
+  const isPlaying = game.phase === 'playing';
+
+  // current-trick entries keyed by screen position
+  const trickByPos = {};
+  for (const entry of game.currentTrick) trickByPos[posOf(entry.seat)] = entry;
+
+  // animation hints
+  const justPlayedPos = game.lastPlayedSeat >= 0 ? posOf(game.lastPlayedSeat) : null;
+  const collecting = !!game.trickComplete;
+  const winnerPos = collecting && game.trickWinner >= 0 ? posOf(game.trickWinner) : null;
+
+  // status text in the center of the table
+  let statusText = '';
+  if (finished) statusText = '本局结束';
+  else if (busy && !myTurn) statusText = '对手出牌中…';
+  else if (isBidding && myTurn) statusText = '请叫牌';
+  else if (isBidding) statusText = `${SEAT_NAMES[game.currentPlayer]} 叫牌中…`;
+  else if (isPlaying && myTurn) statusText = '请出牌';
+  else if (isPlaying) statusText = `${SEAT_NAMES[game.currentPlayer]} 出牌中…`;
+
+  const spread = Math.min(7, 56 / Math.max(1, humanHand.length)); // deg between cards
+
+  // ── mode-select screen ──
+  if (screen === 'menu') {
+    return <div className="felt felt--menu"><ModeMenu onPick={(m) => { void startMatch(m); }} /></div>;
+  }
+
+  // which scoreboard numbers to show in the top bar
+  const boardNS = mode === 'match500' ? matchScore.ns : (summary.score ? summary.score.northSouth : 0);
+  const boardEW = mode === 'match500' ? matchScore.ew : (summary.score ? summary.score.eastWest : 0);
+
+  // overlay variant for the finished hand
+  const myTeam = teamOf(humanSeat);
+  const teamWon = (nsScore, ewScore) => (myTeam === 0 ? nsScore >= ewScore : ewScore > nsScore);
 
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Spades AI Table</p>
-          <h1>最小可运行的手动对局界面</h1>
-          <p className="hero__copy">前端通过 `/api/choose-action` 调用 Python 后端，由后端 AI 自己编码当前剩余手牌与全部公开历史，再返回叫牌或出牌结果。</p>
+    <div className="felt">
+      {/* ── top bar ── */}
+      <header className="topbar">
+        <div className="brand">
+          <button className="brand__back" onClick={() => setScreen('menu')} disabled={busy} title="返回模式选择">←</button>
+          <span className="brand__pip">♠</span> Spades
         </div>
-        <div className="hero__stats">
-          <div>
-            <span>NS</span>
-            <strong>{summary.score ? summary.score.northSouth : '—'}</strong>
+        <div className="topbar__right">
+          <div className="scoreboard">
+            <div className="score score--ns"><span>NS</span><strong>{boardNS}</strong></div>
+            <div className="score score--ew"><span>EW</span><strong>{boardEW}</strong></div>
           </div>
-          <div>
-            <span>EW</span>
-            <strong>{summary.score ? summary.score.eastWest : '—'}</strong>
-          </div>
+          {mode === 'match500' ? (
+            <div className="match-info"><span>500 分赛</span><strong>第 {handNo} 局</strong></div>
+          ) : (
+            <div className="match-info"><span>模式</span><strong>一局制</strong></div>
+          )}
+          <label className="ctl">
+            <span>座位</span>
+            <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy}>
+              {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} · {label}</option>)}
+            </select>
+          </label>
         </div>
       </header>
 
-      <section className="table-stage panel">
-        <SeatBadge seat={0} title="North" subtitle={`Bid: ${bidLabel(game.bids[0])}`} active={game.currentPlayer === 0} count={game.hands[0].length} />
-        <SeatBadge seat={3} title="West" subtitle={`Bid: ${bidLabel(game.bids[3])}`} active={game.currentPlayer === 3} count={game.hands[3].length} />
+      {/* ── table ── */}
+      <main className="stage">
+        <div className="stage__top">
+          <AiSeat pos="top" seat={seatAt('top')} summary={summary} game={game}
+                  active={game.currentPlayer === seatAt('top')} />
+        </div>
+        <div className="stage__left">
+          <AiSeat pos="left" seat={seatAt('left')} summary={summary} game={game}
+                  active={game.currentPlayer === seatAt('left')} />
+        </div>
 
-        <div className="table-core">
-          <div className="table-core__glow" />
-          <h2>当前墩</h2>
-          <p>{game.currentTrick.length === 0 ? '尚未出牌' : `已出 ${game.currentTrick.length} 张`}</p>
-          <div className="trick-grid">
-            {game.currentTrick.map((entry) => <TrickCard key={`${entry.seat}-${entry.card.code}`} entry={entry} />)}
-          </div>
-          <div className="trick-summary">
-            <span>叫牌顺序：{game.bids.map((bid, seat) => `P${seat}:${bidLabel(bid)}`).join('  ')}</span>
-            <span>已赢墩：{game.tricksWon.map((count, seat) => `P${seat}:${count}`).join('  ')}</span>
+        <div className="table">
+          <div className={`table__felt ${collecting ? 'is-collecting' : ''}`}>
+            {['top', 'left', 'right', 'bottom'].map((p) => (
+              <TrickSlot
+                key={p}
+                pos={p}
+                entry={trickByPos[p]}
+                justPlayed={!collecting && justPlayedPos === p}
+                collecting={collecting}
+                winnerPos={winnerPos}
+              />
+            ))}
+            <div className={`status ${busy && !myTurn ? 'is-busy' : ''} ${myTurn && !finished ? 'is-you' : ''}`}>
+              {busy && !myTurn ? <span className="spinner" /> : null}
+              <span className="status__text">{statusText}</span>
+              {isPlaying ? <span className="status__trick">第 {summary.trickNumber} 墩</span> : null}
+            </div>
           </div>
         </div>
 
-        <SeatBadge seat={1} title="East" subtitle={`Bid: ${bidLabel(game.bids[1])}`} active={game.currentPlayer === 1} count={game.hands[1].length} />
-        <SeatBadge seat={2} title="South" subtitle={`Bid: ${bidLabel(game.bids[2])}`} active={game.currentPlayer === 2} count={game.hands[2].length} />
-      </section>
+        <div className="stage__right">
+          <AiSeat pos="right" seat={seatAt('right')} summary={summary} game={game}
+                  active={game.currentPlayer === seatAt('right')} />
+        </div>
 
-      <section className="bottom-grid">
-        <ActionPanel
-          game={game}
-          onBid={handleBid}
-          onPlay={handlePlay}
-          onNewGame={newGame}
-          seedValue={seedValue}
-          setSeedValue={setSeedValue}
-          humanSeat={humanSeat}
-          setHumanSeat={setHumanSeat}
-          busy={busy}
-        />
-
-        <section className="panel hand-panel">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">我的手牌</p>
-              <h2>P{humanSeat} - {SEAT_NAMES[humanSeat]}</h2>
-            </div>
-            <span className="pill">{currentHumanHand.length} 张</span>
-          </div>
-          <div className="hand-grid">
-            {currentHumanHand.map((card) => (
-              <HandCard
-                key={card.code}
-                card={card}
-                legal={game.phase === 'playing' && legalSet.has(card.code) && game.currentPlayer === humanSeat}
-                disabled={busy}
-                onPlay={handlePlay}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="panel log-panel">
-          <div className="panel__header">
-            <div>
-              <p className="eyebrow">动作日志</p>
-              <h2>最近事件</h2>
+        {/* ── human area ── */}
+        <div className="stage__hand">
+          <div className={`me ${myTurn && !finished ? 'is-active' : ''} team-${myTeam}`}>
+            <span className="me__avatar">{SEAT_NAMES[humanSeat][0]}</span>
+            <div className="me__meta">
+              <strong>{SEAT_NAMES[humanSeat]} <em>(You)</em></strong>
+              <TallyBadges bid={game.bids[humanSeat]} won={summary.tricksWon[humanSeat]}
+                           hideBid={isBidding && !game.bids[humanSeat]} />
             </div>
           </div>
-          <div className="log-list">
-            {game.log.slice(-12).map((entry, index) => (
-              <div key={`${entry.kind}-${index}`} className={`log-item log-${entry.kind}`}>
-                <span>{entry.kind}</span>
-                <p>{entry.text}</p>
-              </div>
-            ))}
+
+          {isBidding && myTurn ? (
+            <div className="bidbar">
+              <button className="chip chip--nil" disabled={busy} onClick={() => handleBid(makeBid(0, 'nil'))}>Nil</button>
+              {Array.from({ length: 13 }, (_, i) => i + 1).map((b) => (
+                <button key={b} className="chip" disabled={busy} onClick={() => handleBid(makeBid(b))}>{b}</button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="fan" style={{ '--n': humanHand.length }} key={game.seed}>
+            {humanHand.map((card, i) => {
+              const center = (humanHand.length - 1) / 2;
+              const legal = isPlaying && myTurn && legalSet.has(card.code);
+              const playable = isPlaying && myTurn;
+              return (
+                <PlayingCard
+                  key={card.code}
+                  card={card}
+                  size="lg"
+                  legal={legal}
+                  disabled={!playable || (playable && !legal)}
+                  onPlay={handlePlay}
+                  className={`fan__card ${playable && !legal ? 'is-muted' : ''}`}
+                  style={{ '--rot': `${(i - center) * spread}deg`, '--idx': i }}
+                />
+              );
+            })}
           </div>
-        </section>
-      </section>
-    </main>
+        </div>
+      </main>
+
+      {/* ── compact log ── */}
+      <aside className="mini-log">
+        {game.log.slice(-5).map((entry, i) => (
+          <div key={`${entry.kind}-${i}`} className={`mini-log__row log-${entry.kind}`}>{entry.text}</div>
+        ))}
+      </aside>
+
+      {/* ── result overlays ── */}
+      {finished && summary.score ? (
+        mode === 'single' ? (
+          <ResultOverlay
+            eyebrow="牌局结束"
+            ns={summary.score.northSouth}
+            ew={summary.score.eastWest}
+            verdict={teamWon(summary.score.northSouth, summary.score.eastWest) ? '你的队伍获胜 🎉' : '你的队伍落败'}
+            buttonLabel="再来一局"
+            onButton={() => { void dealHand(humanSeat); }}
+            busy={busy}
+          />
+        ) : matchOver ? (
+          <ResultOverlay
+            eyebrow={`500 分赛结束 · 共 ${handNo} 局`}
+            ns={matchScore.ns}
+            ew={matchScore.ew}
+            verdict={teamWon(matchScore.ns, matchScore.ew) ? '你的队伍赢得整场 🏆' : '你的队伍败北'}
+            buttonLabel="返回菜单"
+            onButton={() => setScreen('menu')}
+            busy={busy}
+          />
+        ) : (
+          <ResultOverlay
+            eyebrow={`第 ${handNo} 局结束`}
+            subtitle="本局得分"
+            ns={summary.score.northSouth}
+            ew={summary.score.eastWest}
+            cumulative={matchScore}
+            verdict={`目标 ${TARGET_SCORE} 分`}
+            buttonLabel="下一局"
+            onButton={() => { void nextHand(); }}
+            busy={busy}
+          />
+        )
+      ) : null}
+    </div>
+  );
+}
+
+/* ── Reusable result overlay ────────────────────────────────────────── */
+function ResultOverlay({ eyebrow, subtitle, ns, ew, cumulative, verdict, buttonLabel, onButton, busy }) {
+  return (
+    <div className="overlay">
+      <div className="overlay__card">
+        <p className="overlay__eyebrow">{eyebrow}</p>
+        {subtitle ? <p className="overlay__subtitle">{subtitle}</p> : null}
+        <div className="overlay__scores">
+          <div className={ns >= ew ? 'win' : ''}><span>North / South</span><strong>{ns}</strong></div>
+          <div className={ew > ns ? 'win' : ''}><span>East / West</span><strong>{ew}</strong></div>
+        </div>
+        {cumulative ? (
+          <div className="overlay__cumulative">
+            <span>累计</span>
+            <strong className="c-ns">NS {cumulative.ns}</strong>
+            <strong className="c-ew">EW {cumulative.ew}</strong>
+          </div>
+        ) : null}
+        <p className="overlay__verdict">{verdict}</p>
+        <button className="btn-new" onClick={onButton} disabled={busy}>{buttonLabel}</button>
+      </div>
+    </div>
   );
 }
