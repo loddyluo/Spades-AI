@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -458,11 +459,32 @@ def parse_args() -> argparse.Namespace:
                         help="policy for games where someone bids nil")
     parser.add_argument("--bid-checkpoint", type=str,
                         default=str(REPO_ROOT / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt"))
+    parser.add_argument("--seed", type=int, default=None,
+                        help="random seed for reproducible dealing/determinization")
     return parser.parse_args()
+
+
+def set_random_seed(seed: int) -> None:
+    """Set RNG seeds for reproducible behavior across common libs."""
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except Exception:
+        pass
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
 
 
 def main() -> None:
     args = parse_args()
+    if args.seed is not None:
+        set_random_seed(args.seed)
     provider = RlExactProvider(args)
     server = ThreadingHTTPServer((args.host, args.port), build_response_handler(provider))
     print(f"rl_exact backend listening on http://{args.host}:{args.port}", flush=True)

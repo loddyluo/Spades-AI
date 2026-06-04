@@ -28,8 +28,14 @@ const TARGET_SCORE = 500;
 // team(0) = seats 0 & 2, team(1) = seats 1 & 3
 const teamOf = (seat) => seat % 2;
 
-// fresh random seed for every new deal (no seed exposed in the UI)
-const randomSeed = () => Math.floor(Math.random() * 2_000_000_000) + 1;
+// Deterministic seed for reproducible deals.
+const DEFAULT_SEED = 123;
+const seedFromUrl = () => {
+  const raw = new URLSearchParams(window.location.search).get('seed');
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) ? parsed : DEFAULT_SEED;
+};
+const fixedSeed = () => seedFromUrl();
 
 /* ── A single rendered playing card (face up or face down) ──────────── */
 function PlayingCard({ card, faceDown = false, size = 'md', legal = false,
@@ -159,7 +165,7 @@ export default function App() {
   const [mode, setMode] = useState('single');        // 'single' | 'match500'
   const [humanSeat, setHumanSeat] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [game, setGame] = useState(() => createInitialGame(randomSeed(), 0));
+  const [game, setGame] = useState(() => createInitialGame(fixedSeed(), 0));
 
   // 500-match cumulative state
   const [matchScore, setMatchScore] = useState({ ns: 0, ew: 0 });
@@ -171,7 +177,7 @@ export default function App() {
   const dealHand = async (seat) => {
     setBusy(true);
     try {
-      const fresh = createInitialGame(randomSeed(), seat);
+      const fresh = createInitialGame(fixedSeed(), seat);
       setGame(fresh);
       setGame(await advanceUntilHuman(fresh, setGame));
     } finally {
