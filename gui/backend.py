@@ -299,6 +299,7 @@ class RlExactProvider:
         device = args.device
         self.device = device
         self.exact_threshold = int(args.exact_threshold)
+        self.seed = args.seed
 
         print("Loading rl_exact models ...", flush=True)
         self.policy_nonil = _load_policy(args.checkpoint_nonil, device)
@@ -416,7 +417,7 @@ def build_response_handler(provider: RlExactProvider):
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path in {"/", "/health", "/api/health"}:
-                self._send_json(200, {"ok": True, "ai": provider.ai_name})
+                self._send_json(200, {"ok": True, "ai": provider.ai_name, "seed": provider.seed})
                 return
             self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
 

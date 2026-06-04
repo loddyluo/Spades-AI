@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   advanceUntilHuman,
   bidLabel,
+  createRng,
   createInitialGame,
   getHumanLegalCards,
   makeBid,
@@ -32,10 +33,11 @@ const teamOf = (seat) => seat % 2;
 const DEFAULT_SEED = 123;
 const seedFromUrl = () => {
   const raw = new URLSearchParams(window.location.search).get('seed');
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(parsed) ? parsed : DEFAULT_SEED;
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 };
-const fixedSeed = () => seedFromUrl();
+const seatFromSeed = (seed) => Math.floor(createRng(seed)() * 4);
 
 /* ── A single rendered playing card (face up or face down) ──────────── */
 function PlayingCard({ card, faceDown = false, size = 'md', legal = false,
@@ -161,11 +163,15 @@ function ModeMenu({ onPick }) {
 
 /* ── main app ──────────────────────────────────────────────────────── */
 export default function App() {
+  const urlSeedRef = useRef(seedFromUrl());
+  const initialSeed = urlSeedRef.current ?? DEFAULT_SEED;
+  const initialSeat = seatFromSeed(initialSeed);
+  const [dealSeed, setDealSeed] = useState(initialSeed);
   const [screen, setScreen] = useState('menu');     // 'menu' | 'game'
   const [mode, setMode] = useState('single');        // 'single' | 'match500'
-  const [humanSeat, setHumanSeat] = useState(0);
+  const [humanSeat, setHumanSeat] = useState(initialSeat);
   const [busy, setBusy] = useState(false);
-  const [game, setGame] = useState(() => createInitialGame(fixedSeed(), 0));
+  const [game, setGame] = useState(() => createInitialGame(initialSeed, initialSeat));
 
   // 500-match cumulative state
   const [matchScore, setMatchScore] = useState({ ns: 0, ew: 0 });
@@ -173,11 +179,35 @@ export default function App() {
   const [matchOver, setMatchOver] = useState(false);
   const settledSeedRef = useRef(null);   // guards against double-counting a hand
 
+  useEffect(() => {
+    if (urlSeedRef.current != null) return;
+    const fetchBackendSeed = async () => {
+      try {
+        const response = await fetch('/api/health');
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!Number.isInteger(payload.seed)) return;
+        if (payload.seed === dealSeed || screen !== 'menu') return;
+        const seed = payload.seed;
+        const seat = seatFromSeed(seed);
+        setDealSeed(seed);
+        setHumanSeat(seat);
+        setGame(createInitialGame(seed, seat));
+      } catch (err) {
+        console.warn('Failed to fetch backend seed:', err);
+      }
+    };
+    fetchBackendSeed();
+  }, [dealSeed, screen]);
+
   // Deal a fresh random hand; AI turns stream in via onStep=setGame.
   const dealHand = async (seat) => {
     setBusy(true);
     try {
-      const fresh = createInitialGame(fixedSeed(), seat);
+      const seed = dealSeed;
+      const resolvedSeat = Number.isInteger(seat) ? seat : seatFromSeed(seed);
+      setHumanSeat(resolvedSeat);
+      const fresh = createInitialGame(seed, resolvedSeat);
       setGame(fresh);
       setGame(await advanceUntilHuman(fresh, setGame));
     } finally {
