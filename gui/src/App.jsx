@@ -197,7 +197,7 @@ export default function App() {
   };
 
   const handleBid = async (bid) => {
-    if (busy || game.phase !== 'bidding' || game.currentPlayer !== humanSeat) return;
+    if (busy || game.phase !== 'bidding' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
       setGame(await submitHumanBid(game, bid, setGame));
@@ -207,7 +207,7 @@ export default function App() {
   };
 
   const handlePlay = async (cardCode) => {
-    if (busy || game.phase !== 'playing' || game.currentPlayer !== humanSeat) return;
+    if (busy || game.phase !== 'playing' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
       setGame(await submitHumanCard(game, cardCode, setGame));
@@ -240,11 +240,11 @@ export default function App() {
   const legalSet = useMemo(() => new Set(legalCards.map((c) => c.code)), [legalCards]);
 
   // seat → screen position (you are always at the bottom)
-  const posOf = (seat) => ['bottom', 'left', 'top', 'right'][(seat - humanSeat + 4) % 4];
+  const posOf = (seat) => ['bottom', 'left', 'top', 'right'][(seat - game.humanSeat + 4) % 4];
   const seatAt = (pos) => [0, 1, 2, 3].find((s) => posOf(s) === pos);
 
-  const humanHand = game.hands[humanSeat];
-  const myTurn = game.currentPlayer === humanSeat;
+  const humanHand = game.hands[game.humanSeat];
+  const myTurn = game.currentPlayer === game.humanSeat;
   const isBidding = game.phase === 'bidding';
   const isPlaying = game.phase === 'playing';
 
@@ -278,7 +278,7 @@ export default function App() {
   const boardEW = mode === 'match500' ? matchScore.ew : (summary.score ? summary.score.eastWest : 0);
 
   // overlay variant for the finished hand
-  const myTeam = teamOf(humanSeat);
+  const myTeam = teamOf(game.humanSeat);
   const teamWon = (nsScore, ewScore) => (myTeam === 0 ? nsScore >= ewScore : ewScore > nsScore);
 
   return (
@@ -301,7 +301,7 @@ export default function App() {
           )}
           <label className="ctl">
             <span>座位</span>
-            <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy}>
+            <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy || (screen === 'game' && !finished)}>
               {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} · {label}</option>)}
             </select>
           </label>
@@ -347,11 +347,11 @@ export default function App() {
         {/* ── human area ── */}
         <div className="stage__hand">
           <div className={`me ${myTurn && !finished ? 'is-active' : ''} team-${myTeam}`}>
-            <span className="me__avatar">{SEAT_NAMES[humanSeat][0]}</span>
+            <span className="me__avatar">{SEAT_NAMES[game.humanSeat][0]}</span>
             <div className="me__meta">
-              <strong>{SEAT_NAMES[humanSeat]} <em>(You)</em></strong>
-              <TallyBadges bid={game.bids[humanSeat]} won={summary.tricksWon[humanSeat]}
-                           hideBid={isBidding && !game.bids[humanSeat]} />
+              <strong>{SEAT_NAMES[game.humanSeat]} <em>(You)</em></strong>
+              <TallyBadges bid={game.bids[game.humanSeat]} won={summary.tricksWon[game.humanSeat]}
+                           hideBid={isBidding && !game.bids[game.humanSeat]} />
             </div>
           </div>
 
