@@ -512,15 +512,16 @@ export default function App() {
   const [matchScore, setMatchScore] = useState({ ns: 0, ew: 0 });
   const [handNo, setHandNo] = useState(1);
   const [matchOver, setMatchOver] = useState(false);
+  const [matchFirstSeat, setMatchFirstSeat] = useState(0); // rotates each hand in 500-match
   const settledSeedRef = useRef(null);   // guards against double-counting a hand
 
   // Deal a hand. Random modes should omit `seed` or pass randomDealSeed().
-  const dealHand = async (seat, seed = randomDealSeed()) => {
+  const dealHand = async (seat, seed = randomDealSeed(), firstSeat = 0) => {
     setBusy(true);
     try {
       const resolvedSeat = Number.isInteger(seat) ? seat : humanSeat;
       setHumanSeat(resolvedSeat);
-      const fresh = createInitialGame(seed, resolvedSeat);
+      const fresh = createInitialGame(seed, resolvedSeat, firstSeat);
       setGame(fresh);
       setGame(await advanceUntilHuman(fresh, setGame));
     } finally {
@@ -534,6 +535,7 @@ export default function App() {
     setMatchScore({ ns: 0, ew: 0 });
     setHandNo(1);
     setMatchOver(false);
+    setMatchFirstSeat(0);
     settledSeedRef.current = null;
     setScreen('game');
     await dealHand(seat);
@@ -552,8 +554,10 @@ export default function App() {
 
   // Next hand within a running 500-match (keeps cumulative score).
   const nextHand = async () => {
+    const nextFirstSeat = (matchFirstSeat + 1) % 4;
+    setMatchFirstSeat(nextFirstSeat);
     setHandNo((n) => n + 1);
-    await dealHand(humanSeat);
+    await dealHand(humanSeat, randomDealSeed(), nextFirstSeat);
   };
 
   const handleBid = async (bid) => {

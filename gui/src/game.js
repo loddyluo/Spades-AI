@@ -323,8 +323,8 @@ export function applyBid(state, seat, bid, source = null) {
 
   if (next.bids.every(Boolean)) {
     next.phase = 'playing';
-    next.currentPlayer = 0;
-    next.leader = 0;
+    next.currentPlayer = next.firstSeat;
+    next.leader = next.firstSeat;
     next.trickNumber = 1;
     next.log.push({ kind: 'system', text: '叫牌完成，进入出牌阶段' });
   } else {
@@ -420,13 +420,15 @@ export function finalizeTrick(state) {
  * Input: seed and the human-controlled seat index.
  * Output: a ready-to-play bidding state.
  */
-export function createInitialGame(seed, humanSeat) {
+export function createInitialGame(seed, humanSeat, firstSeat = 0) {
+  const opener = ((firstSeat % 4) + 4) % 4;
   return {
     seed,
     humanSeat,
+    firstSeat: opener,
     phase: 'bidding',
-    currentPlayer: 0,
-    leader: 0,
+    currentPlayer: opener,
+    leader: opener,
     trickNumber: 1,
     spadesBroken: false,
     hands: dealHands(seed),
