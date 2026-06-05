@@ -567,3 +567,42 @@ export function summarizeGame(state) {
     score: state.score,
   };
 }
+
+/**
+ * Build a replay snapshot from a finished hand.
+ * Input: a finished game state.
+ * Output: immutable data for the replay UI (initial hands + play sequence).
+ */
+export function buildReplaySnapshot(state) {
+  const hands = dealHands(state.seed).map((hand) =>
+    hand.map((card) => ({ ...card })),
+  );
+  const plays = state.completedTricks.flatMap((trick) =>
+    trick.cards.map((entry) => ({
+      seat: entry.seat,
+      card: { ...entry.card },
+      trickNumber: trick.trickNumber,
+      winner: trick.winner,
+    })),
+  );
+  return {
+    seed: state.seed,
+    humanSeat: state.humanSeat,
+    bids: state.bids.map((bid) => (bid ? { ...bid } : null)),
+    tricksWon: [...state.tricksWon],
+    score: state.score ? { ...state.score } : null,
+    hands,
+    plays,
+    completedTricks: state.completedTricks.map((trick) => ({
+      trickNumber: trick.trickNumber,
+      winner: trick.winner,
+      cards: trick.cards.map((entry) => ({ seat: entry.seat, card: { ...entry.card } })),
+    })),
+  };
+}
+
+/** Replay animation pacing (ms). */
+export const REPLAY_PACE = {
+  cardStep: 650,
+  trickHold: 1200,
+};
