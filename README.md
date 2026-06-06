@@ -1,6 +1,24 @@
 # Spades AI
 
+[![Paper PDF](report/image.png)](Towards%20Lightweight%20Human%20Level%20AI%20in%20Spades.pdf)
+
 A Spades card game AI with reinforcement learning (RL), exact double-dummy solving, and a web-based GUI. The project trains an RL policy network (MLP) for the first 4 tricks of each hand and uses an exact solver for the remaining cards. Bidding is handled by a separate MLP model from the GO-MCTS submodule.
+
+## Paper Abstract
+
+Developing human-level AI for trick-taking games like Spades is notoriously challenging due to massive imperfect-information state spaces and non-linear scoring dynamics. Pure search methods struggle with combinatorial explosion, while end-to-end deep reinforcement learning often fails to execute precise logical reasoning in the endgame. In this paper, we propose a lightweight, two-stage AI architecture that elegantly bridges these paradigms. We decompose the game into an early phase, handled by a bid-conditional neural policy trained via variance-reduced REINFORCE, and an endgame phase, governed by a highly optimized, sample-based exact solver. Furthermore, we employ Neural Fictitious Self-Play (NFSP) combined with heuristic rules to build a robust bidding model. Evaluations demonstrate that our hybrid approach outperforms traditional search-based and rule-based baselines and achieves human-level performance against skilled human players. Remarkably, our architecture is computationally highly efficient: it executes actions in under 5 seconds on a single CPU core, and the reinforcement learning policy converges in just 20 minutes of training.
+
+![Main Architecture](report/main_graph.png)
+
+## Spades AI Rules (Immediate "No-Bags" Scoring)
+
+Based on our paper, to address the common delay in feedback caused by traditional "bag" penalty rules (where overtricks accumulate across rounds), we adopt a modified **immediate no-bags scoring** rule in this project:
+
+- **Successful Contract ($T \geq B$):** The team earns $10 \times B$ points, but loses 9 points for every overtrick. Thus, the score is $10B - 9(T - B)$.
+- **Failed Contract ($T < B$):** The team is penalized and loses $10 \times B$ points.
+- **Nil Bid Scoring:** If a player bids Nil and wins 0 tricks, the team earns $+50$ points. If they win 1 or more tricks, the team is penalized $-50$ points.
+
+For all experiments and training, the objective of each team is to maximize their own team's score minus the opponent team's score, for each single game.
 
 ---
 

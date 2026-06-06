@@ -1,0 +1,105 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\citation{zha2019rlcard}
+\citation{edelkamp2024framework}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Overview of our two-stage AI architecture for Spades.}}{2}{figure.1}\protected@file@percent }
+\newlabel{fig:main_graph}{{1}{2}{Overview of our two-stage AI architecture for Spades}{figure.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Preliminaries}{2}{section.2}\protected@file@percent }
+\citation{gottwald2024transformer}
+\citation{haglund2024dds}
+\citation{weng2026learning_beyond_gradients}
+\citation{aaai2024opponent}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Related Works}{3}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Frameworks and Environments for Card Game AI.}{3}{section*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Search and Planning in Imperfect Information Games.}{3}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Exact Solvers and Endgame Analysis.}{3}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hybrid AI and Learning Beyond Gradients.}{3}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Opponent Modeling and Determinization.}{3}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Bidding}{3}{section.4}\protected@file@percent }
+\newlabel{sec:bidding}{{4}{3}{Bidding}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}MLP Bidding Model}{4}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Exact Solver}{4}{section.5}\protected@file@percent }
+\newlabel{sec:exact-solver}{{5}{4}{Exact Solver}{section.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Playing}{4}{section.6}\protected@file@percent }
+\newlabel{sec:playing}{{6}{4}{Playing}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}The 1st to 4th Trick}{4}{subsection.6.1}\protected@file@percent }
+\newlabel{sec:early-game}{{6.1}{4}{The 1st to 4th Trick}{subsection.6.1}{}}
+\citation{weng2026learning_beyond_gradients}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}The 5th to 13th Trick: Reasoning By Sampling}{5}{subsection.6.2}\protected@file@percent }
+\newlabel{sec:late-game}{{6.2}{5}{The 5th to 13th Trick: Reasoning By Sampling}{subsection.6.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Experiments}{5}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Baselines}{5}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Rule-Based Player 1 (LLM one-shot heuristics).}{5}{section*.6}\protected@file@percent }
+\citation{haglund2024dds}
+\@writefile{toc}{\contentsline {paragraph}{Rule-Based Player 2 (LLM heuristic learning).}{6}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Bridge DDS (perfect-information trick maximizer).}{6}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Human.}{6}{section*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Bidding Distribution Sanity Check}{6}{subsection.7.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Distribution of the total bid over four players on $10{,}000$ random deals.}}{6}{table.1}\protected@file@percent }
+\newlabel{tab:bid-sum-distribution}{{1}{6}{Distribution of the total bid over four players on $10{,}000$ random deals}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Play Of Hand Results}{6}{subsection.7.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Description of the methods}}{7}{table.2}\protected@file@percent }
+\newlabel{tab:example}{{2}{7}{Description of the methods}{table.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Evaluation results}}{7}{figure.2}\protected@file@percent }
+\newlabel{fig:eval_results}{{2}{7}{Evaluation results}{figure.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Detailed Results when our RL-Exact plays against Rule-Based Player 2}}{7}{figure.3}\protected@file@percent }
+\newlabel{fig:rl_vs_rule}{{3}{7}{Detailed Results when our RL-Exact plays against Rule-Based Player 2}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Overall Results When Competing With Human}{8}{subsection.7.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Match results: total and per‑board scores (our side : opponents)}}{8}{table.3}\protected@file@percent }
+\newlabel{tab:bridge}{{3}{8}{Match results: total and per‑board scores (our side : opponents)}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Comparison with MCTS}{8}{subsection.7.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Performance comparison of MCTS and RL. The bidding and the strategy of the last 9 tricks are the same}}{8}{table.4}\protected@file@percent }
+\newlabel{table:mcts-comparison}{{4}{8}{Performance comparison of MCTS and RL. The bidding and the strategy of the last 9 tricks are the same}{table.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Exact Solver vs. Traditional DDS}{8}{subsection.7.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Performance comparison of Bridge DDS vs. our Spades Exact Solver over 1,000 deals.}}{9}{table.5}\protected@file@percent }
+\newlabel{table:solver-comparison}{{5}{9}{Performance comparison of Bridge DDS vs. our Spades Exact Solver over 1,000 deals}{table.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Limitations}{9}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Conclusion}{9}{section.9}\protected@file@percent }
+\bibstyle{unsrtnat}
+\bibdata{references}
+\bibcite{zha2019rlcard}{{1}{2019}{{Zha et~al.}}{{Zha, Lai, Cao, Huang, Wei, Guo, and Hu}}}
+\bibcite{edelkamp2024framework}{{2}{2024}{{Edelkamp}}{{}}}
+\bibcite{gottwald2024transformer}{{3}{2024}{{Gottwald and Thielscher}}{{}}}
+\bibcite{haglund2024dds}{{4}{2024}{{Haglund et~al.}}{{}}}
+\bibcite{weng2026learning_beyond_gradients}{{5}{2026}{{Weng}}{{}}}
+\bibcite{aaai2024opponent}{{6}{2024}{{AAAI 2024}}{{}}}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Detailed Rules of Spades}{10}{appendix.A}\protected@file@percent }
+\newlabel{app:rules}{{A}{10}{Detailed Rules of Spades}{appendix.A}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Basic Gameplay}{10}{subsection.A.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}The Bidding Phase}{10}{subsection.A.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.3}The Playing Phase}{10}{subsection.A.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.4}Immediate "No-Bags" Scoring System}{11}{subsection.A.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {B}Neural Network Architectures, Hyperparameters, and Input Feature Design}{11}{appendix.B}\protected@file@percent }
+\newlabel{app:hyperparams_and_features}{{B}{11}{Neural Network Architectures, Hyperparameters, and Input Feature Design}{appendix.B}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.1}1. Reinforcement Learning Policy Network (PolicyMLP)}{11}{subsection.B.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hyperparameters:}{11}{section*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Input Features (\texttt  {RLFeatureEncoder} - 264 dimensions):}{11}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.2}2. Bidding Network (BidMLP)}{11}{subsection.B.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hyperparameters:}{12}{section*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Input Features (\texttt  {BidEncoder} - 149 dimensions):}{12}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.3}3. Double Dummy MCTS Prior \& Value Network (DoubleDummyMLP)}{12}{subsection.B.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hyperparameters:}{12}{section*.16}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Input Features (\texttt  {SpadesFeatureEncoder} - 1229 dimensions):}{12}{section*.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.4}4. Transformer-based Policy \& Value Model (GPT2PolicyValueModel)}{12}{subsection.B.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hyperparameters:}{12}{section*.18}\protected@file@percent }
+\citation{gottwald2024transformer}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.5}5. Exact Double Dummy Solver (Endgame Phase)}{13}{subsection.B.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Determinization Hyperparameters:}{13}{section*.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {C}GO-MCTS Exploration Branch}{13}{appendix.C}\protected@file@percent }
+\newlabel{app:go-mcts-branch}{{C}{13}{GO-MCTS Exploration Branch}{appendix.C}{}}
+\@writefile{toc}{\contentsline {paragraph}{Supervised warm start from double-dummy data.}{13}{section*.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Sequence representation.}{13}{section*.21}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Model architecture and objectives.}{13}{section*.22}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{NFSP adaptation.}{14}{section*.23}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{GO-MCTS inference.}{14}{section*.24}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Outcome of the exploration.}{14}{section*.25}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {D}Graphical User Interface (GUI) Implementation}{14}{appendix.D}\protected@file@percent }
+\newlabel{app:gui}{{D}{14}{Graphical User Interface (GUI) Implementation}{appendix.D}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {D.1}Frontend Architecture}{14}{subsection.D.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {D.2}Backend AI Integration}{14}{subsection.D.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Screenshots of our Spades AI GUI: Mode selection screen (left) and playing phase (right).}}{15}{figure.4}\protected@file@percent }
+\newlabel{fig:gui_screenshots}{{4}{15}{Screenshots of our Spades AI GUI: Mode selection screen (left) and playing phase (right)}{figure.4}{}}
+\gdef \@abspage@last{17}
