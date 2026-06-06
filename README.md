@@ -1,6 +1,14 @@
 # Spades AI
 
-[![Paper PDF](report/image.png)](Towards%20Lightweight%20Human%20Level%20AI%20in%20Spades.pdf)
+<p align="center">
+  <a href="Towards%20Lightweight%20Human%20Level%20AI%20in%20Spades.pdf">
+    <img src="report/image.png" alt="Paper Thumbnail" width="400" />
+  </a>
+  <br>
+  <a href="Towards%20Lightweight%20Human%20Level%20AI%20in%20Spades.pdf">
+    <img src="https://img.shields.io/badge/📄_Read_the_Full_Paper-PDF-D22128?style=for-the-badge" alt="Read the Full Paper">
+  </a>
+</p>
 
 A Spades card game AI with reinforcement learning (RL), exact double-dummy solving, and a web-based GUI. The project trains an RL policy network (MLP) for the first 4 tricks of each hand and uses an exact solver for the remaining cards. Bidding is handled by a separate MLP model from the GO-MCTS submodule.
 
