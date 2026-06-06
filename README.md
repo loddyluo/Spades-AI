@@ -10,15 +10,37 @@ Developing human-level AI for trick-taking games like Spades is notoriously chal
 
 ![Main Architecture](report/main_graph.png)
 
-## Spades AI Rules (Immediate "No-Bags" Scoring)
+## Detailed Rules of Spades (Beginner-Friendly)
 
-Based on our paper, to address the common delay in feedback caused by traditional "bag" penalty rules (where overtricks accumulate across rounds), we adopt a modified **immediate no-bags scoring** rule in this project:
+Spades is a popular 4-player, trick-taking card game played in two partnerships. This AI project uses a specific scoring variant to encourage exact bidding. Here is how to play:
 
-- **Successful Contract ($T \geq B$):** The team earns $10 \times B$ points, but loses 9 points for every overtrick. Thus, the score is $10B - 9(T - B)$.
-- **Failed Contract ($T < B$):** The team is penalized and loses $10 \times B$ points.
-- **Nil Bid Scoring:** If a player bids Nil and wins 0 tricks, the team earns $+50$ points. If they win 1 or more tricks, the team is penalized $-50$ points.
+### 1. Basic Setup
+- **Players:** 4 players in 2 teams. Partners sit opposite each other.
+- **Deck:** A standard 52-card deck is used. Cards rank from highest to lowest: **A, K, Q, J, 10, 9, 8, 7, 6, 5, 4, 3, 2**.
+- **Trump Suit:** The **Spades (♠)** suit is always the trump suit. A Spade will beat any card from the other three suits.
+- **Dealing:** All 52 cards are dealt so each player starts with exactly 13 cards.
 
-For all experiments and training, the objective of each team is to maximize their own team's score minus the opponent team's score, for each single game.
+### 2. The Bidding Phase
+Before any cards are played, each player evaluates their hand and bids the number of "tricks" (rounds) they expect to win.
+- **Normal Bid:** You can bid any number from 1 to 13. Your bid and your partner's bid are added together to form a **Team Contract** (e.g., if you bid 3 and your partner bids 4, your team must win exactly 7 tricks).
+- **Nil Bid (0 Tricks):** You can bid 0 (Nil), meaning you promise to win *exactly zero* tricks. This is a high-risk, high-reward move and is scored completely independently of your partner's bid.
+
+### 3. The Playing Phase
+The game is played in 13 rounds, called "tricks." In each trick, all four players play exactly one card.
+- The player to the dealer's left starts by leading any card.
+- **Following Suit:** You **must** follow the suit that was led if you hold a card of that suit. (e.g., if Hearts are led, you must play a Heart if you have one).
+- **Trumping:** If you don't have a card of the led suit, you can play a Spade (trump) to win the trick, or discard any other suit to lose it.
+- **Winning the Trick:** The highest Spade played wins. If no Spades are played, the highest card of the led suit wins. The winner of the trick leads the first card for the next trick.
+
+### 4. Scoring (Immediate "No-Bags" Rule)
+In traditional Spades, winning more tricks than you bid (called "bags" or "overtricks") only hurts you after you accumulate 10 of them across several games. To encourage our AI to play with extreme precision, this project uses a stricter **immediate no-bags penalty**:
+
+Let $B$ be your team's total bid, and $T$ be the total tricks actually won.
+- **Successful Contract ($T \geq B$):** You earn $10 \times B$ points for meeting your bid. However, you immediately lose 9 points for **every** overtrick. Your final score is: $10B - 9(T - B)$.
+- **Failed Contract ($T < B$):** You failed to reach your target. Your team is penalized and loses $10 \times B$ points.
+- **Nil Bid Scoring:** If you bid Nil and successfully win 0 tricks, your team gets a $+50$ point bonus. If you fail and win 1 or more tricks, you get a $-50$ point penalty. (Your partner's bid is scored separately).
+
+**The Objective:** For all AI experiments, the goal of each team is to maximize their own team's score *minus* the opponent team's score.
 
 ---
 
