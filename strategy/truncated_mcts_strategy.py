@@ -1199,11 +1199,34 @@ class TruncatedMCTSStrategy:
 
         # Choose best action by weighted Q for root team
         root_team = state.teams[state.turn]
-        if action_q_values:
-            if root_team == 0:
-                best_action = max(action_q_values.items(), key=lambda it: it[1])[0]
+        if root_team == 0:
+            best_q = max(action_q_values.values()) if action_q_values else None
+        else:
+            best_q = min(action_q_values.values()) if action_q_values else None
+
+        # 选出 Q 值并列第一的牌，按花色优先级（S>H>D>C）和点数打破平局
+        if best_q is not None:
+            tied_cards = [c for c in action_q_values if action_q_values[c] == best_q]
+        else:
+            tied_cards = []
+
+        # 检查是否有人叫 0
+        has_nil = False
+        if hasattr(state, "max_bid") and state.max_bid:
+            has_nil = any(
+                isinstance(b, str) and b in ("nil", "blind_nil")
+                for b in state.max_bid
+            )
+
+        # 花色优先级：S(0) > H(1) > D(2) > C(3)，同花色点数越大优先级越高
+        def _card_priority_key(card: Card) -> tuple[int, int]:
+            return (card.suit.value, -card.rank.value)
+
+        if best_q is not None:
+            if has_nil:
+                best_action = min(tied_cards, key=_card_priority_key)  # 优先级最高
             else:
-                best_action = min(action_q_values.items(), key=lambda it: it[1])[0]
+                best_action = max(tied_cards, key=_card_priority_key)  # 优先级最低
         else:
             best_action = None
 
