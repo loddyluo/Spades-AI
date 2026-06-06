@@ -787,11 +787,42 @@ class RLExactPlayer(AIPlayer):
         # 根据玩家所在队伍选择动作：
         #   队伍 0 (座位 0,2) → max Q (Q 是 team0 - team1，越大越好)
         #   队伍 1 (座位 1,3) → min Q (分差越小，对 team1 越有利)
-        
+
         if my_team == 0:
-            best_action = max(action_q_values, key=action_q_values.get) if action_q_values else None
+            best_q = max(action_q_values.values()) if action_q_values else None
         else:
-            best_action = min(action_q_values, key=action_q_values.get) if action_q_values else None
+            best_q = min(action_q_values.values()) if action_q_values else None
+
+        # 选出 Q 值并列第一的合法牌
+        if best_q is not None:
+            tied_cards = [c for c in legal_cards if c in action_q_values and action_q_values[c] == best_q]
+        else:
+            tied_cards = []
+        if not tied_cards:
+            # 兜底：取有任何 Q 值的合法牌
+            tied_cards = [c for c in legal_cards if c in action_q_values]
+
+        # 检查是否有人叫 0
+        has_nil = False
+        if hasattr(state, "max_bid") and state.max_bid:
+            has_nil = any(
+                isinstance(b, str) and b in ("nil", "blind_nil")
+                for b in state.max_bid
+            )
+
+        # 花色优先级：S(0) > H(1) > D(2) > C(3)，同花色点数越大优先级越高
+        # 有人叫 0 → 出优先级最高的牌（S大牌 > ... > C小牌）
+        # 没人叫 0 → 出优先级最低的牌（C小牌 > ... > S大牌）
+        def _card_priority_key(card: Card) -> tuple[int, int]:
+            return (card.suit.value, -card.rank.value)
+
+        if tied_cards:
+            if has_nil:
+                best_action = min(tied_cards, key=_card_priority_key)  # 优先级最高
+            else:
+                best_action = max(tied_cards, key=_card_priority_key)  # 优先级最低
+        else:
+            best_action = None
 
         # 构造 action_scores 供 trace 日志记录（格式与 TruncatedMCTSStrategy 一致）
         action_scores = sorted(
