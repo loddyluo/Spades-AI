@@ -520,6 +520,62 @@ export async function advanceUntilHuman(state, onStep = null) {
 }
 
 /**
+ * Resolve AI turns until the hand is finished (all four seats are AI).
+ * Input: the current state, and an optional onStep(state) callback.
+ * Output: the finished state.
+ */
+export async function advanceUntilFinished(state, onStep = null) {
+  let next = state;
+  const emit = (s) => { next = s; if (onStep) onStep(s); };
+
+  const collectIfNeeded = async () => {
+    if (next.trickComplete) {
+      await sleep(PACE.trickHold);
+      emit(finalizeTrick(next));
+    }
+  };
+
+  await collectIfNeeded();
+
+  while (next.phase !== 'finished') {
+    if (next.phase === 'bidding') {
+      let bidState;
+      try {
+        const action = await requestAiAction(next);
+        if (action.kind !== 'bid') throw new Error(`AI returned ${action.kind} during bidding`);
+        bidState = applyBid(next, next.currentPlayer, makeBid(action.bid.value, action.bid.type), action.ai);
+      } catch (err) {
+        console.warn('Backend AI failed, using fallback AI:', err);
+        bidState = applyBid(next, next.currentPlayer, chooseAIBid(next, next.currentPlayer), 'fallback');
+      }
+      emit(bidState);
+      await sleep(PACE.aiStep);
+      continue;
+    }
+
+    if (next.phase === 'playing') {
+      let playState;
+      try {
+        const action = await requestAiAction(next);
+        if (action.kind !== 'play') throw new Error(`AI returned ${action.kind} during playing`);
+        playState = applyCard(next, next.currentPlayer, action.card, action.ai);
+      } catch (err) {
+        console.warn('Backend AI failed, using fallback AI:', err);
+        playState = applyCard(next, next.currentPlayer, chooseAICard(next, next.currentPlayer).code, 'fallback');
+      }
+      emit(playState);
+      await sleep(PACE.aiStep);
+      await collectIfNeeded();
+      continue;
+    }
+
+    break;
+  }
+
+  return next;
+}
+
+/**
  * Apply a human bid and then fast-forward AI turns (with animation steps).
  * Input: a state, the selected bid, and an optional onStep(state) callback.
  * Output: the next playable state.

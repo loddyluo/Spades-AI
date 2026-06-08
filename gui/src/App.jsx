@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  advanceUntilFinished,
   advanceUntilHuman,
   bidLabel,
   buildReplaySnapshot,
@@ -33,6 +34,7 @@ const MODE_LABELS = {
   single: '一局制',
   match500: '500 分赛',
   fixedSeed: '给定种子',
+  aiTest: '测试 AI',
 };
 
 const seedFromUrl = () => {
@@ -237,13 +239,13 @@ function replayTricksWonAt(snapshot, playIndex, trickComplete) {
   return won;
 }
 
-function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode, isHuman = false }) {
+function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode, isViewSeat = false, viewLabel = '(You)' }) {
   return (
     <div className={`replay-seat replay-seat--${pos}`}>
       <div className={`replay-seat__label team-${teamOf(seat)}`}>
         <span className="replay-seat__avatar">{SEAT_NAMES[seat][0]}</span>
         <div className="replay-seat__meta">
-          <strong>{SEAT_NAMES[seat]}{isHuman ? <> <em>(You)</em></> : null}</strong>
+          <strong>{SEAT_NAMES[seat]}{isViewSeat ? <> <em>{viewLabel}</em></> : null}</strong>
           <TallyBadges bid={snapshot.bids[seat]} won={tricksWon[seat]} />
         </div>
       </div>
@@ -258,7 +260,7 @@ function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode,
 }
 
 /* ── Full-hand replay screen (manual step-by-step only) ─────────────── */
-function ReplayScreen({ snapshot, onExit }) {
+function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
   const [phase, setPhase] = useState('ready'); // ready | done
   const [playIndex, setPlayIndex] = useState(0);
   const [trickComplete, setTrickComplete] = useState(false);
@@ -421,7 +423,8 @@ function ReplayScreen({ snapshot, onExit }) {
             pos="bottom"
             cards={remainingHands[snapshot.humanSeat]}
             highlightCode={highlightCode}
-            isHuman
+            isViewSeat
+            viewLabel={viewLabel}
           />
         </div>
       </main>
@@ -430,17 +433,20 @@ function ReplayScreen({ snapshot, onExit }) {
         <button className="btn-ghost" onClick={resetReplay} disabled={!canStepBack}>重新摊开</button>
         <button className="btn-ghost" onClick={stepBack} disabled={!canStepBack}>上一步</button>
         <button className="btn-new" onClick={stepForward} disabled={!canStepForward}>下一步</button>
-        <button className="btn-ghost" onClick={onExit}>返回结算</button>
+        <button className="btn-ghost" onClick={onExit}>{viewLabel === '(视角)' ? '返回菜单' : '返回结算'}</button>
       </footer>
     </div>
   );
 }
 
 /* ── Mode-select screen ─────────────────────────────────────────────── */
-function ModeMenu({ onPick, onFixedSeedStart, urlSeed }) {
+function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, urlSeed }) {
   const [seedInput, setSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
+  const [testSeedInput, setTestSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
   const [seat, setSeat] = useState(0);
+  const [viewSeat, setViewSeat] = useState(0);
   const [seedError, setSeedError] = useState('');
+  const [testSeedError, setTestSeedError] = useState('');
 
   const handleFixedStart = () => {
     const seed = normalizeSeed(seedInput);
@@ -450,6 +456,16 @@ function ModeMenu({ onPick, onFixedSeedStart, urlSeed }) {
     }
     setSeedError('');
     onFixedSeedStart(seed, seat);
+  };
+
+  const handleAiTestStart = () => {
+    const seed = normalizeSeed(testSeedInput);
+    if (seed == null) {
+      setTestSeedError('请输入非负整数种子');
+      return;
+    }
+    setTestSeedError('');
+    onAiTestStart(seed, viewSeat);
   };
 
   return (
@@ -493,6 +509,32 @@ function ModeMenu({ onPick, onFixedSeedStart, urlSeed }) {
           </div>
           {seedError ? <p className="seed-form__error">{seedError}</p> : null}
         </div>
+        <div className="mode-card mode-card--ai-test">
+          <span className="mode-card__icon">🤖</span>
+          <strong>测试 AI</strong>
+          <span className="mode-card__desc">指定种子让四家 AI 自动对局，结束后复盘。</span>
+          <div className="seed-form">
+            <label className="seed-form__field">
+              <span>种子</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={testSeedInput}
+                onChange={(e) => { setTestSeedInput(e.target.value); setTestSeedError(''); }}
+                placeholder="例如 12345"
+              />
+            </label>
+            <label className="seed-form__field">
+              <span>复盘视角</span>
+              <select value={viewSeat} onChange={(e) => setViewSeat(Number(e.target.value))}>
+                {SEAT_NAMES.map((label, i) => <option key={label} value={i}>{i} · {label}</option>)}
+              </select>
+            </label>
+            <button type="button" className="btn-new seed-form__go" onClick={handleAiTestStart}>开始对局</button>
+          </div>
+          {testSeedError ? <p className="seed-form__error">{testSeedError}</p> : null}
+        </div>
       </div>
     </div>
   );
@@ -502,7 +544,7 @@ function ModeMenu({ onPick, onFixedSeedStart, urlSeed }) {
 export default function App() {
   const urlSeed = seedFromUrl();
   const [screen, setScreen] = useState('menu');     // 'menu' | 'game' | 'replay'
-  const [mode, setMode] = useState('single');        // 'single' | 'match500' | 'fixedSeed'
+  const [mode, setMode] = useState('single');        // 'single' | 'match500' | 'fixedSeed' | 'aiTest'
   const [humanSeat, setHumanSeat] = useState(0);
   const [busy, setBusy] = useState(false);
   const [game, setGame] = useState(() => createInitialGame(0, 0));
@@ -550,6 +592,27 @@ export default function App() {
     setHumanSeat(seat);
     setScreen('game');
     await dealHand(seat, seed);
+  };
+
+  const startAiTest = async (seed, viewSeat = 0) => {
+    setMode('aiTest');
+    setMatchScore({ ns: 0, ew: 0 });
+    setHandNo(1);
+    setMatchOver(false);
+    settledSeedRef.current = null;
+    setHumanSeat(viewSeat);
+    setScreen('game');
+    setBusy(true);
+    try {
+      const fresh = createInitialGame(seed, viewSeat, 0);
+      setGame(fresh);
+      const finalState = await advanceUntilFinished(fresh, setGame);
+      setGame(finalState);
+      setReplaySnapshot(buildReplaySnapshot(finalState));
+      setScreen('replay');
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Next hand within a running 500-match (keeps cumulative score).
@@ -620,7 +683,8 @@ export default function App() {
   const seatAt = (pos) => [0, 1, 2, 3].find((s) => posOf(s) === pos);
 
   const humanHand = game.hands[game.humanSeat];
-  const myTurn = game.currentPlayer === game.humanSeat;
+  const isSpectator = mode === 'aiTest';
+  const myTurn = !isSpectator && game.currentPlayer === game.humanSeat;
   const isBidding = game.phase === 'bidding';
   const isPlaying = game.phase === 'playing';
 
@@ -636,6 +700,7 @@ export default function App() {
   // status text in the center of the table
   let statusText = '';
   if (finished) statusText = '本局结束';
+  else if (isSpectator && busy) statusText = 'AI 对局中…';
   else if (busy && !myTurn) statusText = '对手出牌中…';
   else if (isBidding && myTurn) statusText = '请叫牌';
   else if (isBidding) statusText = `${SEAT_NAMES[game.currentPlayer]} 叫牌中…`;
@@ -651,6 +716,7 @@ export default function App() {
         <ModeMenu
           onPick={(m) => { void startMatch(m); }}
           onFixedSeedStart={(seed, seat) => { void startFixedSeedMatch(seed, seat); }}
+          onAiTestStart={(seed, viewSeat) => { void startAiTest(seed, viewSeat); }}
           urlSeed={urlSeed}
         />
       </div>
@@ -661,7 +727,8 @@ export default function App() {
     return (
       <ReplayScreen
         snapshot={replaySnapshot}
-        onExit={() => setScreen('game')}
+        viewLabel={mode === 'aiTest' ? '(视角)' : '(You)'}
+        onExit={() => setScreen(mode === 'aiTest' ? 'menu' : 'game')}
       />
     );
   }
@@ -695,12 +762,14 @@ export default function App() {
             <div className="match-info"><span>局数</span><strong>第 {handNo} 局</strong></div>
           ) : null}
           <div className="match-info"><span>种子</span><strong>{game.seed}</strong></div>
-          <label className="ctl">
-            <span>座位</span>
-            <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy || (screen === 'game' && !finished)}>
-              {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} · {label}</option>)}
-            </select>
-          </label>
+          {!isSpectator ? (
+            <label className="ctl">
+              <span>座位</span>
+              <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy || (screen === 'game' && !finished)}>
+                {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} · {label}</option>)}
+              </select>
+            </label>
+          ) : null}
         </div>
       </header>
 
@@ -742,43 +811,55 @@ export default function App() {
 
         {/* ── human area ── */}
         <div className="stage__hand">
-          <div className={`me ${myTurn && !finished ? 'is-active' : ''} team-${myTeam}`}>
-            <span className="me__avatar">{SEAT_NAMES[game.humanSeat][0]}</span>
-            <div className="me__meta">
-              <strong>{SEAT_NAMES[game.humanSeat]} <em>(You)</em></strong>
-              <TallyBadges bid={game.bids[game.humanSeat]} won={summary.tricksWon[game.humanSeat]}
-                           hideBid={isBidding && !game.bids[game.humanSeat]} />
-            </div>
-          </div>
+          {isSpectator ? (
+            <AiSeat
+              pos="bottom"
+              seat={game.humanSeat}
+              summary={summary}
+              game={game}
+              active={game.currentPlayer === game.humanSeat}
+            />
+          ) : (
+            <>
+              <div className={`me ${myTurn && !finished ? 'is-active' : ''} team-${myTeam}`}>
+                <span className="me__avatar">{SEAT_NAMES[game.humanSeat][0]}</span>
+                <div className="me__meta">
+                  <strong>{SEAT_NAMES[game.humanSeat]} <em>(You)</em></strong>
+                  <TallyBadges bid={game.bids[game.humanSeat]} won={summary.tricksWon[game.humanSeat]}
+                               hideBid={isBidding && !game.bids[game.humanSeat]} />
+                </div>
+              </div>
 
-          {isBidding && myTurn ? (
-            <div className="bidbar">
-              <button className="chip chip--nil" disabled={busy} onClick={() => handleBid(makeBid(0, 'nil'))}>Nil</button>
-              {Array.from({ length: 13 }, (_, i) => i + 1).map((b) => (
-                <button key={b} className="chip" disabled={busy} onClick={() => handleBid(makeBid(b))}>{b}</button>
-              ))}
-            </div>
-          ) : null}
+              {isBidding && myTurn ? (
+                <div className="bidbar">
+                  <button className="chip chip--nil" disabled={busy} onClick={() => handleBid(makeBid(0, 'nil'))}>Nil</button>
+                  {Array.from({ length: 13 }, (_, i) => i + 1).map((b) => (
+                    <button key={b} className="chip" disabled={busy} onClick={() => handleBid(makeBid(b))}>{b}</button>
+                  ))}
+                </div>
+              ) : null}
 
-          <div className="fan" style={{ '--n': humanHand.length }} key={game.seed}>
-            {humanHand.map((card, i) => {
-              const center = (humanHand.length - 1) / 2;
-              const legal = isPlaying && myTurn && legalSet.has(card.code);
-              const playable = isPlaying && myTurn;
-              return (
-                <PlayingCard
-                  key={card.code}
-                  card={card}
-                  size="lg"
-                  legal={legal}
-                  disabled={!playable || (playable && !legal)}
-                  onPlay={handlePlay}
-                  className={`fan__card ${playable && !legal ? 'is-muted' : ''}`}
-                  style={{ '--rot': `${(i - center) * spread}deg`, '--idx': i }}
-                />
-              );
-            })}
-          </div>
+              <div className="fan" style={{ '--n': humanHand.length }} key={game.seed}>
+                {humanHand.map((card, i) => {
+                  const center = (humanHand.length - 1) / 2;
+                  const legal = isPlaying && myTurn && legalSet.has(card.code);
+                  const playable = isPlaying && myTurn;
+                  return (
+                    <PlayingCard
+                      key={card.code}
+                      card={card}
+                      size="lg"
+                      legal={legal}
+                      disabled={!playable || (playable && !legal)}
+                      onPlay={handlePlay}
+                      className={`fan__card ${playable && !legal ? 'is-muted' : ''}`}
+                      style={{ '--rot': `${(i - center) * spread}deg`, '--idx': i }}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </main>
 

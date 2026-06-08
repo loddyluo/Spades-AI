@@ -720,7 +720,14 @@ button { cursor: pointer; }
 }
 .menu__brand .brand__pip { font-size: 2.8rem; }
 .menu__sub { margin: 8px 0 28px; color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.84rem; }
-.menu__cards { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; }
+.menu__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 22px;
+  justify-content: center;
+  max-width: 1040px;
+  margin: 0 auto;
+}
 .mode-card {
   width: 240px; padding: 28px 24px;
   display: flex; flex-direction: column; align-items: center; gap: 10px;
@@ -742,6 +749,12 @@ button { cursor: pointer; }
   cursor: default;
 }
 .mode-card--seed:hover { transform: none; }
+.mode-card--ai-test {
+  background: linear-gradient(180deg, rgba(168, 120, 255, 0.18), rgba(12, 58, 32, 0.95));
+  border-color: rgba(168, 120, 255, 0.35);
+  cursor: default;
+}
+.mode-card--ai-test:hover { transform: none; }
 
 .seed-form {
   width: 100%;

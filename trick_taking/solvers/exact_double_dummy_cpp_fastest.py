@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import ctypes
 import os
-import subprocess
-import sys
 from typing import Any, Dict
 
 from trick_taking.card import Card, Rank, Suit
 from trick_taking.game_state import GameState
+from trick_taking.solvers._native_compile import compile_fastest_solver
 from trick_taking.solvers.exact_double_dummy import ExactDoubleDummySolver
+from trick_taking.solvers.native_lib_loader import ensure_native_library
 
 
 class _NativeState(ctypes.Structure):
@@ -69,49 +69,18 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
 
     def _ensure_library(self) -> None:
         this_dir = os.path.dirname(__file__)
-        src = os.path.join(this_dir, "exact_double_dummy_cpp_fastest_core.cpp")
-        out = os.path.join(this_dir, "_exact_double_dummy_cpp_fastest_core.so")
 
         try:
-            if (not os.path.exists(out)) or (os.path.getmtime(src) > os.path.getmtime(out)):
-                # Detect compiler
-                compiler = "g++"
-                # Try clang++ first (often better on macOS)
-                try:
-                    subprocess.check_call(["clang++", "--version"],
-                                          stdout=subprocess.DEVNULL,
-                                          stderr=subprocess.DEVNULL)
-                    compiler = "clang++"
-                except (FileNotFoundError, subprocess.CalledProcessError):
-                    pass
+            lib_path = ensure_native_library(
+                this_dir,
+                "_exact_double_dummy_cpp_fastest_core",
+                "exact_double_dummy_cpp_fastest_core.cpp",
+                compile_fastest_solver,
+            )
+            if lib_path is None:
+                raise RuntimeError("no loadable fastest solver binary for this platform")
 
-                flags = [
-                    compiler,
-                    "-O3",
-                    "-std=c++17",
-                    "-shared",
-                    "-fPIC",
-                    "-pthread",
-                    "-DNDEBUG",
-                    "-fomit-frame-pointer",
-                    "-funroll-loops",
-                ]
-
-                # Platform-specific flags
-                if sys.platform == "darwin":
-                    # macOS: use native arch
-                    flags.append("-march=native")
-                else:
-                    # Linux: use native + LTO
-                    flags.extend(["-march=native", "-flto"])
-
-                flags.extend([src, "-o", out])
-
-                print(f"Compiling fastest solver with {compiler}...")
-                subprocess.check_call(flags)
-                print("Compilation successful.")
-
-            self._lib = ctypes.CDLL(out)
+            self._lib = ctypes.CDLL(lib_path)
             self._lib.solve_native.argtypes = [ctypes.POINTER(_NativeState)]
             self._lib.solve_native.restype = ctypes.c_double
             self._lib.solve_native_with_q.argtypes = [

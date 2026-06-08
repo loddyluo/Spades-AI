@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import ctypes
 import os
-import subprocess
 from typing import Any, Dict
 
 from trick_taking.card import Card, Rank, Suit
 from trick_taking.game_state import GameState
+from trick_taking.solvers._native_compile import compile_native_solver
 from trick_taking.solvers.exact_double_dummy import ExactDoubleDummySolver
+from trick_taking.solvers.native_lib_loader import ensure_native_library
 
 
 class _NativeState(ctypes.Structure):
@@ -64,22 +65,18 @@ class ExactDoubleDummyCppNativeSolver(ExactDoubleDummySolver):
 
     def _ensure_library(self) -> None:
         this_dir = os.path.dirname(__file__)
-        src = os.path.join(this_dir, "exact_double_dummy_cpp_native_core.cpp")
-        out = os.path.join(this_dir, "_exact_double_dummy_cpp_native_core.so")
 
         try:
-            if (not os.path.exists(out)) or (os.path.getmtime(src) > os.path.getmtime(out)):
-                subprocess.check_call([
-                    "g++",
-                    "-O3",
-                    "-std=c++17",
-                    "-shared",
-                    "-fPIC",
-                    src,
-                    "-o",
-                    out,
-                ])
-            self._lib = ctypes.CDLL(out)
+            lib_path = ensure_native_library(
+                this_dir,
+                "_exact_double_dummy_cpp_native_core",
+                "exact_double_dummy_cpp_native_core.cpp",
+                compile_native_solver,
+            )
+            if lib_path is None:
+                raise RuntimeError("no loadable native solver binary for this platform")
+
+            self._lib = ctypes.CDLL(lib_path)
             self._lib.solve_native.argtypes = [ctypes.POINTER(_NativeState)]
             self._lib.solve_native.restype = ctypes.c_double
             self._lib.solve_native_with_q.argtypes = [
