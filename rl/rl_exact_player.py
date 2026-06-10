@@ -750,10 +750,22 @@ class RLExactPlayer(AIPlayer):
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
         else:
-            # Top-K by weight, weighted average
+            # Top-K by weight, weighted average (去重后取唯一的前 K 个)
             paired = list(zip(pool_hands, pool_weights))
             paired.sort(key=lambda x: x[1], reverse=True)
-            top_hands, top_weights = zip(*paired[:K])
+            seen = set()
+            unique_paired = []
+            for hand_proposal, w in paired:
+                key = tuple(
+                    tuple(c.card_id for c in hand)
+                    for hand in hand_proposal
+                )
+                if key not in seen:
+                    seen.add(key)
+                    unique_paired.append((hand_proposal, w))
+                    if len(unique_paired) >= K:
+                        break
+            top_hands, top_weights = zip(*unique_paired) if unique_paired else ([], [])
             weight_sum = sum(top_weights)
             norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / K] * K
 
