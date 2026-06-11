@@ -15,6 +15,8 @@ RL + Exact 混合出牌玩家。
 from __future__ import annotations
 
 import copy
+import importlib.util
+import os
 import random
 import sys
 from pathlib import Path
@@ -95,6 +97,30 @@ class RLExactPlayer(AIPlayer):
         self._current_trick_cards: list[tuple[int, Card]] = []
         self._pending_entry_idx: int = -1
         self._nil_bidders: set[int] = set()  # 叫 0 的玩家 id，用于奖励调整
+
+        # 加载 rule_based_v2 和 bridge 模块（用于 exact 阶段平局时的出牌建议）
+        self._prior_oracle = None
+        self._bridge_mod = None
+        try:
+            collab_root = Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS"
+            if str(collab_root) not in sys.path:
+                sys.path.insert(0, str(collab_root))
+            from spades_ai.players.rule_based_v2.player import RuleBasedPlayer as _RBP  # type: ignore
+            self._prior_oracle = _RBP()
+        except Exception:
+            self._prior_oracle = None
+
+        try:
+            base = os.path.dirname(__file__)
+            bridge_path = os.path.normpath(os.path.join(base, "..", "evaluate", "GO-MCTS", "bridge.py"))
+            if os.path.exists(bridge_path):
+                spec = importlib.util.spec_from_file_location("_go_bridge", bridge_path)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    self._bridge_mod = mod
+        except Exception:
+            self._bridge_mod = None
 
     def start_game(self, position: int, hand: list[Card], num_players: int) -> None:
         self.position = position
@@ -192,20 +218,83 @@ class RLExactPlayer(AIPlayer):
         options: list[Card | None] = [None, None, None]
         has_lead_suit = any(c.suit == lead_suit for c in hand)
 
-        # ── 选项 0: 出最小牌 ──
-        # 跟牌时出手里最小的该花色牌；垫牌时出最短花色中的最小牌
-        if has_lead_suit:
-            lead_cards = sorted(
-                [c for c in hand if c.suit == lead_suit],
-                key=lambda x: x.rank.value,
-            )
-            options[0] = lead_cards[0]
+        # ── 选项 0: 出最小牌（默认）或 nil 安全策略 ──
+        # 如果自己叫了 0 且目前吃了 0 墩，则出比桌上最大牌小的牌中最大的一张
+        # （避免意外赢墩）；否则出最小牌
+        is_nil = False
+        if hasattr(state, "max_bid") and state.max_bid:
+            my_bid = state.max_bid[self.position] if self.position < len(state.max_bid) else None
+            is_nil = my_bid in ("nil", "blind_nil")
+
+        nil_zero_tricks = False
+        if is_nil:
+            tricks_won = 0
+            for record in state.trick_history:
+                trick_cards = record.cards
+                lead_suit_in_trick = trick_cards[0][1].suit
+                best_idx = 0
+                best_card_in_trick = trick_cards[0][1]
+                for i in range(1, 4):
+                    _, card = trick_cards[i]
+                    if card.suit == Suit.SPADES:
+                        if best_card_in_trick.suit != Suit.SPADES or card.rank.value > best_card_in_trick.rank.value:
+                            best_idx = i
+                            best_card_in_trick = card
+                    elif card.suit == lead_suit_in_trick and best_card_in_trick.suit != Suit.SPADES:
+                        if card.rank.value > best_card_in_trick.rank.value:
+                            best_idx = i
+                            best_card_in_trick = card
+                winner_pid = trick_cards[best_idx][0]
+                if winner_pid == self.position:
+                    tricks_won += 1
+            nil_zero_tricks = (tricks_won == 0)
+
+        if nil_zero_tricks:
+            # nil 安全策略：出比桌上最大牌小的牌中最大的一张
+            best_on_table = self._find_best_card_on_table(table_cards)
+            if has_lead_suit:
+                candidates = [c for c in hand if c.suit == lead_suit]
+            else:
+                candidates = list(hand)
+            # 找出不会赢墩的牌
+            safe_cards = []
+            for c in candidates:
+                if best_on_table is None:
+                    safe_cards.append(c)
+                elif c.suit == Suit.SPADES and best_on_table.suit != Suit.SPADES:
+                    pass  # 将吃会赢墩，排除
+                elif c.suit != best_on_table.suit and c.suit != Suit.SPADES:
+                    safe_cards.append(c)  # 垫不同花色不会赢
+                elif c.suit == best_on_table.suit and c.rank.value < best_on_table.rank.value:
+                    safe_cards.append(c)  # 同花色但更小
+            if safe_cards:
+                options[0] = max(safe_cards, key=lambda x: x.rank.value)
+            else:
+                # 没有安全牌，兜底出最小牌
+                if has_lead_suit:
+                    lead_cards = sorted(
+                        [c for c in hand if c.suit == lead_suit],
+                        key=lambda x: x.rank.value,
+                    )
+                    options[0] = lead_cards[0]
+                else:
+                    non_empty = {s: cards for s, cards in hand_by_suit.items() if cards}
+                    if non_empty:
+                        shortest_suit = min(non_empty.keys(), key=lambda s: len(non_empty[s]))
+                        options[0] = min(non_empty[shortest_suit], key=lambda x: x.rank.value)
         else:
-            # 垫牌: 找最短花色（非空）中的最小牌
-            non_empty = {s: cards for s, cards in hand_by_suit.items() if cards}
-            if non_empty:
-                shortest_suit = min(non_empty.keys(), key=lambda s: len(non_empty[s]))
-                options[0] = min(non_empty[shortest_suit], key=lambda x: x.rank.value)
+            # 原逻辑：出最小牌
+            if has_lead_suit:
+                lead_cards = sorted(
+                    [c for c in hand if c.suit == lead_suit],
+                    key=lambda x: x.rank.value,
+                )
+                options[0] = lead_cards[0]
+            else:
+                non_empty = {s: cards for s, cards in hand_by_suit.items() if cards}
+                if non_empty:
+                    shortest_suit = min(non_empty.keys(), key=lambda s: len(non_empty[s]))
+                    options[0] = min(non_empty[shortest_suit], key=lambda x: x.rank.value)
 
         # ── 选项 1: 出能赢当前墩的最小牌 ──
         best_card = self._find_best_card_on_table(table_cards)
@@ -655,7 +744,7 @@ class RLExactPlayer(AIPlayer):
             pos_in_trick = (pos_in_trick + 1) % 4
             if pos_in_trick == 0:
                 led_suit = None
-        #print(weight)
+        ##print(weight)
         return weight * bid_prod * math.exp(random.uniform(0, 0.4))
         #return (weight* math.exp(random.uniform(0, 8)))**0.3 * bid_prod  # 0.3 是经验值，调小一些以增加多样性
 
@@ -768,6 +857,7 @@ class RLExactPlayer(AIPlayer):
             top_hands, top_weights = zip(*unique_paired) if unique_paired else ([], [])
             weight_sum = sum(top_weights)
             norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / K] * K
+            #print(norm_factors, "length= ", len(norm_factors))
 
             for hand_proposal, norm_w in zip(top_hands, norm_factors):
                 sim_state = copy.deepcopy(state)
@@ -785,6 +875,7 @@ class RLExactPlayer(AIPlayer):
                                 multiplier *= 10.0
                             agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
                         else:
+                            #print("the player use this way")
                             multiplier = float(q) - min_q
                             if multiplier > 40.0:
                                 multiplier *= 10.0
@@ -805,6 +896,7 @@ class RLExactPlayer(AIPlayer):
         else:
             best_q = min(action_q_values.values()) if action_q_values else None
 
+        #print(action_q_values)
         # 选出 Q 值并列第一的合法牌
         if best_q is not None:
             tied_cards = [c for c in legal_cards if c in action_q_values and action_q_values[c] == best_q]
@@ -829,9 +921,29 @@ class RLExactPlayer(AIPlayer):
             return (card.suit.value, -card.rank.value)
 
         if tied_cards:
-            if has_nil:
+            # 先看 rule_based_v2 的建议是否在 tied_cards 中
+            #print("tied_cards:", tied_cards)
+            rb_action = None
+            if self._prior_oracle is not None and self._bridge_mod is not None:
+                try:
+                    go_state = self._bridge_mod.to_go_state(state)
+                    go_card = self._prior_oracle.choose_card(go_state)
+                    local_card = self._bridge_mod.to_local_card(go_card)
+                    for c in tied_cards:
+                        if c.card_id == local_card.card_id:
+                            #print("action 1")
+                            rb_action = c
+                            break
+                except Exception:
+                    rb_action = None
+
+            if rb_action is not None:
+                best_action = rb_action
+            elif has_nil:
+                #print("has nil action 3")
                 best_action = min(tied_cards, key=_card_priority_key)  # 优先级最高
             else:
+                #print("action 2")
                 best_action = max(tied_cards, key=_card_priority_key)  # 优先级最低
         else:
             best_action = None

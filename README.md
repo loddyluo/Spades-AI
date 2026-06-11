@@ -69,6 +69,22 @@ A typical install:
 pip install torch numpy tqdm transformers tensorboard
 ```
 
+Troubleshooting：
+
+Installing nvm:
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+```
+
+reopen the terminal
+
+```bash
+nvm install 20
+nvm use 20
+```
+
+
 ### GUI — Play Against the AI
 
 Terminal 1 — Python AI backend:
