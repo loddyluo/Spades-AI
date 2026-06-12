@@ -818,6 +818,7 @@ class RLExactPlayer(AIPlayer):
 
         rng = random.Random()
         K = 32
+        SAMPLE_INDICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 20, 28, 40, 57, 80, 110, 160, 230, 320, 450, 640, 900, 1280, 1810, 2560, 3600, 5120]
         id_to_card = {c.card_id: c for c in STANDARD_52}
 
         # Build IS pool
@@ -838,8 +839,9 @@ class RLExactPlayer(AIPlayer):
                     agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
+            n_samples_used = counts
         else:
-            # Top-K by weight, weighted average (去重后取唯一的前 K 个)
+            # 去重并按权重降序排列，再按指定索引位置选取
             paired = list(zip(pool_hands, pool_weights))
             paired.sort(key=lambda x: x[1], reverse=True)
             seen = set()
@@ -852,12 +854,23 @@ class RLExactPlayer(AIPlayer):
                 if key not in seen:
                     seen.add(key)
                     unique_paired.append((hand_proposal, w))
-                    if len(unique_paired) >= K:
+                    if len(unique_paired) >= 5120:
                         break
-            top_hands, top_weights = zip(*unique_paired) if unique_paired else ([], [])
+
+            n_unique = len(unique_paired)
+            selected = []
+            for idx in SAMPLE_INDICES:
+                if idx <= n_unique:
+                    selected.append(unique_paired[idx - 1])
+                else:
+                    break
+
+            top_hands = [item[0] for item in selected]
+            top_weights = [item[1] for item in selected]
+            n_selected = len(top_hands)
             weight_sum = sum(top_weights)
-            norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / K] * K
-            #print(norm_factors, "length= ", len(norm_factors))
+            norm_factors = [w / weight_sum for w in top_weights] if weight_sum > 0 else [1.0 / n_selected] * n_selected
+            n_samples_used = n_selected
 
             for hand_proposal, norm_w in zip(top_hands, norm_factors):
                 sim_state = copy.deepcopy(state)
@@ -959,7 +972,7 @@ class RLExactPlayer(AIPlayer):
         if best_action is not None and best_action in legal_cards:
             self.last_play_info = {
                 "mode": "exact_is_determinized",
-                "samples": K,
+                "samples": n_samples_used,
                 "best_value": best_value,
                 "action_scores": action_scores,
             }
