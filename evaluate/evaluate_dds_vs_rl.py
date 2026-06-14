@@ -10,7 +10,7 @@ Checkpoint selection depends on nil bids:
 Usage:
     python evaluate/evaluate_dds_vs_rl.py \
         --p0 dds --p1 rl_exact --p2 dds --p3 rl_exact \
-        --num-games 64 --seed 6020000 --num-workers 32 --our-number-of-exact-solvers 16
+        --num-games 200 --seed 8880000 --num-workers 20
 """
 
 from __future__ import annotations

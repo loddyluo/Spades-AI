@@ -745,12 +745,19 @@ class RLExactPlayer(AIPlayer):
             if pos_in_trick == 0:
                 led_suit = None
         ##print(weight)
-        return weight * bid_prod * math.exp(random.uniform(0, 0.4))
+        actual_weight = weight * bid_prod * math.exp(random.uniform(0, 0.6)) # 0.4→0.6
+        weight_ans = 1.0
+        # if actual_weight >= 0.01:
+        #     weight_ans = actual_weight ** 0.5
+        # else:
+        #     weight_ans = 0.10 * ((actual_weight * 100.0)**0.2)
+        weight_ans = actual_weight ** 0.3
+        return  weight_ans
         #return (weight* math.exp(random.uniform(0, 8)))**0.3 * bid_prod  # 0.3 是经验值，调小一些以增加多样性
 
     def _build_is_pool(
         self, state: GameState, observer_id: int, rng: random.Random,
-        num_proposals: int = 6789,
+        num_proposals: int = 1234,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build IS pool: generate proposals, compute weights."""
         play_sequence = self._build_play_sequence(state)
@@ -817,8 +824,19 @@ class RLExactPlayer(AIPlayer):
             return legal_cards[0]
 
         rng = random.Random()
-        K = 32
-        SAMPLE_INDICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 20, 28, 40, 57, 80, 110, 160, 230, 320, 450, 640, 900, 1280, 1810, 2560, 3600, 5120]
+        # 计算剩余牌数，决定采样预算：越往后预算越大
+        remaining_in = sum(len(h) for h in state.hands)
+        if remaining_in <= 16:
+            top_k, max_samples = 128, 256      # 最后3墩
+        elif remaining_in <= 24:
+            top_k, max_samples = 64, 128       # 倒数第5、4墩
+        elif remaining_in <= 28:
+            top_k, max_samples = 32, 64        # 倒数第7和第6墩
+        elif remaining_in <= 32:
+            top_k, max_samples = 16, 32        # 倒数第7和第6墩    
+        else:
+            top_k, max_samples = 12, 24
+        K = max_samples
         id_to_card = {c.card_id: c for c in STANDARD_52}
 
         # Build IS pool
@@ -841,7 +859,7 @@ class RLExactPlayer(AIPlayer):
                 agg_q[k] /= max(1, counts)
             n_samples_used = counts
         else:
-            # 去重并按权重降序排列，再按指定索引位置选取
+            # 去重并按权重降序排列
             paired = list(zip(pool_hands, pool_weights))
             paired.sort(key=lambda x: x[1], reverse=True)
             seen = set()
@@ -857,13 +875,50 @@ class RLExactPlayer(AIPlayer):
                     if len(unique_paired) >= 5120:
                         break
 
-            n_unique = len(unique_paired)
-            selected = []
-            for idx in SAMPLE_INDICES:
-                if idx <= n_unique:
-                    selected.append(unique_paired[idx - 1])
-                else:
+            # 确定要检查分布的花色：
+            # 如果不是领出且手中有领出花色，则检查该花色；否则检查黑桃
+            check_suit = Suit.SPADES
+            if len(state.table_cards) > 0:
+                lead_suit = state.table_cards[0][1].suit
+                if any(c.suit == lead_suit for c in state.hands[self.position]):
+                    check_suit = lead_suit
+
+            # 选 top-K 必定进入
+            selected = list(unique_paired[:top_k])
+
+            # 计算已选proposal的目标花色分布
+            selected_suit_dists = []
+            for hand_proposal, _ in selected:
+                dist: dict[int, int] = {}
+                for player_idx, hand in enumerate(hand_proposal):
+                    for card in hand:
+                        if card.suit == check_suit:
+                            dist[card.card_id] = player_idx
+                selected_suit_dists.append(dist)
+
+            # 从 top_k+1 开始遍历，选取目标花色分布与前面所有已选均不同的proposal
+            for i in range(top_k, len(unique_paired)):
+                if len(selected) >= max_samples:
                     break
+                cand_hand, cand_w = unique_paired[i]
+                cand_dist: dict[int, int] = {}
+                for player_idx, hand in enumerate(cand_hand):
+                    for card in hand:
+                        if card.suit == check_suit:
+                            cand_dist[card.card_id] = player_idx
+
+                # 检查是否与所有已选proposal的目标花色分布都不同
+                # 定义"不同"：存在一张该花色的牌，在两副牌中的所属方不同
+                diff_from_all = True
+                for dist in selected_suit_dists:
+                    same = all(cand_dist.get(cid) == dist.get(cid) for cid in cand_dist)
+                    if same:
+                        diff_from_all = False
+                        break
+
+                if diff_from_all:
+                    selected.append((cand_hand, cand_w))
+                    selected_suit_dists.append(cand_dist)
 
             top_hands = [item[0] for item in selected]
             top_weights = [item[1] for item in selected]
@@ -927,11 +982,11 @@ class RLExactPlayer(AIPlayer):
                 for b in state.max_bid
             )
 
-        # 花色优先级：S(0) > H(1) > D(2) > C(3)，同花色点数越大优先级越高
-        # 有人叫 0 → 出优先级最高的牌（S大牌 > ... > C小牌）
-        # 没人叫 0 → 出优先级最低的牌（C小牌 > ... > S大牌）
-        def _card_priority_key(card: Card) -> tuple[int, int]:
-            return (card.suit.value, -card.rank.value)
+        # 所有黑桃优先级最大，非黑桃先比较点数再比较花色
+        # 有人叫 0 → 出优先级最高的牌（S大牌 > ... > 小牌H/D/C）
+        # 没人叫 0 → 出优先级最低的牌（小牌H/D/C > ... > S大牌）
+        def _card_priority_key(card: Card) -> tuple:
+            return (card.suit != Suit.SPADES, -card.rank.value, card.suit.value)
 
         if tied_cards:
             # 先看 rule_based_v2 的建议是否在 tied_cards 中
