@@ -577,47 +577,48 @@ class RLExactPlayer(AIPlayer):
             return int(bid_str.split("_")[1])
         return 0
 
+    def _ensure_bid_model_loaded(self) -> bool:
+        """Lazy-load BidMLP for IS weighting. Returns True if model is available."""
+        if hasattr(self, "_bid_model_is") and self._bid_model_is is not None:
+            return hasattr(self, "_bid_encoder_is") and self._bid_encoder_is is not None
+
+        if hasattr(self, "_bid_model") and self._bid_model is not None:
+            pass
+        try:
+            go_dir = Path(__file__).resolve().parents[1] / "evaluate" / "GO-MCTS"
+            if str(go_dir) not in sys.path:
+                sys.path.insert(0, str(go_dir))
+            from spades_ai.models.bid_mlp import BidMLP
+            from spades_ai.models.bid_encoder import BidEncoder
+
+            possible_paths = [
+                Path("./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt"),
+                Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt",
+            ]
+            ckpt = None
+            for p in possible_paths:
+                if p.exists():
+                    ckpt = str(p.resolve())
+                    break
+            if ckpt:
+                self._bid_model_is = BidMLP()
+                sd = torch.load(ckpt, weights_only=True, map_location="cpu")
+                self._bid_model_is.load_state_dict(sd)
+                self._bid_model_is.eval()
+                self._bid_encoder_is = BidEncoder()
+                return True
+            else:
+                self._bid_model_is = None
+                return False
+        except Exception:
+            self._bid_model_is = None
+            return False
+
     def _compute_bid_probs_product(
         self, initial_hands: list[list[Card]], max_bid: list[str],
     ) -> float:
-        """∏ P(bid_p | hand_p) from BidMLP softmax."""
-        # lazy-load BidMLP for IS weighting (separate from self._bid_model)
-        if not hasattr(self, "_bid_model_is") or self._bid_model_is is None:
-            ckpt_path = ""
-            if hasattr(self, "_bid_model") and self._bid_model is not None:
-                pass  # use the already-loaded bid model if compatible
-            # Try to load from standard path
-            try:
-                go_dir = Path(__file__).resolve().parents[1] / "evaluate" / "GO-MCTS"
-                if str(go_dir) not in sys.path:
-                    sys.path.insert(0, str(go_dir))
-                from spades_ai.models.bid_mlp import BidMLP
-                from spades_ai.models.bid_encoder import BidEncoder
-
-                # Find checkpoint
-                possible_paths = [
-                    Path("./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt"),
-                    Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt",
-                ]
-                ckpt = None
-                for p in possible_paths:
-                    if p.exists():
-                        ckpt = str(p.resolve())
-                        break
-                if ckpt:
-                    self._bid_model_is = BidMLP()
-                    sd = torch.load(ckpt, weights_only=True, map_location="cpu")
-                    self._bid_model_is.load_state_dict(sd)
-                    self._bid_model_is.eval()
-                    self._bid_encoder_is = BidEncoder()
-                else:
-                    self._bid_model_is = None
-                    return 1.0
-            except Exception:
-                self._bid_model_is = None
-                return 1.0
-
-        if not hasattr(self, "_bid_encoder_is") or self._bid_encoder_is is None:
+        """∏ P(bid_p | hand_p) from BidMLP softmax (single proposal)."""
+        if not self._ensure_bid_model_loaded():
             return 1.0
 
         from spades_ai.game.card import Card as GoCard
@@ -657,6 +658,54 @@ class RLExactPlayer(AIPlayer):
             product *= float(smoothed[p, idx].item())
         return product
 
+    def _compute_batch_bid_prods(
+        self, proposals: list[list[list[Card]]], max_bid: list[str],
+    ) -> list[float]:
+        """Compute ∏ P(bid_p | hand_p) for all proposals in one batched MLP forward."""
+        if not self._ensure_bid_model_loaded():
+            return [1.0] * len(proposals)
+
+        from spades_ai.game.card import Card as GoCard
+        from spades_ai.game.card import Rank as GoRank, Suit as GoSuit
+        from spades_ai.game.state import Bid as GoBid
+        from spades_ai.game.scoring import BidType as GoBidType
+
+        def _to_go_bid(bid_str: str) -> GoBid:
+            if bid_str == "nil":
+                return GoBid(value=0, bid_type=GoBidType.NIL)
+            if bid_str == "blind_nil":
+                return GoBid(value=0, bid_type=GoBidType.BLIND_NIL)
+            if bid_str.startswith("bid_"):
+                return GoBid(value=int(bid_str.split("_")[1]), bid_type=GoBidType.NORMAL)
+            return GoBid(value=0, bid_type=GoBidType.NORMAL)
+
+        go_bids = [_to_go_bid(b) for b in max_bid]
+        all_features = []
+        for initial_hands in proposals:
+            for p in range(4):
+                hand = [GoCard(GoRank(c.rank.value), GoSuit[c.suit.name]) for c in initial_hands[p]]
+                prev = go_bids[:p]
+                position = min(p, 2)
+                features = self._bid_encoder_is.encode(hand, prev, position)
+                all_features.append(features.unsqueeze(0))
+
+        x = torch.cat(all_features, dim=0)
+        with torch.no_grad():
+            logits = self._bid_model_is(x)
+        probs = torch.softmax(logits, dim=-1)
+        uniform = 1.0 / 14
+        smoothed = 0.99 * probs + 0.01 * uniform
+
+        n = len(proposals)
+        bid_prods = []
+        for i in range(n):
+            product = 1.0
+            for p in range(4):
+                idx = self._bid_str_to_mlp_index(max_bid[p])
+                product *= float(smoothed[i * 4 + p, idx].item())
+            bid_prods.append(product)
+        return bid_prods
+
     def _generate_proposal(
         self, all_cards: list[Card], observer_id: int,
         observer_current_hand: list[Card],
@@ -694,13 +743,16 @@ class RLExactPlayer(AIPlayer):
         self, initial_hands: list[list[Card]],
         play_sequence: list[tuple[int, Card]],
         max_bid: list[str] | None = None,
+        bid_prod: float | None = None,
     ) -> float:
         """Replay play_sequence against initial_hands; compute p = ∏(p_step).
 
         p = P_bid * ∏_{step} (1 / legal_count).
         Returns 0 if any move was illegal given this deal.
         """
-        if max_bid is not None:
+        if bid_prod is not None:
+            pass
+        elif max_bid is not None:
             bid_prod = self._compute_bid_probs_product(initial_hands, max_bid)
         else:
             bid_prod = 1.0
@@ -757,7 +809,7 @@ class RLExactPlayer(AIPlayer):
 
     def _build_is_pool(
         self, state: GameState, observer_id: int, rng: random.Random,
-        num_proposals: int = 1234,
+        num_proposals: int = 6789,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build IS pool: generate proposals, compute weights."""
         play_sequence = self._build_play_sequence(state)
@@ -776,16 +828,27 @@ class RLExactPlayer(AIPlayer):
         for p, c in play_sequence:
             played_by_player[p].append(c)
 
-        proposals: list[list[list[Card]]] = []
-        prop_weights: list[float] = []
-
+        # Step 1: generate all proposals first
+        all_proposals: list[list[list[Card]]] = []
         for _ in range(num_proposals):
             initial_hands = self._generate_proposal(
                 state.all_cards, observer_id, state.hands[observer_id],
                 played_by_player, rng,
             )
+            all_proposals.append(initial_hands)
+
+        # Step 2: compute bid probability products in one batched MLP forward
+        if max_bid is not None:
+            bid_prods = self._compute_batch_bid_prods(all_proposals, max_bid)
+        else:
+            bid_prods = [1.0] * num_proposals
+
+        # Step 3: compute importance weights, filter zero-weight proposals
+        proposals: list[list[list[Card]]] = []
+        prop_weights: list[float] = []
+        for initial_hands, bid_prod in zip(all_proposals, bid_prods):
             w = self._compute_importance_weight(
-                initial_hands, play_sequence, max_bid=max_bid,
+                initial_hands, play_sequence, bid_prod=bid_prod,
             )
             if w > 0.0:
                 proposals.append(initial_hands)
