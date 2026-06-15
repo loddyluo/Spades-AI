@@ -809,7 +809,7 @@ class RLExactPlayer(AIPlayer):
 
     def _build_is_pool(
         self, state: GameState, observer_id: int, rng: random.Random,
-        num_proposals: int = 6789,
+        num_proposals: int = 1234,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build IS pool: generate proposals, compute weights."""
         play_sequence = self._build_play_sequence(state)
@@ -1003,13 +1003,13 @@ class RLExactPlayer(AIPlayer):
                         if my_team == 0:
                             multiplier = float(q) - max_q  # Subtract max_q for numerical stability
                             if multiplier < -40.0:
-                                multiplier *= 10.0
+                                multiplier *= 2.0
                             agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
                         else:
                             #print("the player use this way")
                             multiplier = float(q) - min_q
                             if multiplier > 40.0:
-                                multiplier *= 10.0
+                                multiplier *= 2.0
                             agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
 
         # Reconstruct action -> q using Card objects

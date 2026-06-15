@@ -933,7 +933,7 @@ class TruncatedMCTSStrategy:
         state: GameState,
         observer_id: int,
         rng: random.Random | None = None,
-        num_proposals: int = 6789,
+        num_proposals: int = 1234,
     ) -> tuple[list[list[list[Card]]], list[float]]:
         """Build importance-sampling pool once per decision.
 
@@ -947,7 +947,7 @@ class TruncatedMCTSStrategy:
         - state: current game state.
         - observer_id: player whose hand is fully known.
         - rng: optional seeded random generator.
-        - num_proposals: number of initial deal proposals to sample (default 6789).
+        - num_proposals: number of initial deal proposals to sample (default 1234).
 
         Output:
         - (proposals, weights) where proposals[i] is 4 initial hands, weights[i] is p.
