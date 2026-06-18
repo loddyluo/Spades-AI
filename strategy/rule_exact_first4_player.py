@@ -18,22 +18,28 @@
 
 注意:
 - 叫牌完全照抄 RLExactPlayer 的 MLP-bid 逻辑, 这样和 DDS / RL 公平。
-- 规则式玩家自身只读自己的手牌+桌面+历史(盲眼); exact_solver 会读 state.hands(全开),
-  这与 RLExactPlayer 一样 —— "后 36 张作弊"是评估用的标准设定。
+- 规则式玩家自身只读自己的手牌+桌面+历史(盲眼); 后 36 张的 exact solver 对对手
+  手牌做 32 次 determinize 采样后平均 Q 值, 与 RLExactPlayer 的 exact 阶段一致。
 """
 
 from __future__ import annotations
 
+import copy
+import math
+import random
 import sys
 from pathlib import Path
 from typing import Any
 
-from trick_taking.card import Card
+import torch
+
+from trick_taking.card import Card, Suit, _STANDARD_CARDS as STANDARD_52
 from trick_taking.game_state import GameState
 from trick_taking.player import AIPlayer
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
     ExactDoubleDummyCppFastestSolver,
 )
+from strategy.hyperparam_config import HyperparamConfig
 from strategy.rule_based_first4_player import RuleBasedFirst4Player
 
 
@@ -41,6 +47,9 @@ class RuleExactFirst4Player(AIPlayer):
     """前 4 墩 rule-based + 后 36 张 exact solver 的混合玩家。
 
     与 `rl.rl_exact_player.RLExactPlayer` 一一对应, 仅前 4 墩的决策来源不同。
+
+    当有人叫 nil 时，前 4 墩自动切换为使用 nil 策略网络 (55_2nil.pt) 出牌，
+    与 RLExactPlayer 的行为保持一致。
     """
 
     def __init__(
@@ -49,17 +58,27 @@ class RuleExactFirst4Player(AIPlayer):
         exact_threshold: int = 36,
         bid_model=None,
         bid_device: str = "cpu",
+        policy_net_nil: Any | None = None,
+        encoder: Any | None = None,
+        hyperparam_config: HyperparamConfig | None = None,
     ) -> None:
         # 内部规则式玩家. 不让它处理后 36 张 (我们自己路由)。
         self._rule_player = RuleBasedFirst4Player()
         self.exact_threshold = exact_threshold
         self._bid_model = bid_model
         self._bid_device = bid_device
+        self.config = hyperparam_config or HyperparamConfig.default()
 
         self.position: int = -1
         self.hand: list[Card] = []
         self.last_play_info: dict[str, Any] = {}
         self.last_bid_info: dict[str, Any] | None = None
+
+        # nil 策略网络（有人叫 0 时替代 rule-based 打前 4 墩）
+        self._policy_net_nil = policy_net_nil
+        self._encoder = encoder
+        self._has_nil_bid = False
+        self._rl_nil_player: Any | None = None
 
         # 精确求解器
         if exact_solver is not None:
@@ -74,6 +93,8 @@ class RuleExactFirst4Player(AIPlayer):
         self.position = position
         self.hand = list(hand)
         self.last_play_info = {}
+        self._has_nil_bid = False
+        self._rl_nil_player = None
         self._rule_player.start_game(position, hand, num_players)
 
     def place_bid(self, legal_bids: list[Any], state_view: dict) -> Any:
@@ -123,10 +144,35 @@ class RuleExactFirst4Player(AIPlayer):
             self._rule_player.set_teams(teams, bid_values)
         except Exception:
             pass
+        # 检测是否有人叫 nil，若是则在 / 前 4 墩切换到策略网络
+        nil_bid = any(
+            isinstance(bv, str) and bv in ("nil", "blind_nil")
+            for bv in bid_values
+        )
+        self._has_nil_bid = nil_bid
+        if nil_bid and self._policy_net_nil is not None and self._rl_nil_player is None:
+            # 导入 RLExactPlayer 并创建内部实例处理前 4 墩
+            from rl.policy_network import PolicyMLP
+            from rl.rl_feature_encoder import RLFeatureEncoder
+            from rl.rl_exact_player import RLExactPlayer
+
+            encoder = self._encoder or RLFeatureEncoder()
+            self._rl_nil_player = RLExactPlayer(
+                policy_nets=[self._policy_net_nil],
+                exact_solver=self.exact_solver,
+                encoder=encoder,
+                exact_threshold=0,  # 只用 policy play
+                is_training=False,
+                bid_model=self._bid_model,
+                bid_device=self._bid_device,
+            )
+            self._rl_nil_player.start_game(self.position, self.hand, 4)
 
     def card_played(self, player_id: int, card: Card) -> None:
         # 关键: 规则式玩家依赖这个回调跟踪历史, 必须转发
         self._rule_player.card_played(player_id, card)
+        if self._rl_nil_player is not None:
+            self._rl_nil_player.card_played(player_id, card)
 
     # ─── 出牌路由 ──────────────────────────────────────────────────
 
@@ -141,6 +187,13 @@ class RuleExactFirst4Player(AIPlayer):
 
         if remaining <= self.exact_threshold:
             return self._exact_play(state, legal_cards)
+
+        # 前 4 墩：有人叫 nil 且策略网络可用 → 使用 nil 策略网络
+        if self._has_nil_bid and self._rl_nil_player is not None:
+            card = self._rl_nil_player.play_card(legal_cards, state_view)
+            self.last_play_info = {"mode": "nil_policy_first4"}
+            return card
+
         return self._rule_play(legal_cards, state_view)
 
     def _rule_play(self, legal_cards: list[Card], state_view: dict) -> Card:
@@ -149,16 +202,852 @@ class RuleExactFirst4Player(AIPlayer):
         return card
 
     def _exact_play(self, state: GameState, legal_cards: list[Card]) -> Card:
-        """与 RLExactPlayer._exact_play 完全相同的实现。"""
+        """使用精确求解器：IS proposal + top-K 加权平均（与 RLExactPlayer 一致）。"""
         if self.exact_solver is None:
             self.last_play_info = {"mode": "no_exact_solver_fallback"}
             return legal_cards[0]
 
-        result = self.exact_solver.solve_with_q(state)
-        best_action = result.get("best_action")
+        rng = random.Random()
+        # 计算剩余牌数，决定采样预算：越往后预算越大
+        remaining_in = sum(len(h) for h in state.hands)
+        top_k, max_samples = self.config.budget.lookup(remaining_in)
+        K = max_samples
+        id_to_card = {c.card_id: c for c in STANDARD_52}
+
+        # Build IS pool (with config params)
+        pool_hands, pool_weights = self._build_is_pool(
+            state, state.turn, rng,
+            num_proposals=self.config.num_proposals,
+            num_proposals_limit=self.config.num_proposals_limit,
+            min_pool_size=self.config.min_pool_size,
+        )
+
+        agg_q: dict[int, float] = {}
+        my_team = 0 if self.position in (0, 2) else 1
+        if not pool_hands:
+            # Fallback: uniform determinization
+            counts = 0
+            for _ in range(K):
+                sim_state = copy.deepcopy(state)
+                self._determinize_state(sim_state, state.turn, rng)
+                result = self.exact_solver.solve_with_q(sim_state)
+                counts += 1
+                for action, q in result.get("action_q_values", {}).items():
+                    aid = action.card_id
+                    agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+            for k in agg_q:
+                agg_q[k] /= max(1, counts)
+            n_samples_used = counts
+        else:
+            # 去重并按权重降序排列
+            paired = list(zip(pool_hands, pool_weights))
+            paired.sort(key=lambda x: x[1], reverse=True)
+            seen = set()
+            unique_paired = []
+            for hand_proposal, w in paired:
+                key = tuple(
+                    tuple(c.card_id for c in hand)
+                    for hand in hand_proposal
+                )
+                if key not in seen:
+                    seen.add(key)
+                    unique_paired.append((hand_proposal, w))
+                    if len(unique_paired) >= 5120:
+                        break
+
+            # 确定要检查分布的花色：
+            # 如果不是领出且手中有领出花色，则检查该花色；否则检查黑桃
+            check_suit = Suit.SPADES
+            if len(state.table_cards) > 0:
+                lead_suit = state.table_cards[0][1].suit
+                if any(c.suit == lead_suit for c in state.hands[self.position]):
+                    check_suit = lead_suit
+
+            # ── 先把池中所有权重归一化为概率分布（和为1） ──
+            pool_total = sum(w for _, w in unique_paired)
+            if pool_total > 0:
+                pool_probs = [w / pool_total for _, w in unique_paired]
+            else:
+                pool_probs = [1.0 / len(unique_paired)] * len(unique_paired)
+
+            if self.config.swap_is_fill:
+                # ── 先补全（按权重降序 + 花色多样性），后 IS ──
+                fill_indices: list[int] = []
+                fill_suit_dists: list[dict[int, int]] = []
+                for i in range(len(unique_paired)):
+                    if len(fill_indices) >= max_samples:
+                        break
+                    cand_hand = unique_paired[i][0]
+                    cand_dist: dict[int, int] = {}
+                    for player_idx, hand in enumerate(cand_hand):
+                        for card in hand:
+                            if card.suit == check_suit:
+                                cand_dist[card.card_id] = player_idx
+                    diff_from_all = True
+                    for dist in fill_suit_dists:
+                        same = all(cand_dist.get(cid) == dist.get(cid) for cid in cand_dist)
+                        if same:
+                            diff_from_all = False
+                            break
+                    if diff_from_all:
+                        fill_indices.append(i)
+                        fill_suit_dists.append(cand_dist)
+
+                remaining_for_is = [i for i in range(len(unique_paired)) if i not in set(fill_indices)]
+                if remaining_for_is:
+                    k_is = min(top_k, len(remaining_for_is))
+                    is_weights_for_pick = [unique_paired[i][1] for i in remaining_for_is]
+                    is_raw = self._importance_sample_indices(is_weights_for_pick, k_is, rng)
+                    is_idx_list = [remaining_for_is[idx] for idx in is_raw]  # actual pool indices
+                else:
+                    is_idx_list = []
+
+                # Combine: fill first, IS second
+                is_idx_list = fill_indices + is_idx_list
+                top_hands = [unique_paired[i][0] for i in is_idx_list]
+                n_selected = len(top_hands)
+                n_fill = len(fill_indices)
+                n_is = len(is_idx_list) - n_fill
+
+                # ── 权重计算 ──
+                # top_hands = [fill..., IS...], norm_factors 也与之匹配
+                norm_factors = []
+                if n_fill > 0:
+                    fill_probs = [pool_probs[i] for i in fill_indices]
+                    fill_total_prob = sum(fill_probs)
+                else:
+                    fill_total_prob = 0.0
+                if n_is > 0:
+                    is_weight = (1.0 - fill_total_prob) / n_is
+                    norm_factors.extend([is_weight] * n_is)
+                if n_fill > 0:
+                    norm_factors.extend(fill_probs)  # fill 在前，IS 在后
+                n_samples_used = n_selected
+
+            else:
+                # ── 默认：先 IS，后补全（花色多样性）──
+                # ── 重要性采样：有放回地抽取 top_k 个下标 ──
+                k_is = min(top_k, len(unique_paired))
+                is_idx = self._importance_sample_indices(
+                    [w for _, w in unique_paired], k_is, rng
+                )
+                is_idx_set = set(is_idx)
+
+                # is_idx_list 先放 IS 选中的下标（有放回，可重复），后续再 append 补全下标
+                is_idx_list = list(is_idx)
+                selected_suit_dists = []
+                for i in is_idx_list:
+                    hand_proposal = unique_paired[i][0]
+                    dist: dict[int, int] = {}
+                    for player_idx, hand in enumerate(hand_proposal):
+                        for card in hand:
+                            if card.suit == check_suit:
+                                dist[card.card_id] = player_idx
+                    selected_suit_dists.append(dist)
+
+                # 补全候选：按权重降序排列中未被 IS 选中的下标
+                fill_candidates = sorted(
+                    [i for i in range(len(unique_paired)) if i not in is_idx_set],
+                    key=lambda i: unique_paired[i][1], reverse=True,
+                )
+
+                # 从剩余中补全到 max_samples，做花色多样性过滤
+                for cand_i in fill_candidates:
+                    if len(is_idx_list) >= max_samples:
+                        break
+                    cand_hand = unique_paired[cand_i][0]
+                    cand_dist = {}
+                    for player_idx, hand in enumerate(cand_hand):
+                        for card in hand:
+                            if card.suit == check_suit:
+                                cand_dist[card.card_id] = player_idx
+
+                    diff_from_all = True
+                    for dist in selected_suit_dists:
+                        same = all(cand_dist.get(cid) == dist.get(cid) for cid in cand_dist)
+                        if same:
+                            diff_from_all = False
+                            break
+
+                    if diff_from_all:
+                        is_idx_list.append(cand_i)
+                        selected_suit_dists.append(cand_dist)
+
+                top_hands = [unique_paired[i][0] for i in is_idx_list]
+                n_selected = len(top_hands)
+                n_is = len(is_idx)        # IS 样本数（含重复，可能 > len(is_idx_set)）
+                n_fill = n_selected - n_is
+
+                # ── 权重计算 ──
+                # IS 组：等分剩余概率；补全组：直接用归一化概率 pool_probs
+                # 注意顺序必须与 top_hands 一致（IS 在前，补全在后）
+                norm_factors = []
+                fill_total_prob = 0.0
+                if n_fill > 0:
+                    fill_probs = [pool_probs[is_idx_list[n_is + j]] for j in range(n_fill)]
+                    fill_total_prob = sum(fill_probs)
+                if n_is > 0:
+                    is_weight = (1.0 - fill_total_prob) / n_is
+                    norm_factors.extend([is_weight] * n_is)
+                if n_fill > 0:
+                    norm_factors.extend(fill_probs)
+                n_samples_used = n_selected
+
+            for hand_proposal, norm_w in zip(top_hands, norm_factors):
+                sim_state = copy.deepcopy(state)
+                self._apply_proposal(sim_state, state.turn, hand_proposal)
+                result = self.exact_solver.solve_with_q(sim_state)
+                action_q_dict = result.get("action_q_values", {})
+                if action_q_dict:
+                    max_q = max(float(q) for q in action_q_dict.values())
+                    min_q = min(float(q) for q in action_q_dict.values())
+                    for action, q in action_q_dict.items():
+                        aid = action.card_id
+                        if my_team == 0:
+                            multiplier = float(q) - max_q
+                            if multiplier < -self.config.multiplier_clip:
+                                multiplier *= self.config.multiplier_clip_factor
+                            agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+                        else:
+                            multiplier = float(q) - min_q
+                            if multiplier > self.config.multiplier_clip:
+                                multiplier *= self.config.multiplier_clip_factor
+                            agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+
+        # Reconstruct action -> q using Card objects
+        action_q_values: dict[Card, float] = {}
+        for aid, q in agg_q.items():
+            if aid in id_to_card:
+                action_q_values[id_to_card[aid]] = q
+
+        # 根据玩家所在队伍选择动作：
+        #   队伍 0 (座位 0,2) → max Q
+        #   队伍 1 (座位 1,3) → min Q
+        if my_team == 0:
+            best_q = max(action_q_values.values()) if action_q_values else None
+        else:
+            best_q = min(action_q_values.values()) if action_q_values else None
+
+        if best_q is not None:
+            tied_cards = [c for c in legal_cards if c in action_q_values and action_q_values[c] == best_q]
+        else:
+            tied_cards = []
+        if not tied_cards:
+            tied_cards = [c for c in legal_cards if c in action_q_values]
+
+        # 检查是否有人叫 0
+        has_nil = False
+        if hasattr(state, "max_bid") and state.max_bid:
+            has_nil = any(
+                isinstance(b, str) and b in ("nil", "blind_nil")
+                for b in state.max_bid
+            )
+
+        # 所有黑桃优先级最大，非黑桃先比较点数再比较花色
+        # 有人叫 0 → 出优先级最高的牌（S大牌 > ... > 小牌H/D/C）
+        # 没人叫 0 → 出优先级最低的牌（小牌H/D/C > ... > S大牌）
+        def _card_priority_key(card: Card) -> tuple:
+            return (card.suit != Suit.SPADES, -card.rank.value, card.suit.value)
+
+        if tied_cards:
+            if has_nil:
+                best_action = min(tied_cards, key=_card_priority_key)
+            else:
+                best_action = max(tied_cards, key=_card_priority_key)
+        else:
+            best_action = None
+
         if best_action is not None and best_action in legal_cards:
-            self.last_play_info = {"mode": "exact"}
+            # 构造 action_scores 供 trace 日志记录（格式与 RLExactPlayer 一致）
+            action_scores = sorted(
+                [{"action": card, "value": float(q)}
+                 for card, q in action_q_values.items()],
+                key=lambda x: x["value"], reverse=True,
+            )
+            best_value = float(action_q_values.get(best_action, 0.0))
+            self.last_play_info = {
+                "mode": "exact_is_determinized",
+                "samples": n_samples_used,
+                "best_value": best_value,
+                "action_scores": action_scores,
+            }
             return best_action
 
         self.last_play_info = {"mode": "exact_no_match_fallback"}
         return legal_cards[0]
+
+    def _determinize_state(
+        self, state: GameState, observer_id: int,
+        rng: random.Random | None = None,
+    ) -> None:
+        """替换对手手牌为随机未露面牌（保留己方手牌和已打出的牌）。"""
+        if rng is None:
+            rng = random.Random()
+
+        # 收集已占用的牌：观察者手牌 + 已打出牌
+        used_ids: set[int] = set()
+        for c in state.hands[observer_id]:
+            used_ids.add(c.card_id)
+
+        bitset = getattr(state, "played_bitset", 0)
+        for cid in range(52):
+            if bitset & (1 << cid):
+                used_ids.add(cid)
+
+        for pair in getattr(state, "table_cards", []):
+            used_ids.add(pair[1].card_id)
+
+        for record in getattr(state, "trick_history", []):
+            for _, c in getattr(record, "cards", []):
+                used_ids.add(c.card_id)
+
+        pool = [c for c in STANDARD_52 if c.card_id not in used_ids]
+        rng.shuffle(pool)
+
+        indices = [pid for pid in range(state.num_players) if pid != observer_id]
+        counts = {pid: len(state.hands[pid]) for pid in indices}
+
+        pos = 0
+        for pid in indices:
+            n = counts[pid]
+            assigned = pool[pos: pos + n]
+            pos += n
+            state.hands[pid] = list(assigned)
+
+        if hasattr(state, "hand_bitsets"):
+            for pid in range(state.num_players):
+                bit = 0
+                for c in state.hands[pid]:
+                    bit |= (1 << c.card_id)
+                state.hand_bitsets[pid] = bit
+
+    # ── IS 确定化（重要性采样 + top-K 加权精确求解）─────────────────────────
+
+    @staticmethod
+    def _importance_sample_indices(
+        weights: list[float], k: int, rng: random.Random,
+    ) -> list[int]:
+        """从权重列表中**有放回**地重要性采样 k 个下标。
+
+        将权重归一化为概率分布后独立抽取 k 次（允许重复）。
+        权重 ≤ 0 的项概率为 0，永远不会被选中。
+        当所有权重相等时，即使 k == len(weights) 也能产生随机性
+        （区别于无放回时 k >= n 退化为确定性全选）。
+        """
+        # 截断负权为 0，归一化得概率分布
+        pos_w = [max(w, 0.0) for w in weights]
+        total = sum(pos_w)
+        if total <= 0:
+            # 所有权重都 ≤ 0，退化为均匀有放回
+            return [rng.randint(0, len(weights) - 1) for _ in range(k)]
+        # random.choices 会自行归一化权重，无需提前算概率
+        return rng.choices(range(len(weights)), weights=pos_w, k=k)
+
+    @staticmethod
+    def _build_play_sequence(state: GameState) -> list[tuple[int, Card]]:
+        """Extract ordered (player_id, Card) sequence from trick_history + table_cards."""
+        sequence: list[tuple[int, Card]] = []
+        for record in state.trick_history:
+            for pid, card in record.cards:
+                sequence.append((pid, card))
+        for pid, card in state.table_cards:
+            sequence.append((pid, card))
+        return sequence
+
+    @staticmethod
+    def _bid_str_to_mlp_index(bid_str: str) -> int:
+        if bid_str == "nil":
+            return 14
+        if bid_str == "blind_nil":
+            return 15
+        if bid_str.startswith("bid_"):
+            return int(bid_str.split("_")[1])
+        return 0
+
+    def _ensure_bid_model_loaded(self) -> bool:
+        """Lazy-load BidMLP for IS weighting. Returns True if model is available."""
+        if hasattr(self, "_bid_model_is") and self._bid_model_is is not None:
+            return hasattr(self, "_bid_encoder_is") and self._bid_encoder_is is not None
+
+        try:
+            go_dir = Path(__file__).resolve().parents[1] / "evaluate" / "GO-MCTS"
+            if str(go_dir) not in sys.path:
+                sys.path.insert(0, str(go_dir))
+            from spades_ai.models.bid_mlp import BidMLP
+            from spades_ai.models.bid_encoder import BidEncoder
+
+            possible_paths = [
+                Path("./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt"),
+                Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt",
+            ]
+            ckpt = None
+            for p in possible_paths:
+                if p.exists():
+                    ckpt = str(p.resolve())
+                    break
+            if ckpt:
+                self._bid_model_is = BidMLP()
+                sd = torch.load(ckpt, weights_only=True, map_location="cpu")
+                self._bid_model_is.load_state_dict(sd)
+                self._bid_model_is.eval()
+                self._bid_encoder_is = BidEncoder()
+                return True
+            else:
+                self._bid_model_is = None
+                return False
+        except Exception:
+            self._bid_model_is = None
+            return False
+
+    def _compute_bid_probs_product(
+        self, initial_hands: list[list[Card]], max_bid: list[str],
+    ) -> float:
+        """∏ P(bid_p | hand_p) from BidMLP softmax (single proposal)."""
+        if not self._ensure_bid_model_loaded():
+            return 1.0
+
+        from spades_ai.game.card import Card as GoCard
+        from spades_ai.game.card import Rank as GoRank, Suit as GoSuit
+        from spades_ai.game.state import Bid as GoBid
+        from spades_ai.game.scoring import BidType as GoBidType
+
+        def _to_go_bid(bid_str: str) -> GoBid:
+            if bid_str == "nil":
+                return GoBid(value=0, bid_type=GoBidType.NIL)
+            if bid_str == "blind_nil":
+                return GoBid(value=0, bid_type=GoBidType.BLIND_NIL)
+            if bid_str.startswith("bid_"):
+                return GoBid(value=int(bid_str.split("_")[1]), bid_type=GoBidType.NORMAL)
+            return GoBid(value=0, bid_type=GoBidType.NORMAL)
+
+        go_bids = [_to_go_bid(b) for b in max_bid]
+
+        features_list = []
+        for p in range(4):
+            hand = [GoCard(GoRank(c.rank.value), GoSuit[c.suit.name]) for c in initial_hands[p]]
+            prev = go_bids[:p]
+            position = min(p, 2)
+            features = self._bid_encoder_is.encode(hand, prev, position)
+            features_list.append(features.unsqueeze(0))
+
+        x = torch.cat(features_list, dim=0)
+        with torch.no_grad():
+            logits = self._bid_model_is(x)
+        probs = torch.softmax(logits, dim=-1)
+        uniform = 1.0 / 14
+        smoothed = 0.99 * probs + 0.01 * uniform
+
+        product = 1.0
+        for p in range(4):
+            idx = self._bid_str_to_mlp_index(max_bid[p])
+            product *= float(smoothed[p, idx].item())
+        return product
+
+    def _compute_batch_bid_prods(
+        self, proposals: list[list[list[Card]]], max_bid: list[str],
+    ) -> list[float]:
+        """Compute ∏ P(bid_p | hand_p) for all proposals in one batched MLP forward."""
+        if not self._ensure_bid_model_loaded():
+            return [1.0] * len(proposals)
+
+        from spades_ai.game.card import Card as GoCard
+        from spades_ai.game.card import Rank as GoRank, Suit as GoSuit
+        from spades_ai.game.state import Bid as GoBid
+        from spades_ai.game.scoring import BidType as GoBidType
+
+        def _to_go_bid(bid_str: str) -> GoBid:
+            if bid_str == "nil":
+                return GoBid(value=0, bid_type=GoBidType.NIL)
+            if bid_str == "blind_nil":
+                return GoBid(value=0, bid_type=GoBidType.BLIND_NIL)
+            if bid_str.startswith("bid_"):
+                return GoBid(value=int(bid_str.split("_")[1]), bid_type=GoBidType.NORMAL)
+            return GoBid(value=0, bid_type=GoBidType.NORMAL)
+
+        go_bids = [_to_go_bid(b) for b in max_bid]
+        all_features = []
+        for initial_hands in proposals:
+            for p in range(4):
+                hand = [GoCard(GoRank(c.rank.value), GoSuit[c.suit.name]) for c in initial_hands[p]]
+                prev = go_bids[:p]
+                position = min(p, 2)
+                features = self._bid_encoder_is.encode(hand, prev, position)
+                all_features.append(features.unsqueeze(0))
+
+        x = torch.cat(all_features, dim=0)
+        with torch.no_grad():
+            logits = self._bid_model_is(x)
+        probs = torch.softmax(logits, dim=-1)
+        uniform = 1.0 / 14
+        smoothed = 0.99 * probs + 0.01 * uniform
+
+        n = len(proposals)
+        bid_prods = []
+        for i in range(n):
+            product = 1.0
+            for p in range(4):
+                idx = self._bid_str_to_mlp_index(max_bid[p])
+                product *= float(smoothed[i * 4 + p, idx].item())
+            bid_prods.append(product)
+        return bid_prods
+
+    def _generate_proposal(
+        self, all_cards: list[Card], observer_id: int,
+        observer_current_hand: list[Card],
+        played_by_player: dict[int, list[Card]], rng: random.Random,
+        void_suits: dict[int, set[Suit]] | None = None,
+    ) -> list[list[Card]]:
+        """Generate one random initial deal consistent with observed play.
+
+        使用拒绝采样保证概率学上条件均匀：
+        1. 先生成无约束的均匀发牌（pool shuffle + 顺序切分）——每一种切分等概率
+        2. 若有断门约束，检查新发牌是否包含断门花色，是则拒绝重试
+        3. 由于无约束分布均匀且拒绝条件只取决于断门约束，
+           最终分布 = 条件于断门约束的均匀分布。
+
+        void_suits: dict[p] = set of suits player p has shown void in
+                    (cards of those suits are excluded from their random fill).
+        """
+        obs_set: set[int] = set(c.card_id for c in observer_current_hand)
+        obs_set.update(c.card_id for c in played_by_player[observer_id])
+        id_to_card = {c.card_id: c for c in all_cards}
+        observer_initial = [id_to_card[cid] for cid in obs_set]
+
+        used_ids: set[int] = set(obs_set)
+        for p in range(4):
+            if p != observer_id:
+                used_ids.update(c.card_id for c in played_by_player[p])
+
+        pool = [c for c in all_cards if c.card_id not in used_ids]
+
+        # 预计算每位非观测者还需多少张牌
+        needs: dict[int, int] = {}
+        for p in range(4):
+            if p != observer_id:
+                needs[p] = 13 - len(played_by_player[p])
+
+        # ── 快速路径：无断门约束，一次 shuffle + split 即均匀 ──
+        if not void_suits or all(not s for s in void_suits.values()):
+            rng.shuffle(pool)
+            initial_hands: list[list[Card]] = [None] * 4  # type: ignore
+            initial_hands[observer_id] = list(observer_initial)
+            pos = 0
+            for p in range(4):
+                if p == observer_id:
+                    continue
+                n = needs[p]
+                initial_hands[p] = list(played_by_player[p]) + pool[pos:pos + n]
+                pos += n
+            return initial_hands
+
+        # ── 拒绝采样：生成无约束均匀发牌，拒绝违反断门约束的样本 ──
+        # 无约束均匀发牌 = shuffle(pool) → 按 needs 顺序切分
+        # 每一种切分概率 = (n1! n2! ... nk!) / N!（只取决于组大小，与牌面无关）→ 均匀
+        for _ in range(10000):
+            rng.shuffle(pool)
+            pool_copy = list(pool)
+            initial_hands = [None] * 4  # type: ignore
+            initial_hands[observer_id] = list(observer_initial)
+
+            valid = True
+            for p in range(4):
+                if p == observer_id:
+                    continue
+                n = needs[p]
+                new_cards = pool_copy[:n]
+                pool_copy = pool_copy[n:]
+
+                # 检查新发的牌是否包含断门花色
+                if p in void_suits and void_suits[p]:
+                    if any(c.suit in void_suits[p] for c in new_cards):
+                        valid = False
+                        break
+
+                initial_hands[p] = list(played_by_player[p]) + new_cards
+
+            if valid:
+                return initial_hands
+
+        # 极罕见的情况：拒绝了 10000 次仍未找到可行解
+        # （可能由于约束不可行，回退到带过滤的贪心分配）
+        rng.shuffle(pool)
+        initial_hands = [None] * 4  # type: ignore
+        initial_hands[observer_id] = list(observer_initial)
+        for p in range(4):
+            if p == observer_id:
+                continue
+            initial_hands[p] = list(played_by_player[p])
+            n = needs[p]
+            if p in void_suits and void_suits[p]:
+                valid_pool = [c for c in pool if c.suit not in void_suits[p]]
+                selected = valid_pool[:n]
+                selected_ids = {c.card_id for c in selected}
+                pool = [c for c in pool if c.card_id not in selected_ids]
+                initial_hands[p].extend(selected)
+            else:
+                initial_hands[p].extend(pool[:n])
+                pool = pool[n:]
+
+        return initial_hands
+
+    @staticmethod
+    def _compute_void_suits(
+        play_sequence: list[tuple[int, Card]],
+    ) -> dict[int, set[Suit]]:
+        """分析 play_sequence, 推断每个玩家在哪些花色上已断门。
+
+        如果领出花色 X, 跟牌人打出的不是 X, 说明该跟牌人手中没有 X。
+        返回 dict[p] = set of suits player p is void in.
+        """
+        void_suits: dict[int, set[Suit]] = {}
+
+        # 完整墩 (每墩 4 张)
+        n_full = len(play_sequence) // 4
+        for ti in range(n_full):
+            start = ti * 4
+            lead_suit = play_sequence[start][1].suit
+            for pos in range(1, 4):
+                pid, card = play_sequence[start + pos]
+                if card.suit != lead_suit:
+                    void_suits.setdefault(pid, set()).add(lead_suit)
+
+        # 处理可能的不完整尾墩
+        tail = len(play_sequence) % 4
+        if tail >= 1:
+            start = n_full * 4
+            lead_suit = play_sequence[start][1].suit
+            for pos in range(1, tail):
+                pid, card = play_sequence[start + pos]
+                if card.suit != lead_suit:
+                    void_suits.setdefault(pid, set()).add(lead_suit)
+
+        return void_suits
+
+    def _compute_importance_weight(
+        self, initial_hands: list[list[Card]],
+        play_sequence: list[tuple[int, Card]],
+        max_bid: list[str] | None = None,
+        bid_prod: float | None = None,
+        original_state: GameState | None = None,
+    ) -> float:
+        """Replay play_sequence against initial_hands; compute p = ∏(p_step).
+
+        p = P_bid * ∏_{step} (w_step).
+        对于第 9~13 墩（step_idx // 4 >= 8），w_step 由精确求解器的 Q 值决定：
+          - 若动作是好动作（Q == max Q），w = 1
+          - 若动作是坏动作（Q < max Q），w = B / (B + A)
+            （A = 好动作数，B = 坏动作数）
+        其余墩的 w = 1。
+
+        Returns 0 if any move was illegal given this deal.
+        """
+        if bid_prod is not None:
+            pass
+        elif max_bid is not None:
+            bid_prod = self._compute_bid_probs_product(initial_hands, max_bid)
+        else:
+            bid_prod = 1.0
+
+        hands = [list(h) for h in initial_hands]
+        spades_broken = False
+        pos_in_trick = 0
+        led_suit: Suit | None = None
+        weight = 1.0
+
+        # Track current incomplete trick's cards (for solver state construction)
+        solver_table: list[tuple[int, Card]] = []
+
+        # Pre-copy original state once for solver-based weighting (tricks 9-13)
+        sim_state = None
+        if original_state is not None and self.exact_solver is not None:
+            sim_state = copy.deepcopy(original_state)
+
+        for step_idx, (player, card) in enumerate(play_sequence):
+            hand = hands[player]
+            try:
+                idx = hand.index(card)
+            except ValueError:
+                return 0.0
+
+            if pos_in_trick == 0:  # Leading
+                if not spades_broken and card.suit == Suit.SPADES:
+                    has_non_spade = any(c.suit != Suit.SPADES for c in hand)
+                    if has_non_spade:
+                        return 0.0
+                led_suit = card.suit
+            else:  # Following
+                has_led = any(c.suit == led_suit for c in hand)
+                if has_led and card.suit != led_suit:
+                    return 0.0
+
+            # ── 第 9~13 墩 (0-indexed: 8~12) 用精确求解器判定动作好坏 ──
+            trick_num = step_idx // 4
+            if trick_num >= self.config.trick_num_threshold and sim_state is not None:
+                sim_state.hands = [list(h) for h in hands]
+                for p in range(4):
+                    bit = 0
+                    for c in sim_state.hands[p]:
+                        bit |= (1 << c.card_id)
+                    sim_state.hand_bitsets[p] = bit
+                sim_state.turn = player
+                sim_state.table_cards = list(solver_table)
+                sim_state.spades_broken = spades_broken
+                sim_state.trump_broken = spades_broken
+                if solver_table:
+                    sim_state.trick_leader = solver_table[0][0]
+                else:
+                    sim_state.trick_leader = player
+
+                result = self.exact_solver.solve_with_q(sim_state)
+                action_q = result.get("action_q_values", {})
+
+                if action_q:
+                    max_q_val = max(action_q.values())
+                    good_count = sum(1 for q in action_q.values() if q == max_q_val)
+                    bad_count = len(action_q) - good_count
+
+                    # 按 card_id 匹配（避免 Card 对象不同引用）
+                    card_in_q = next(
+                        (c for c in action_q if c.card_id == card.card_id), None
+                    )
+                    if card_in_q is None:
+                        return 0.0  # 该动作在 proposal 下不合法
+
+                    if action_q[card_in_q] == max_q_val:
+                        weight *= 1.0  # 好动作
+                    else:
+                        total = good_count + bad_count
+                        if total > 0:
+                            # bad_action_weight 解读:
+                            #   "x" → 用比例 x = bad_count/total
+                            #   数字字符串 → 用该常数
+                            x = bad_count / total
+                            expr = self.config.bad_action_weight.strip()
+                            try:
+                                mult = float(expr)
+                            except ValueError:
+                                mult = x  # "x" 或任何非数字字符串都按比例
+                            weight *= mult
+
+            # ── 执行动作 & 更新追踪 ──
+            hand.pop(idx)
+            solver_table.append((player, card))
+
+            if card.suit == Suit.SPADES:
+                spades_broken = True
+            pos_in_trick = (pos_in_trick + 1) % 4
+            if pos_in_trick == 0:
+                solver_table.clear()
+                led_suit = None
+
+        actual_weight = weight * bid_prod #* math.exp(random.uniform(0, 0.1)) # 0.4→0.6→0.1
+        weight_ans = actual_weight #** 0.3
+        return weight_ans
+
+    def _build_is_pool(
+        self, state: GameState, observer_id: int, rng: random.Random,
+        num_proposals: int = 1234,
+        num_proposals_limit: int = 5678,
+        min_pool_size: int = 100,
+    ) -> tuple[list[list[list[Card]]], list[float]]:
+        """Build IS pool: generate proposals, compute weights.
+
+        Keeps sampling (in batches of num_proposals) until the pool has at least
+        min_pool_size valid (w > 0) proposals, or total attempts reach num_proposals_limit.
+        """
+        play_sequence = self._build_play_sequence(state)
+
+        max_bid: list[str] | None = None
+        raw_bids = None
+        if hasattr(state, "max_bid") and state.max_bid:
+            raw_bids = state.max_bid
+        elif hasattr(state, "bids") and state.bids:
+            raw_bids = state.bids
+        if raw_bids is not None and len(raw_bids) == 4:
+            if all(isinstance(b, str) for b in raw_bids):
+                max_bid = list(raw_bids)
+
+        played_by_player: dict[int, list[Card]] = {p: [] for p in range(4)}
+        for p, c in play_sequence:
+            played_by_player[p].append(c)
+
+        # 推断每人断门花色（领出 X 但跟牌人未出 X → 该人无 X）
+        void_suits = self._compute_void_suits(play_sequence)
+
+        proposals: list[list[list[Card]]] = []
+        prop_weights: list[float] = []
+        total_attempts = 0
+
+        while total_attempts < num_proposals_limit:
+            batch_size = min(num_proposals, num_proposals_limit - total_attempts)
+
+            # Generate batch
+            batch_proposals: list[list[list[Card]]] = []
+            for _ in range(batch_size):
+                initial_hands = self._generate_proposal(
+                    state.all_cards, observer_id, state.hands[observer_id],
+                    played_by_player, rng,
+                    void_suits=void_suits,
+                )
+                batch_proposals.append(initial_hands)
+            total_attempts += batch_size
+
+            # Compute bid probability products for this batch
+            if max_bid is not None:
+                bid_prods = self._compute_batch_bid_prods(batch_proposals, max_bid)
+            else:
+                bid_prods = [1.0] * batch_size
+
+            # Compute importance weights, filter zero-weight proposals
+            for initial_hands, bid_prod in zip(batch_proposals, bid_prods):
+                w = self._compute_importance_weight(
+                    initial_hands, play_sequence, bid_prod=bid_prod,
+                    original_state=state,
+                )
+                if w > 0.0:
+                    proposals.append(initial_hands)
+                    prop_weights.append(w)
+
+            if len(proposals) >= min_pool_size:
+                break
+
+        # Log proposal count, remaining cards, and weight distribution
+        remaining = sum(len(h) for h in state.hands)
+        gt01 = sum(1 for w in prop_weights if w > 0.1)
+        gt001 = sum(1 for w in prop_weights if w > 0.01)
+        gt0001 = sum(1 for w in prop_weights if w > 0.001)
+        gt00001 = sum(1 for w in prop_weights if w > 0.0001)
+        sorted_w = sorted(prop_weights, reverse=True)
+        A = sum(sorted_w[:3])
+        B = sum(sorted_w[31:34]) if len(sorted_w) >= 34 else None
+        C = sum(sorted_w[99:102]) if len(sorted_w) >= 102 else None
+        ratio_ab = f"{A/B:.3f}" if B else "nan"
+        ratio_ac = f"{A/C:.3f}" if C else "nan"
+        with open("is_proposal_stats.txt", "a") as f:
+            f.write(f"n_proposals={len(proposals)} remaining={remaining} w>0.1={gt01} w>0.01={gt001} w>0.001={gt0001} w>0.0001={gt00001} A/B={ratio_ab} A/C={ratio_ac}\n")
+
+        return proposals, prop_weights
+
+    @staticmethod
+    def _apply_proposal(
+        state: GameState, observer_id: int, proposal: list[list[Card]],
+    ) -> None:
+        """Apply a proposal (set opponents' hands from proposal initial deal)."""
+        played_by_player: dict[int, set[int]] = {i: set() for i in range(4)}
+        for record in state.trick_history:
+            for pid, card in record.cards:
+                played_by_player[pid].add(card.card_id)
+        for pid, card in state.table_cards:
+            played_by_player[pid].add(card.card_id)
+
+        for p in range(4):
+            if p != observer_id:
+                remaining = [c for c in proposal[p] if c.card_id not in played_by_player[p]]
+                state.hands[p] = remaining
+
+        if hasattr(state, "hand_bitsets"):
+            for p in range(4):
+                bit = 0
+                for c in state.hands[p]:
+                    bit |= (1 << c.card_id)
+                state.hand_bitsets[p] = bit

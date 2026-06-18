@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""stats_matchup.py: 统计 log 文件中 our_mcts vs our_mcts 的得墩/叫牌分布。
+"""stats_matchup.py: 统计 log 文件中 rl_exact vs rl_exact 的得墩/叫牌分布。
 
 Usage:
     python stats_matchup.py <log_file>
@@ -27,23 +27,23 @@ def parse_log(path: str) -> dict:
     """解析 log 文件，返回每场比赛的定约统计。
 
     返回:
-        our_contracts: list of (sum_bid, sum_tricks) for our_mcts team per game
-        go_contracts:  list of (sum_bid, sum_tricks) for our_mcts team per game
-        our_nils:      list of tricks_won for nil contracts (x/0) by our_mcts
-        go_nils:       list of tricks_won for nil contracts (x/0) by our_mcts
+        our_contracts: list of (sum_bid, sum_tricks) for rl_exact team per game
+        go_contracts:  list of (sum_bid, sum_tricks) for rl_exact team per game
+        our_nils:      list of tricks_won for nil contracts (x/0) by rl_exact
+        go_nils:       list of tricks_won for nil contracts (x/0) by rl_exact
     """
     text = Path(path).read_text()
 
     # Read seat_specs from header
     seat_specs_line = re.search(r"# seat_specs=(.*)", text)
     if seat_specs_line:
-        specs = eval(seat_specs_line.group(1))  # ['our_mcts', 'our_mcts', ...]
+        specs = eval(seat_specs_line.group(1))  # ['rl_exact', 'rl_exact', ...]
     else:
-        specs = ['our_mcts', 'rl_exact', 'our_mcts', 'rl_exact']
+        specs = ['rl_exact', 'rule_first4_exact', 'rl_exact', 'rule_first4_exact']
 
-    # Determine which seats belong to our_mcts in game 0
-    base_our_seats = {i for i, s in enumerate(specs) if s == "our_mcts"}
-    base_go_seats = {i for i, s in enumerate(specs) if s == "rl_exact"}
+    # Determine which seats belong to rl_exact in game 0
+    base_our_seats = {i for i, s in enumerate(specs) if s == "rl_exact"}
+    base_go_seats = {i for i, s in enumerate(specs) if s == "rule_first4_exact"}
 
     # Seats alternate every game (偶数游戏: 按 base_our_seats; 奇数游戏: 交换)
     def get_our_seats(game_idx: int) -> set[int]:
@@ -84,7 +84,7 @@ def parse_log(path: str) -> dict:
 
         total_bid = sum(bid for _, _, bid in seats_info)
 
-        # Sum for our_mcts team
+        # Sum for rl_exact team
         our_bid_sum = 0
         our_trick_sum = 0
         go_bid_sum = 0
@@ -175,12 +175,12 @@ def plot_results(
     ax_our_diff = fig.add_subplot(gs[3, 0])
     ax_go_diff = fig.add_subplot(gs[3, 1])
 
-    # --- our_mcts heatmap ---
+    # --- rl_exact heatmap ---
     ax = ax_our_heat
     max_bid = min(14, our_arr.shape[0])
     max_trick = min(14, our_arr.shape[1])
     im = ax.imshow(our_arr[:max_bid, :max_trick], cmap="YlOrRd", aspect="auto")
-    ax.set_title("our_mcts (bid_sum x tricks_sum)", fontsize=13)
+    ax.set_title("rl_exact (bid_sum x tricks_sum)", fontsize=13)
     ax.set_xlabel("tricks_sum")
     ax.set_ylabel("bid_sum")
     for b in range(max_bid):
@@ -190,10 +190,10 @@ def plot_results(
                 ax.text(t, b, str(v), ha="center", va="center", fontsize=8)
     fig.colorbar(im, ax=ax)
 
-    # --- our_mcts heatmap ---
+    # --- rl_exact heatmap ---
     ax = ax_go_heat
     im = ax.imshow(go_arr[:max_bid, :max_trick], cmap="YlOrRd", aspect="auto")
-    ax.set_title("rl_exact (bid_sum x tricks_sum)", fontsize=13)
+    ax.set_title("rule_first4_exact (bid_sum x tricks_sum)", fontsize=13)
     ax.set_xlabel("tricks_sum")
     ax.set_ylabel("bid_sum")
     sum_cheng = 0
@@ -207,7 +207,7 @@ def plot_results(
     fig.colorbar(im, ax=ax)
     print(sum_cheng)
 
-    # --- our_mcts nil distribution ---
+    # --- rl_exact nil distribution ---
     ax = ax_our_nil
     our_nil_tricks = [t for t, _ in our_nils]
     if our_nil_tricks:
@@ -217,14 +217,14 @@ def plot_results(
             if count > 0:
                 ax.text(patch.get_x() + patch.get_width() / 2, patch.get_height(),
                         str(int(count)), ha="center", va="bottom", fontsize=10)
-        ax.set_title(f"our_mcts nil tricks (n={len(our_nil_tricks)})", fontsize=13)
+        ax.set_title(f"rl_exact nil tricks (n={len(our_nil_tricks)})", fontsize=13)
         ax.set_xlabel("tricks")
         ax.set_ylabel("count")
     else:
         ax.text(0.5, 0.5, "no nil contracts", ha="center", va="center", transform=ax.transAxes)
-        ax.set_title("our_mcts nil", fontsize=13)
+        ax.set_title("rl_exact nil", fontsize=13)
 
-    # --- our_mcts nil distribution ---
+    # --- rl_exact nil distribution ---
     ax = ax_go_nil
     go_nil_tricks = [t for t, _ in go_nils]
     if go_nil_tricks:
@@ -234,12 +234,12 @@ def plot_results(
             if count > 0:
                 ax.text(patch.get_x() + patch.get_width() / 2, patch.get_height(),
                         str(int(count)), ha="center", va="bottom", fontsize=10)
-        ax.set_title(f"rl_exact nil tricks (n={len(go_nil_tricks)})", fontsize=13)
+        ax.set_title(f"rule_first4_exact nil tricks (n={len(go_nil_tricks)})", fontsize=13)
         ax.set_xlabel("tricks")
         ax.set_ylabel("count")
     else:
         ax.text(0.5, 0.5, "no nil contracts", ha="center", va="center", transform=ax.transAxes)
-        ax.set_title("rl_exact nil", fontsize=13)
+        ax.set_title("rule_first4_exact nil", fontsize=13)
 
     # --- total bid distribution ---
     ax = ax_total
@@ -254,8 +254,8 @@ def plot_results(
     ax.set_ylabel("count")
 
     # --- diff distribution (tricks_sum - bid_sum) ---
-    for ax, contracts, team in [(ax_our_diff, our_contracts, "our_mcts"),
-                                 (ax_go_diff, go_contracts, "rl_exact")]:
+    for ax, contracts, team in [(ax_our_diff, our_contracts, "rl_exact"),
+                                 (ax_go_diff, go_contracts, "rule_first4_exact")]:
         diffs = [t - b for b, t in contracts]
         min_diff = min(diffs)
         max_diff = max(diffs)
@@ -295,7 +295,7 @@ def plot_subset(
     max_bid = min(14, our_arr.shape[0])
     max_trick = min(14, our_arr.shape[1])
 
-    for ax, arr, team in [(ax_our, our_arr, "our_mcts"), (ax_go, go_arr, "rl_exact")]:
+    for ax, arr, team in [(ax_our, our_arr, "rl_exact"), (ax_go, go_arr, "rule_first4_exact")]:
         im = ax.imshow(arr[:max_bid, :max_trick], cmap="YlOrRd", aspect="auto")
         ax.set_title(f"{team} (total_bid={total_bid}, n={count})", fontsize=12)
         ax.set_xlabel("tricks_sum")
@@ -313,8 +313,8 @@ def plot_subset(
         fig.colorbar(im, ax=ax)
         print(sum_cheng, " / ", sum_sum)
 
-    for ax, nils, team in [(ax_our_nil, our_nils, "our_mcts"),
-                           (ax_go_nil, go_nils, "rl_exact")]:
+    for ax, nils, team in [(ax_our_nil, our_nils, "rl_exact"),
+                           (ax_go_nil, go_nils, "rule_first4_exact")]:
         if nils:
             bins = range(max(nils) + 2)
             counts, _, patches = ax.hist(nils, bins=bins, alpha=0.7, edgecolor="black")
@@ -351,14 +351,14 @@ def main() -> None:
     A = len(data["our_contracts"])
 
     print(f"\n总游戏数: {A}")
-    print(f"our_mcts 队伍记录数: {our_total}  (应为 {A})")
-    print(f"our_mcts 队伍记录数: {go_total}  (应为 {A})")
+    print(f"rl_exact 队伍记录数: {our_total}  (应为 {A})")
+    print(f"rl_exact 队伍记录数: {go_total}  (应为 {A})")
 
-    print_2d_array(our_arr, "our_mcts", our_total)
-    print_2d_array(go_arr, "rl_exact", go_total)
+    print_2d_array(our_arr, "rl_exact", our_total)
+    print_2d_array(go_arr, "rule_first4_exact", go_total)
 
-    print_nil_dist(data["our_nils"], "our_mcts")
-    print_nil_dist(data["go_nils"], "rl_exact")
+    print_nil_dist(data["our_nils"], "rl_exact")
+    print_nil_dist(data["go_nils"], "rule_first4_exact")
 
     # 打印总叫墩分布
     total_bids = data["total_bids"]
@@ -403,8 +403,8 @@ def main() -> None:
 
         our_arr_tb = build_2d_array(our_filtered)
         go_arr_tb = build_2d_array(go_filtered)
-        print_2d_array(our_arr_tb, f"our_mcts (总叫{tb})", our_arr_tb.sum())
-        print_2d_array(go_arr_tb, f"our_mcts (总叫{tb})", go_arr_tb.sum())
+        print_2d_array(our_arr_tb, f"rl_exact (总叫{tb})", our_arr_tb.sum())
+        print_2d_array(go_arr_tb, f"rl_exact (总叫{tb})", go_arr_tb.sum())
 
         plot_subset(
             our_arr_tb, go_arr_tb,

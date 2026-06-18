@@ -9,7 +9,7 @@
 队式赛: 每 episode 打 2 局并交换座位 (与 evaluate/eval_rule_first4_multicpu.py 一致)。
 
 用法:
-    python evaluate/evaluate_rl_first4_vs_rule_first4.py --num-games 200 --seed 42
+    python evaluate/evaluate_rl_first4_vs_rule_first4.py --num-games 100 --seed 8880000 --num-workers 20
     python evaluate/evaluate_rl_first4_vs_rule_first4.py --num-games 400 --num-workers 8
 """
 
@@ -35,10 +35,33 @@ from rl.rl_exact_player import RLExactPlayer
 from rl.rl_feature_encoder import RLFeatureEncoder
 from strategy.rule_exact_first4_player import RuleExactFirst4Player
 from strategy.spades_match_runner import SpadesMatchRunner
+from trick_taking.card import Card
+from trick_taking.game_state import GameState
 from trick_taking.games.spades import SpadesRules
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
     ExactDoubleDummyCppFastestSolver,
 )
+
+
+class RLExactNoDetPlayer(RLExactPlayer):
+    """RLExactPlayer 的子类，后 9 墩不做 determinization，直接一次精确求解。
+
+    与 RuleExactFirst4Player 的后 9 墩行为对齐，保证公平对比前 4 墩策略。
+    """
+
+    def _exact_play(self, state: GameState, legal_cards: list[Card]) -> Card:
+        if self.exact_solver is None:
+            self.last_play_info = {"mode": "no_exact_solver_fallback"}
+            return legal_cards[0]
+
+        result = self.exact_solver.solve_with_q(state)
+        best_action = result.get("best_action")
+        if best_action is not None and best_action in legal_cards:
+            self.last_play_info = {"mode": "exact"}
+            return best_action
+
+        self.last_play_info = {"mode": "exact_no_match_fallback"}
+        return legal_cards[0]
 
 MODEL_INPUT_DIM = 264
 MODEL_HIDDEN_DIMS = [1024, 512, 512]
@@ -127,7 +150,7 @@ def _build_rl_player(
     bid_model,
     bid_device: str,
 ) -> RLExactPlayer:
-    return RLExactPlayer(
+    return RLExactNoDetPlayer(
         policy_nets=[policy_net],
         exact_solver=exact_solver,
         encoder=encoder,

@@ -1,0 +1,1932 @@
+n_proposals=1234 remaining=35 w>0.1=102 w>0.01=626 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=199 w>0.01=610 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=24 w>0.01=493 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=58 w>0.01=627 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=180 w>0.01=822 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=137 w>0.01=717 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=54 w>0.01=482 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=167 w>0.01=780 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=333 w>0.01=980 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=68 w>0.01=672 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=143 w>0.01=723 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=166 w>0.01=729 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=180 w>0.01=821 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=10 w>0.01=486 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=15 w>0.01=304 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=158 w>0.01=758 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=16 w>0.01=483 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=180 w>0.01=750 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=99 w>0.01=718 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=26 w>0.01=396 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=109 w>0.01=654 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=233 w>0.01=904 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=5 w>0.01=34 w>0.001=790 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=161 w>0.01=446 w>0.001=1098 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=90 w>0.01=653 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=143 w>0.01=745 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=150 w>0.01=766 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=51 w>0.01=649 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=73 w>0.01=577 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=213 w>0.01=965 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=110 w>0.01=747 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=82 w>0.01=657 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=75 w>0.01=672 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=100 w>0.01=902 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=103 w>0.01=849 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=19 w>0.01=529 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=80 w>0.01=539 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=42 w>0.01=575 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=182 w>0.01=797 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=135 w>0.01=754 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=247 w>0.01=728 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=69 w>0.01=880 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=37 w>0.01=539 w>0.001=1234 w>0.0001=1234
+n_proposals=782 remaining=19 w>0.1=26 w>0.01=336 w>0.001=782 w>0.0001=782
+n_proposals=1234 remaining=34 w>0.1=314 w>0.01=912 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=237 w>0.01=757 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=56 w>0.01=741 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=3 w>0.01=38 w>0.001=785 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=100 w>0.01=480 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=43 w>0.01=383 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=363 w>0.01=888 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=161 w>0.01=772 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=166 w>0.01=848 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=74 w>0.01=608 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=82 w>0.01=643 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=129 w>0.01=779 w>0.001=1234 w>0.0001=1234
+n_proposals=549 remaining=17 w>0.1=182 w>0.01=445 w>0.001=549 w>0.0001=549
+n_proposals=1234 remaining=35 w>0.1=272 w>0.01=941 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=1017 w>0.01=1226 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=190 w>0.01=460 w>0.001=1140 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=107 w>0.01=783 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=279 w>0.01=897 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=199 w>0.01=937 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=79 w>0.01=590 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=180 w>0.01=971 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=50 w>0.01=629 w>0.001=1234 w>0.0001=1234
+n_proposals=404 remaining=15 w>0.1=145 w>0.01=336 w>0.001=404 w>0.0001=404
+n_proposals=1234 remaining=28 w>0.1=198 w>0.01=500 w>0.001=1149 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=115 w>0.01=693 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=179 w>0.01=850 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=37 w>0.01=578 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=53 w>0.01=405 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=232 w>0.01=946 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=841 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=80 w>0.01=777 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=248 w>0.01=671 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=169 w>0.01=957 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=287 w>0.01=1198 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=838 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=588 remaining=17 w>0.1=58 w>0.01=392 w>0.001=588 w>0.0001=588
+n_proposals=1234 remaining=30 w>0.1=45 w>0.01=637 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=48 w>0.01=610 w>0.001=1234 w>0.0001=1234
+n_proposals=236 remaining=13 w>0.1=236 w>0.01=236 w>0.001=236 w>0.0001=236
+n_proposals=1234 remaining=32 w>0.1=84 w>0.01=607 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=285 w>0.01=1176 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=306 w>0.01=976 w>0.001=1234 w>0.0001=1234
+n_proposals=728 remaining=18 w>0.1=171 w>0.01=605 w>0.001=728 w>0.0001=728
+n_proposals=872 remaining=19 w>0.1=45 w>0.01=328 w>0.001=871 w>0.0001=872
+n_proposals=1234 remaining=27 w>0.1=65 w>0.01=588 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=157 w>0.01=816 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=182 w>0.01=1017 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=162 w>0.01=787 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=39 w>0.01=632 w>0.001=1234 w>0.0001=1234
+n_proposals=371 remaining=11 w>0.1=371 w>0.01=371 w>0.001=371 w>0.0001=371
+n_proposals=1234 remaining=22 w>0.1=523 w>0.01=930 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=245 w>0.01=700 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=15 w>0.1=962 w>0.01=1233 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=92 w>0.01=835 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=56 w>0.01=666 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=2 w>0.01=56 w>0.001=886 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=156 w>0.01=938 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=226 w>0.01=842 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=244 w>0.01=895 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=830 w>0.01=1188 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=557 w>0.01=982 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=298 w>0.01=998 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=388 w>0.01=904 w>0.001=1234 w>0.0001=1234
+n_proposals=785 remaining=9 w>0.1=715 w>0.01=785 w>0.001=785 w>0.0001=785
+n_proposals=273 remaining=15 w>0.1=104 w>0.01=250 w>0.001=273 w>0.0001=273
+n_proposals=1234 remaining=26 w>0.1=16 w>0.01=561 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=470 w>0.01=1124 w>0.001=1234 w>0.0001=1234
+n_proposals=616 remaining=17 w>0.1=169 w>0.01=458 w>0.001=612 w>0.0001=616
+n_proposals=1234 remaining=22 w>0.1=354 w>0.01=1137 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=65 w>0.01=525 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=336 w>0.01=1038 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=747 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=830 remaining=13 w>0.1=138 w>0.01=644 w>0.001=830 w>0.0001=830
+n_proposals=1234 remaining=33 w>0.1=184 w>0.01=789 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=167 w>0.01=850 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=172 w>0.01=787 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=912 w>0.01=1205 w>0.001=1234 w>0.0001=1234
+n_proposals=560 remaining=13 w>0.1=297 w>0.01=560 w>0.001=560 w>0.0001=560
+n_proposals=1234 remaining=26 w>0.1=197 w>0.01=863 w>0.001=1234 w>0.0001=1234
+n_proposals=656 remaining=7 w>0.1=644 w>0.01=656 w>0.001=656 w>0.0001=656
+n_proposals=1234 remaining=24 w>0.1=55 w>0.01=569 w>0.001=1234 w>0.0001=1234
+n_proposals=694 remaining=15 w>0.1=184 w>0.01=575 w>0.001=683 w>0.0001=694
+n_proposals=1234 remaining=22 w>0.1=253 w>0.01=1000 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=509 w>0.01=945 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=533 w>0.01=1144 w>0.001=1234 w>0.0001=1234
+n_proposals=582 remaining=12 w>0.1=345 w>0.01=582 w>0.001=582 w>0.0001=582
+n_proposals=1234 remaining=15 w>0.1=561 w>0.01=1153 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=13 w>0.01=605 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=365 w>0.01=906 w>0.001=1234 w>0.0001=1234
+n_proposals=613 remaining=11 w>0.1=511 w>0.01=613 w>0.001=613 w>0.0001=613
+n_proposals=1234 remaining=23 w>0.1=7 w>0.01=62 w>0.001=928 w>0.0001=1234
+n_proposals=768 remaining=14 w>0.1=338 w>0.01=768 w>0.001=768 w>0.0001=768
+n_proposals=1234 remaining=32 w>0.1=166 w>0.01=883 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=137 w>0.01=736 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=59 w>0.01=211 w>0.001=1016 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=161 w>0.01=758 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=366 w>0.01=1001 w>0.001=1234 w>0.0001=1234
+n_proposals=622 remaining=5 w>0.1=622 w>0.01=622 w>0.001=622 w>0.0001=622
+n_proposals=251 remaining=9 w>0.1=251 w>0.01=251 w>0.001=251 w>0.0001=251
+n_proposals=1234 remaining=34 w>0.1=218 w>0.01=778 w>0.001=1234 w>0.0001=1234
+n_proposals=616 remaining=13 w>0.1=222 w>0.01=616 w>0.001=616 w>0.0001=616
+n_proposals=1234 remaining=29 w>0.1=219 w>0.01=822 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=78 w>0.01=703 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=15 w>0.01=287 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=399 w>0.01=1092 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=468 w>0.01=1136 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=107 w>0.01=773 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=89 w>0.01=737 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=213 w>0.01=821 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=13 w>0.1=768 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=499 remaining=12 w>0.1=237 w>0.01=499 w>0.001=499 w>0.0001=499
+n_proposals=802 remaining=10 w>0.1=501 w>0.01=768 w>0.001=802 w>0.0001=802
+n_proposals=1234 remaining=21 w>0.1=138 w>0.01=505 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=131 w>0.01=809 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=162 w>0.01=837 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=114 w>0.01=695 w>0.001=1234 w>0.0001=1234
+n_proposals=1018 remaining=19 w>0.1=239 w>0.01=728 w>0.001=1018 w>0.0001=1018
+n_proposals=1234 remaining=23 w>0.1=47 w>0.01=685 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=503 remaining=11 w>0.1=236 w>0.01=503 w>0.001=503 w>0.0001=503
+n_proposals=388 remaining=7 w>0.1=388 w>0.01=388 w>0.001=388 w>0.0001=388
+n_proposals=1234 remaining=28 w>0.1=31 w>0.01=352 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=188 w>0.01=820 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=12 w>0.1=770 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=119 w>0.01=749 w>0.001=1234 w>0.0001=1234
+n_proposals=381 remaining=8 w>0.1=206 w>0.01=381 w>0.001=381 w>0.0001=381
+n_proposals=1234 remaining=26 w>0.1=204 w>0.01=893 w>0.001=1234 w>0.0001=1234
+n_proposals=814 remaining=10 w>0.1=705 w>0.01=814 w>0.001=814 w>0.0001=814
+n_proposals=1234 remaining=32 w>0.1=252 w>0.01=793 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=626 w>0.01=1144 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=342 w>0.01=871 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=75 w>0.01=756 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=84 w>0.01=268 w>0.001=1062 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=169 w>0.01=820 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=179 w>0.01=845 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=217 w>0.01=957 w>0.001=1234 w>0.0001=1234
+n_proposals=615 remaining=9 w>0.1=204 w>0.01=615 w>0.001=615 w>0.0001=615
+n_proposals=1234 remaining=17 w>0.1=26 w>0.01=621 w>0.001=1234 w>0.0001=1234
+n_proposals=892 remaining=19 w>0.1=136 w>0.01=428 w>0.001=892 w>0.0001=892
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=609 remaining=17 w>0.1=370 w>0.01=602 w>0.001=609 w>0.0001=609
+n_proposals=1234 remaining=27 w>0.1=124 w>0.01=829 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=327 w>0.01=1021 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=241 w>0.01=843 w>0.001=1234 w>0.0001=1234
+n_proposals=582 remaining=18 w>0.1=44 w>0.01=279 w>0.001=582 w>0.0001=582
+n_proposals=600 remaining=3 w>0.1=600 w>0.01=600 w>0.001=600 w>0.0001=600
+n_proposals=1234 remaining=20 w>0.1=477 w>0.01=919 w>0.001=1234 w>0.0001=1234
+n_proposals=625 remaining=16 w>0.1=376 w>0.01=620 w>0.001=625 w>0.0001=625
+n_proposals=1234 remaining=16 w>0.1=33 w>0.01=568 w>0.001=1233 w>0.0001=1234
+n_proposals=867 remaining=10 w>0.1=805 w>0.01=867 w>0.001=867 w>0.0001=867
+n_proposals=1234 remaining=24 w>0.1=118 w>0.01=795 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=306 w>0.01=953 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=239 w>0.01=894 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=7 w>0.1=863 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=113 w>0.01=818 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=397 w>0.01=1029 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=366 w>0.01=1179 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=184 w>0.01=912 w>0.001=1234 w>0.0001=1234
+n_proposals=745 remaining=8 w>0.1=745 w>0.01=745 w>0.001=745 w>0.0001=745
+n_proposals=464 remaining=15 w>0.1=247 w>0.01=449 w>0.001=464 w>0.0001=464
+n_proposals=1234 remaining=20 w>0.1=359 w>0.01=1028 w>0.001=1234 w>0.0001=1234
+n_proposals=789 remaining=6 w>0.1=553 w>0.01=688 w>0.001=789 w>0.0001=789
+n_proposals=531 remaining=17 w>0.1=1 w>0.01=92 w>0.001=455 w>0.0001=531
+n_proposals=1234 remaining=28 w>0.1=297 w>0.01=967 w>0.001=1234 w>0.0001=1234
+n_proposals=873 remaining=18 w>0.1=85 w>0.01=593 w>0.001=873 w>0.0001=873
+n_proposals=1234 remaining=23 w>0.1=121 w>0.01=490 w>0.001=1234 w>0.0001=1234
+n_proposals=812 remaining=14 w>0.1=282 w>0.01=727 w>0.001=812 w>0.0001=812
+n_proposals=1234 remaining=25 w>0.1=813 w>0.01=1215 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=198 w>0.01=962 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=14 w>0.1=623 w>0.01=1113 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=192 w>0.01=991 w>0.001=1234 w>0.0001=1234
+n_proposals=610 remaining=5 w>0.1=610 w>0.01=610 w>0.001=610 w>0.0001=610
+n_proposals=1018 remaining=6 w>0.1=1018 w>0.01=1018 w>0.001=1018 w>0.0001=1018
+n_proposals=1234 remaining=22 w>0.1=76 w>0.01=793 w>0.001=1234 w>0.0001=1234
+n_proposals=608 remaining=7 w>0.1=608 w>0.01=608 w>0.001=608 w>0.0001=608
+n_proposals=1234 remaining=19 w>0.1=493 w>0.01=1196 w>0.001=1234 w>0.0001=1234
+n_proposals=488 remaining=13 w>0.1=106 w>0.01=323 w>0.001=488 w>0.0001=488
+n_proposals=1234 remaining=15 w>0.1=605 w>0.01=1055 w>0.001=1234 w>0.0001=1234
+n_proposals=153 remaining=19 w>0.1=74 w>0.01=137 w>0.001=153 w>0.0001=153
+n_proposals=1234 remaining=26 w>0.1=218 w>0.01=800 w>0.001=1234 w>0.0001=1234
+n_proposals=351 remaining=16 w>0.1=6 w>0.01=84 w>0.001=291 w>0.0001=351
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=608 remaining=4 w>0.1=359 w>0.01=608 w>0.001=608 w>0.0001=608
+n_proposals=1234 remaining=4 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=125 w>0.01=309 w>0.001=1077 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=293 w>0.01=944 w>0.001=1234 w>0.0001=1234
+n_proposals=686 remaining=12 w>0.1=241 w>0.01=635 w>0.001=686 w>0.0001=686
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1177 remaining=11 w>0.1=515 w>0.01=1150 w>0.001=1177 w>0.0001=1177
+n_proposals=1234 remaining=20 w>0.1=147 w>0.01=839 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=400 w>0.01=1138 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=113 remaining=14 w>0.1=22 w>0.01=50 w>0.001=112 w>0.0001=113
+n_proposals=1234 remaining=22 w>0.1=190 w>0.01=747 w>0.001=1234 w>0.0001=1234
+n_proposals=587 remaining=15 w>0.1=148 w>0.01=437 w>0.001=584 w>0.0001=587
+n_proposals=1234 remaining=23 w>0.1=885 w>0.01=1228 w>0.001=1234 w>0.0001=1234
+n_proposals=579 remaining=15 w>0.1=52 w>0.01=390 w>0.001=579 w>0.0001=579
+n_proposals=582 remaining=13 w>0.1=185 w>0.01=420 w>0.001=582 w>0.0001=582
+n_proposals=828 remaining=18 w>0.1=158 w>0.01=657 w>0.001=828 w>0.0001=828
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=994 remaining=19 w>0.1=104 w>0.01=428 w>0.001=994 w>0.0001=994
+n_proposals=1234 remaining=23 w>0.1=154 w>0.01=334 w>0.001=1134 w>0.0001=1234
+n_proposals=1234 remaining=13 w>0.1=141 w>0.01=884 w>0.001=1232 w>0.0001=1234
+n_proposals=1234 remaining=11 w>0.1=849 w>0.01=1157 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=832 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=800 remaining=4 w>0.1=800 w>0.01=800 w>0.001=800 w>0.0001=800
+n_proposals=294 remaining=17 w>0.1=38 w>0.01=187 w>0.001=294 w>0.0001=294
+n_proposals=572 remaining=10 w>0.1=490 w>0.01=572 w>0.001=572 w>0.0001=572
+n_proposals=1234 remaining=17 w>0.1=667 w>0.01=1217 w>0.001=1234 w>0.0001=1234
+n_proposals=27 remaining=17 w>0.1=16 w>0.01=27 w>0.001=27 w>0.0001=27
+n_proposals=381 remaining=9 w>0.1=381 w>0.01=381 w>0.001=381 w>0.0001=381
+n_proposals=1234 remaining=20 w>0.1=160 w>0.01=353 w>0.001=1151 w>0.0001=1234
+n_proposals=354 remaining=13 w>0.1=301 w>0.01=354 w>0.001=354 w>0.0001=354
+n_proposals=1234 remaining=12 w>0.1=113 w>0.01=872 w>0.001=1216 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=273 w>0.01=1115 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=689 w>0.01=1225 w>0.001=1234 w>0.0001=1234
+n_proposals=376 remaining=8 w>0.1=376 w>0.01=376 w>0.001=376 w>0.0001=376
+n_proposals=383 remaining=9 w>0.1=364 w>0.01=383 w>0.001=383 w>0.0001=383
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=413 remaining=15 w>0.1=106 w>0.01=359 w>0.001=413 w>0.0001=413
+n_proposals=323 remaining=12 w>0.1=252 w>0.01=323 w>0.001=323 w>0.0001=323
+n_proposals=296 remaining=16 w>0.1=33 w>0.01=159 w>0.001=293 w>0.0001=296
+n_proposals=1234 remaining=20 w>0.1=825 w>0.01=1228 w>0.001=1234 w>0.0001=1234
+n_proposals=626 remaining=11 w>0.1=157 w>0.01=471 w>0.001=626 w>0.0001=626
+n_proposals=1152 remaining=18 w>0.1=703 w>0.01=1152 w>0.001=1152 w>0.0001=1152
+n_proposals=751 remaining=7 w>0.1=662 w>0.01=751 w>0.001=751 w>0.0001=751
+n_proposals=1234 remaining=19 w>0.1=423 w>0.01=1034 w>0.001=1234 w>0.0001=1234
+n_proposals=561 remaining=14 w>0.1=123 w>0.01=524 w>0.001=561 w>0.0001=561
+n_proposals=644 remaining=10 w>0.1=148 w>0.01=353 w>0.001=634 w>0.0001=644
+n_proposals=410 remaining=6 w>0.1=410 w>0.01=410 w>0.001=410 w>0.0001=410
+n_proposals=174 remaining=11 w>0.1=13 w>0.01=113 w>0.001=174 w>0.0001=174
+n_proposals=1234 remaining=7 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=662 remaining=10 w>0.1=104 w>0.01=505 w>0.001=662 w>0.0001=662
+n_proposals=15 remaining=15 w>0.1=14 w>0.01=15 w>0.001=15 w>0.0001=15
+n_proposals=382 remaining=13 w>0.1=150 w>0.01=356 w>0.001=382 w>0.0001=382
+n_proposals=912 remaining=16 w>0.1=902 w>0.01=912 w>0.001=912 w>0.0001=912
+n_proposals=1044 remaining=18 w>0.1=416 w>0.01=1026 w>0.001=1044 w>0.0001=1044
+n_proposals=497 remaining=8 w>0.1=363 w>0.01=497 w>0.001=497 w>0.0001=497
+n_proposals=356 remaining=12 w>0.1=122 w>0.01=295 w>0.001=356 w>0.0001=356
+n_proposals=1126 remaining=12 w>0.1=971 w>0.01=1126 w>0.001=1126 w>0.0001=1126
+n_proposals=384 remaining=9 w>0.1=191 w>0.01=268 w>0.001=384 w>0.0001=384
+n_proposals=906 remaining=14 w>0.1=266 w>0.01=821 w>0.001=906 w>0.0001=906
+n_proposals=827 remaining=16 w>0.1=510 w>0.01=818 w>0.001=827 w>0.0001=827
+n_proposals=389 remaining=4 w>0.1=389 w>0.01=389 w>0.001=389 w>0.0001=389
+n_proposals=601 remaining=6 w>0.1=392 w>0.01=601 w>0.001=601 w>0.0001=601
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=14 w>0.1=385 w>0.01=884 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=10 w>0.1=1056 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=552 remaining=17 w>0.1=266 w>0.01=458 w>0.001=552 w>0.0001=552
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=613 remaining=14 w>0.1=444 w>0.01=613 w>0.001=613 w>0.0001=613
+n_proposals=449 remaining=10 w>0.1=189 w>0.01=394 w>0.001=449 w>0.0001=449
+n_proposals=417 remaining=7 w>0.1=250 w>0.01=250 w>0.001=417 w>0.0001=417
+n_proposals=246 remaining=9 w>0.1=102 w>0.01=170 w>0.001=246 w>0.0001=246
+n_proposals=608 remaining=5 w>0.1=608 w>0.01=608 w>0.001=608 w>0.0001=608
+n_proposals=594 remaining=12 w>0.1=122 w>0.01=428 w>0.001=594 w>0.0001=594
+n_proposals=32 remaining=13 w>0.1=32 w>0.01=32 w>0.001=32 w>0.0001=32
+n_proposals=398 remaining=4 w>0.1=398 w>0.01=398 w>0.001=398 w>0.0001=398
+n_proposals=822 remaining=4 w>0.1=817 w>0.01=822 w>0.001=822 w>0.0001=822
+n_proposals=436 remaining=8 w>0.1=19 w>0.01=173 w>0.001=409 w>0.0001=436
+n_proposals=906 remaining=8 w>0.1=63 w>0.01=569 w>0.001=891 w>0.0001=906
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=5 w>0.01=36 w>0.001=660 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=45 remaining=11 w>0.1=45 w>0.01=45 w>0.001=45 w>0.0001=45
+n_proposals=1234 remaining=7 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=283 remaining=10 w>0.1=71 w>0.01=173 w>0.001=282 w>0.0001=283
+n_proposals=289 remaining=12 w>0.1=33 w>0.01=115 w>0.001=289 w>0.0001=289
+n_proposals=601 remaining=5 w>0.1=192 w>0.01=192 w>0.001=601 w>0.0001=601
+n_proposals=199 remaining=15 w>0.1=125 w>0.01=188 w>0.001=199 w>0.0001=199
+n_proposals=407 remaining=12 w>0.1=200 w>0.01=407 w>0.001=407 w>0.0001=407
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=410 remaining=6 w>0.1=0 w>0.01=205 w>0.001=410 w>0.0001=410
+n_proposals=1234 remaining=5 w>0.1=820 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=907 remaining=6 w>0.1=194 w>0.01=340 w>0.001=907 w>0.0001=907
+n_proposals=472 remaining=9 w>0.1=472 w>0.01=472 w>0.001=472 w>0.0001=472
+n_proposals=597 remaining=7 w>0.1=224 w>0.01=554 w>0.001=597 w>0.0001=597
+n_proposals=1115 remaining=10 w>0.1=1115 w>0.01=1115 w>0.001=1115 w>0.0001=1115
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=659 w>0.01=659 w>0.001=1234 w>0.0001=1234
+n_proposals=502 remaining=7 w>0.1=171 w>0.01=362 w>0.001=502 w>0.0001=502
+n_proposals=1234 remaining=10 w>0.1=1090 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=255 remaining=7 w>0.1=255 w>0.01=255 w>0.001=255 w>0.0001=255
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=600 remaining=5 w>0.1=184 w>0.01=600 w>0.001=600 w>0.0001=600
+n_proposals=747 remaining=8 w>0.1=656 w>0.01=747 w>0.001=747 w>0.0001=747
+n_proposals=520 remaining=13 w>0.1=88 w>0.01=286 w>0.001=520 w>0.0001=520
+n_proposals=1234 remaining=8 w>0.1=1190 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=614 remaining=4 w>0.1=212 w>0.01=502 w>0.001=614 w>0.0001=614
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=107 remaining=12 w>0.1=91 w>0.01=101 w>0.001=107 w>0.0001=107
+n_proposals=841 remaining=5 w>0.1=841 w>0.01=841 w>0.001=841 w>0.0001=841
+n_proposals=1234 remaining=3 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=617 remaining=5 w>0.1=206 w>0.01=345 w>0.001=617 w>0.0001=617
+n_proposals=401 remaining=10 w>0.1=104 w>0.01=247 w>0.001=366 w>0.0001=401
+n_proposals=824 remaining=4 w>0.1=824 w>0.01=824 w>0.001=824 w>0.0001=824
+n_proposals=1122 remaining=6 w>0.1=1122 w>0.01=1122 w>0.001=1122 w>0.0001=1122
+n_proposals=1234 remaining=1 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=415 remaining=4 w>0.1=198 w>0.01=198 w>0.001=415 w>0.0001=415
+n_proposals=1234 remaining=6 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=213 w>0.01=867 w>0.001=1234 w>0.0001=1234
+n_proposals=831 remaining=4 w>0.1=831 w>0.01=831 w>0.001=831 w>0.0001=831
+n_proposals=1234 remaining=34 w>0.1=43 w>0.01=447 w>0.001=1234 w>0.0001=1234
+n_proposals=593 remaining=7 w>0.1=120 w>0.01=343 w>0.001=593 w>0.0001=593
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=121 w>0.01=804 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=388 remaining=5 w>0.1=388 w>0.01=388 w>0.001=388 w>0.0001=388
+n_proposals=1234 remaining=32 w>0.1=248 w>0.01=916 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=149 w>0.01=801 w>0.001=1234 w>0.0001=1234
+n_proposals=398 remaining=4 w>0.1=398 w>0.01=398 w>0.001=398 w>0.0001=398
+n_proposals=1234 remaining=36 w>0.1=87 w>0.01=668 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=82 w>0.01=601 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=0 w>0.01=23 w>0.001=646 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=272 w>0.01=895 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=193 w>0.01=847 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=65 w>0.01=428 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=21 w>0.01=326 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=221 w>0.01=761 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=191 w>0.01=859 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=261 w>0.01=914 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=226 w>0.01=884 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=23 w>0.01=362 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=435 w>0.01=1048 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=6 w>0.01=49 w>0.001=712 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=183 w>0.01=837 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=143 w>0.01=840 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=475 w>0.01=1121 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=254 w>0.01=888 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=2 w>0.01=27 w>0.001=669 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=40 w>0.01=411 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=190 w>0.01=789 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=145 w>0.01=719 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=95 w>0.01=646 w>0.001=1234 w>0.0001=1234
+n_proposals=865 remaining=15 w>0.1=168 w>0.01=668 w>0.001=864 w>0.0001=865
+n_proposals=1234 remaining=32 w>0.1=250 w>0.01=941 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=7 w>0.01=280 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=141 w>0.01=765 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=110 w>0.01=797 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=72 w>0.01=642 w>0.001=1234 w>0.0001=1234
+n_proposals=352 remaining=13 w>0.1=169 w>0.01=333 w>0.001=352 w>0.0001=352
+n_proposals=1234 remaining=36 w>0.1=17 w>0.01=81 w>0.001=648 w>0.0001=1234
+n_proposals=889 remaining=19 w>0.1=14 w>0.01=255 w>0.001=887 w>0.0001=889
+n_proposals=1234 remaining=30 w>0.1=291 w>0.01=812 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=127 w>0.01=749 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=56 w>0.01=541 w>0.001=1234 w>0.0001=1234
+n_proposals=356 remaining=12 w>0.1=134 w>0.01=328 w>0.001=356 w>0.0001=356
+n_proposals=1234 remaining=30 w>0.1=139 w>0.01=704 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=12 w>0.01=68 w>0.001=833 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=51 w>0.01=613 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=262 w>0.01=796 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=178 w>0.01=790 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=37 w>0.01=519 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=13 w>0.01=94 w>0.001=850 w>0.0001=1234
+n_proposals=449 remaining=10 w>0.1=215 w>0.01=393 w>0.001=449 w>0.0001=449
+n_proposals=1234 remaining=36 w>0.1=91 w>0.01=512 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=89 w>0.01=547 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=306 w>0.01=899 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=132 w>0.01=572 w>0.001=1096 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=246 w>0.01=872 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=270 w>0.01=827 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=213 w>0.01=869 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=144 w>0.01=781 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=199 w>0.01=805 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=25 w>0.01=107 w>0.001=717 w>0.0001=1234
+n_proposals=608 remaining=7 w>0.1=205 w>0.01=345 w>0.001=608 w>0.0001=608
+n_proposals=1234 remaining=28 w>0.1=112 w>0.01=648 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=32 w>0.01=297 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=20 w>0.01=315 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=263 w>0.01=912 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=80 w>0.01=627 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=336 w>0.01=894 w>0.001=1234 w>0.0001=1234
+n_proposals=633 remaining=14 w>0.1=17 w>0.01=187 w>0.001=633 w>0.0001=633
+n_proposals=1234 remaining=36 w>0.1=123 w>0.01=540 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=92 w>0.01=638 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=126 w>0.01=661 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=115 w>0.01=663 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=128 w>0.01=794 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=176 w>0.01=763 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=226 w>0.01=876 w>0.001=1234 w>0.0001=1234
+n_proposals=639 remaining=5 w>0.1=219 w>0.01=639 w>0.001=639 w>0.0001=639
+n_proposals=1234 remaining=32 w>0.1=96 w>0.01=669 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=131 w>0.01=808 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=244 w>0.01=915 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=140 w>0.01=754 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=23 w>0.01=84 w>0.001=703 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=418 w>0.01=1232 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=117 w>0.01=632 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=43 w>0.01=364 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=56 w>0.01=484 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=11 w>0.1=97 w>0.01=612 w>0.001=1230 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=71 w>0.01=241 w>0.001=892 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=161 w>0.01=714 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=519 w>0.01=1117 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=430 w>0.01=1035 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=417 w>0.01=1017 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=64 w>0.01=593 w>0.001=1234 w>0.0001=1234
+n_proposals=870 remaining=18 w>0.1=253 w>0.01=689 w>0.001=869 w>0.0001=870
+n_proposals=1234 remaining=22 w>0.1=162 w>0.01=850 w>0.001=1234 w>0.0001=1234
+n_proposals=364 remaining=9 w>0.1=13 w>0.01=84 w>0.001=313 w>0.0001=364
+n_proposals=1234 remaining=24 w>0.1=132 w>0.01=674 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=68 w>0.01=541 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=84 w>0.01=277 w>0.001=972 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=154 w>0.01=552 w>0.001=1085 w>0.0001=1234
+n_proposals=929 remaining=19 w>0.1=243 w>0.01=676 w>0.001=929 w>0.0001=929
+n_proposals=822 remaining=16 w>0.1=202 w>0.01=597 w>0.001=802 w>0.0001=822
+n_proposals=1234 remaining=22 w>0.1=369 w>0.01=967 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=23 w>0.01=68 w>0.001=660 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=69 w>0.01=771 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=112 w>0.01=614 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=73 w>0.01=481 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=7 w>0.1=272 w>0.01=642 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=76 w>0.01=667 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=34 w>0.01=127 w>0.001=714 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=574 w>0.01=1159 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=82 w>0.01=590 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=121 w>0.01=638 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=202 w>0.01=731 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=43 w>0.01=394 w>0.001=920 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=11 w>0.01=34 w>0.001=566 w>0.0001=1234
+n_proposals=538 remaining=17 w>0.1=85 w>0.01=366 w>0.001=538 w>0.0001=538
+n_proposals=1234 remaining=25 w>0.1=348 w>0.01=921 w>0.001=1234 w>0.0001=1234
+n_proposals=805 remaining=19 w>0.1=33 w>0.01=274 w>0.001=801 w>0.0001=805
+n_proposals=623 remaining=5 w>0.1=195 w>0.01=623 w>0.001=623 w>0.0001=623
+n_proposals=868 remaining=16 w>0.1=269 w>0.01=605 w>0.001=857 w>0.0001=868
+n_proposals=1234 remaining=24 w>0.1=354 w>0.01=952 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=28 w>0.01=75 w>0.001=690 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=134 w>0.01=435 w>0.001=1008 w>0.0001=1234
+n_proposals=896 remaining=18 w>0.1=232 w>0.01=760 w>0.001=896 w>0.0001=896
+n_proposals=1234 remaining=4 w>0.1=434 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=52 w>0.01=442 w>0.001=1234 w>0.0001=1234
+n_proposals=504 remaining=14 w>0.1=124 w>0.01=370 w>0.001=503 w>0.0001=504
+n_proposals=1234 remaining=14 w>0.1=266 w>0.01=929 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=382 w>0.01=956 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=50 w>0.01=447 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=159 w>0.01=895 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=109 w>0.01=674 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=45 w>0.01=247 w>0.001=902 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=58 w>0.01=654 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=292 w>0.01=829 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=155 w>0.01=879 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=92 w>0.01=649 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=159 w>0.01=564 w>0.001=1105 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=117 w>0.01=547 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=80 w>0.01=600 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=57 w>0.01=699 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=60 w>0.01=545 w>0.001=1175 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=61 w>0.01=200 w>0.001=900 w>0.0001=1234
+n_proposals=796 remaining=17 w>0.1=147 w>0.01=521 w>0.001=793 w>0.0001=796
+n_proposals=1234 remaining=33 w>0.1=354 w>0.01=808 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=100 w>0.01=741 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=60 w>0.01=521 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=263 w>0.01=908 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=108 w>0.01=752 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=62 w>0.01=450 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=25 w>0.01=331 w>0.001=1167 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=121 w>0.01=622 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=242 w>0.01=892 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=46 w>0.01=327 w>0.001=839 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=336 w>0.01=811 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=57 w>0.01=435 w>0.001=1234 w>0.0001=1234
+n_proposals=599 remaining=18 w>0.1=278 w>0.01=535 w>0.001=599 w>0.0001=599
+n_proposals=963 remaining=11 w>0.1=201 w>0.01=516 w>0.001=963 w>0.0001=963
+n_proposals=1234 remaining=25 w>0.1=52 w>0.01=188 w>0.001=773 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=50 w>0.01=519 w>0.001=1234 w>0.0001=1234
+n_proposals=843 remaining=15 w>0.1=178 w>0.01=609 w>0.001=837 w>0.0001=843
+n_proposals=764 remaining=11 w>0.1=401 w>0.01=764 w>0.001=764 w>0.0001=764
+n_proposals=857 remaining=19 w>0.1=44 w>0.01=442 w>0.001=852 w>0.0001=857
+n_proposals=1234 remaining=28 w>0.1=164 w>0.01=974 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=109 w>0.01=740 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=101 w>0.01=260 w>0.001=869 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=50 w>0.01=185 w>0.001=802 w>0.0001=1234
+n_proposals=631 remaining=14 w>0.1=43 w>0.01=331 w>0.001=597 w>0.0001=631
+n_proposals=1234 remaining=33 w>0.1=150 w>0.01=667 w>0.001=1234 w>0.0001=1234
+n_proposals=912 remaining=18 w>0.1=120 w>0.01=345 w>0.001=778 w>0.0001=912
+n_proposals=917 remaining=15 w>0.1=184 w>0.01=590 w>0.001=914 w>0.0001=917
+n_proposals=1234 remaining=17 w>0.1=576 w>0.01=1091 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=15 w>0.1=98 w>0.01=365 w>0.001=1110 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=147 w>0.01=745 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=34 w>0.01=397 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=60 w>0.01=470 w>0.001=1234 w>0.0001=1234
+n_proposals=556 remaining=16 w>0.1=274 w>0.01=522 w>0.001=556 w>0.0001=556
+n_proposals=1234 remaining=30 w>0.1=96 w>0.01=555 w>0.001=1047 w>0.0001=1234
+n_proposals=553 remaining=9 w>0.1=438 w>0.01=527 w>0.001=553 w>0.0001=553
+n_proposals=256 remaining=12 w>0.1=133 w>0.01=209 w>0.001=256 w>0.0001=256
+n_proposals=834 remaining=16 w>0.1=82 w>0.01=275 w>0.001=699 w>0.0001=834
+n_proposals=842 remaining=13 w>0.1=166 w>0.01=598 w>0.001=830 w>0.0001=842
+n_proposals=1234 remaining=24 w>0.1=27 w>0.01=387 w>0.001=1234 w>0.0001=1234
+n_proposals=263 remaining=13 w>0.1=107 w>0.01=258 w>0.001=263 w>0.0001=263
+n_proposals=927 remaining=15 w>0.1=431 w>0.01=893 w>0.001=927 w>0.0001=927
+n_proposals=1234 remaining=28 w>0.1=46 w>0.01=516 w>0.001=1234 w>0.0001=1234
+n_proposals=872 remaining=19 w>0.1=91 w>0.01=217 w>0.001=678 w>0.0001=872
+n_proposals=787 remaining=9 w>0.1=235 w>0.01=549 w>0.001=787 w>0.0001=787
+n_proposals=1234 remaining=19 w>0.1=53 w>0.01=687 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=38 w>0.01=267 w>0.001=754 w>0.0001=1234
+n_proposals=851 remaining=19 w>0.1=61 w>0.01=188 w>0.001=628 w>0.0001=851
+n_proposals=1234 remaining=31 w>0.1=202 w>0.01=739 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=73 w>0.01=776 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=367 w>0.01=957 w>0.001=1234 w>0.0001=1234
+n_proposals=884 remaining=14 w>0.1=153 w>0.01=548 w>0.001=884 w>0.0001=884
+n_proposals=1234 remaining=26 w>0.1=87 w>0.01=544 w>0.001=1234 w>0.0001=1234
+n_proposals=850 remaining=13 w>0.1=337 w>0.01=815 w>0.001=850 w>0.0001=850
+n_proposals=247 remaining=12 w>0.1=117 w>0.01=224 w>0.001=247 w>0.0001=247
+n_proposals=512 remaining=10 w>0.1=151 w>0.01=332 w>0.001=486 w>0.0001=512
+n_proposals=1234 remaining=14 w>0.1=189 w>0.01=904 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=109 w>0.01=889 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=296 w>0.01=911 w>0.001=1234 w>0.0001=1234
+n_proposals=840 remaining=8 w>0.1=223 w>0.01=668 w>0.001=840 w>0.0001=840
+n_proposals=1234 remaining=24 w>0.1=101 w>0.01=553 w>0.001=1234 w>0.0001=1234
+n_proposals=803 remaining=17 w>0.1=106 w>0.01=530 w>0.001=803 w>0.0001=803
+n_proposals=1234 remaining=13 w>0.1=93 w>0.01=620 w>0.001=1223 w>0.0001=1234
+n_proposals=827 remaining=16 w>0.1=91 w>0.01=266 w>0.001=669 w>0.0001=827
+n_proposals=1234 remaining=27 w>0.1=84 w>0.01=548 w>0.001=1106 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=35 w>0.01=315 w>0.001=788 w>0.0001=1234
+n_proposals=844 remaining=17 w>0.1=62 w>0.01=378 w>0.001=844 w>0.0001=844
+n_proposals=624 remaining=7 w>0.1=427 w>0.01=624 w>0.001=624 w>0.0001=624
+n_proposals=812 remaining=12 w>0.1=143 w>0.01=516 w>0.001=812 w>0.0001=812
+n_proposals=782 remaining=11 w>0.1=260 w>0.01=598 w>0.001=768 w>0.0001=782
+n_proposals=845 remaining=10 w>0.1=163 w>0.01=753 w>0.001=845 w>0.0001=845
+n_proposals=1234 remaining=22 w>0.1=21 w>0.01=529 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=38 w>0.01=306 w>0.001=955 w>0.0001=1234
+n_proposals=770 remaining=18 w>0.1=66 w>0.01=426 w>0.001=769 w>0.0001=770
+n_proposals=798 remaining=12 w>0.1=63 w>0.01=233 w>0.001=640 w>0.0001=798
+n_proposals=1234 remaining=11 w>0.1=84 w>0.01=991 w>0.001=1206 w>0.0001=1234
+n_proposals=655 remaining=10 w>0.1=428 w>0.01=630 w>0.001=655 w>0.0001=655
+n_proposals=1234 remaining=26 w>0.1=249 w>0.01=858 w>0.001=1234 w>0.0001=1234
+n_proposals=906 remaining=15 w>0.1=165 w>0.01=680 w>0.001=906 w>0.0001=906
+n_proposals=254 remaining=7 w>0.1=172 w>0.01=254 w>0.001=254 w>0.0001=254
+n_proposals=873 remaining=14 w>0.1=271 w>0.01=632 w>0.001=867 w>0.0001=873
+n_proposals=1234 remaining=35 w>0.1=195 w>0.01=838 w>0.001=1234 w>0.0001=1234
+n_proposals=537 remaining=11 w>0.1=97 w>0.01=299 w>0.001=537 w>0.0001=537
+n_proposals=1234 remaining=24 w>0.1=285 w>0.01=940 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=108 w>0.01=567 w>0.001=1234 w>0.0001=1234
+n_proposals=609 remaining=10 w>0.1=192 w>0.01=609 w>0.001=609 w>0.0001=609
+n_proposals=311 remaining=15 w>0.1=37 w>0.01=165 w>0.001=311 w>0.0001=311
+n_proposals=919 remaining=6 w>0.1=296 w>0.01=799 w>0.001=919 w>0.0001=919
+n_proposals=561 remaining=15 w>0.1=119 w>0.01=450 w>0.001=561 w>0.0001=561
+n_proposals=1234 remaining=25 w>0.1=189 w>0.01=612 w>0.001=1234 w>0.0001=1234
+n_proposals=370 remaining=13 w>0.1=26 w>0.01=91 w>0.001=270 w>0.0001=370
+n_proposals=512 remaining=13 w>0.1=20 w>0.01=214 w>0.001=496 w>0.0001=512
+n_proposals=728 remaining=8 w>0.1=650 w>0.01=728 w>0.001=728 w>0.0001=728
+n_proposals=606 remaining=3 w>0.1=606 w>0.01=606 w>0.001=606 w>0.0001=606
+n_proposals=804 remaining=5 w>0.1=804 w>0.01=804 w>0.001=804 w>0.0001=804
+n_proposals=1234 remaining=22 w>0.1=42 w>0.01=270 w>0.001=962 w>0.0001=1234
+n_proposals=577 remaining=12 w>0.1=135 w>0.01=429 w>0.001=575 w>0.0001=577
+n_proposals=414 remaining=8 w>0.1=70 w>0.01=414 w>0.001=414 w>0.0001=414
+n_proposals=1234 remaining=13 w>0.1=571 w>0.01=1220 w>0.001=1234 w>0.0001=1234
+n_proposals=353 remaining=12 w>0.1=24 w>0.01=82 w>0.001=275 w>0.0001=353
+n_proposals=200 remaining=9 w>0.1=143 w>0.01=200 w>0.001=200 w>0.0001=200
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=834 remaining=18 w>0.1=104 w>0.01=572 w>0.001=834 w>0.0001=834
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=154 remaining=8 w>0.1=154 w>0.01=154 w>0.001=154 w>0.0001=154
+n_proposals=583 remaining=9 w>0.1=304 w>0.01=573 w>0.001=583 w>0.0001=583
+n_proposals=523 remaining=11 w>0.1=28 w>0.01=180 w>0.001=518 w>0.0001=523
+n_proposals=1234 remaining=27 w>0.1=32 w>0.01=240 w>0.001=897 w>0.0001=1234
+n_proposals=730 remaining=6 w>0.1=300 w>0.01=525 w>0.001=730 w>0.0001=730
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=927 remaining=11 w>0.1=218 w>0.01=923 w>0.001=927 w>0.0001=927
+n_proposals=270 remaining=6 w>0.1=176 w>0.01=270 w>0.001=270 w>0.0001=270
+n_proposals=889 remaining=10 w>0.1=474 w>0.01=840 w>0.001=889 w>0.0001=889
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=58 w>0.01=324 w>0.001=1034 w>0.0001=1234
+n_proposals=415 remaining=10 w>0.1=117 w>0.01=235 w>0.001=415 w>0.0001=415
+n_proposals=1234 remaining=23 w>0.1=290 w>0.01=774 w>0.001=1234 w>0.0001=1234
+n_proposals=983 remaining=9 w>0.1=231 w>0.01=983 w>0.001=983 w>0.0001=983
+n_proposals=1234 remaining=25 w>0.1=194 w>0.01=781 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=96 w>0.01=655 w>0.001=1234 w>0.0001=1234
+n_proposals=646 remaining=9 w>0.1=312 w>0.01=646 w>0.001=646 w>0.0001=646
+n_proposals=1234 remaining=3 w>0.1=605 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=58 w>0.01=328 w>0.001=952 w>0.0001=1234
+n_proposals=433 remaining=4 w>0.1=224 w>0.01=433 w>0.001=433 w>0.0001=433
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=396 remaining=9 w>0.1=73 w>0.01=257 w>0.001=396 w>0.0001=396
+n_proposals=566 remaining=6 w>0.1=566 w>0.01=566 w>0.001=566 w>0.0001=566
+n_proposals=615 remaining=7 w>0.1=392 w>0.01=601 w>0.001=615 w>0.0001=615
+n_proposals=756 remaining=17 w>0.1=79 w>0.01=503 w>0.001=756 w>0.0001=756
+n_proposals=155 remaining=8 w>0.1=13 w>0.01=50 w>0.001=98 w>0.0001=155
+n_proposals=1234 remaining=35 w>0.1=77 w>0.01=594 w>0.001=1234 w>0.0001=1234
+n_proposals=536 remaining=7 w>0.1=315 w>0.01=536 w>0.001=536 w>0.0001=536
+n_proposals=949 remaining=15 w>0.1=111 w>0.01=628 w>0.001=947 w>0.0001=949
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=610 remaining=6 w>0.1=610 w>0.01=610 w>0.001=610 w>0.0001=610
+n_proposals=1002 remaining=7 w>0.1=783 w>0.01=1002 w>0.001=1002 w>0.0001=1002
+n_proposals=731 remaining=16 w>0.1=92 w>0.01=495 w>0.001=730 w>0.0001=731
+n_proposals=1234 remaining=32 w>0.1=195 w>0.01=848 w>0.001=1234 w>0.0001=1234
+n_proposals=612 remaining=7 w>0.1=403 w>0.01=612 w>0.001=612 w>0.0001=612
+n_proposals=1234 remaining=22 w>0.1=237 w>0.01=836 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=46 w>0.01=476 w>0.001=962 w>0.0001=1234
+n_proposals=1234 remaining=7 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=407 remaining=7 w>0.1=108 w>0.01=281 w>0.001=407 w>0.0001=407
+n_proposals=837 remaining=5 w>0.1=412 w>0.01=837 w>0.001=837 w>0.0001=837
+n_proposals=1234 remaining=4 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=228 w>0.01=677 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=13 w>0.1=286 w>0.01=1130 w>0.001=1234 w>0.0001=1234
+n_proposals=838 remaining=5 w>0.1=414 w>0.01=838 w>0.001=838 w>0.0001=838
+n_proposals=1234 remaining=30 w>0.1=203 w>0.01=800 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=361 remaining=12 w>0.1=133 w>0.01=339 w>0.001=361 w>0.0001=361
+n_proposals=872 remaining=18 w>0.1=7 w>0.01=265 w>0.001=587 w>0.0001=872
+n_proposals=1234 remaining=33 w>0.1=138 w>0.01=759 w>0.001=1234 w>0.0001=1234
+n_proposals=952 remaining=19 w>0.1=242 w>0.01=699 w>0.001=952 w>0.0001=952
+n_proposals=440 remaining=14 w>0.1=17 w>0.01=110 w>0.001=400 w>0.0001=440
+n_proposals=629 remaining=5 w>0.1=477 w>0.01=629 w>0.001=629 w>0.0001=629
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=824 remaining=4 w>0.1=824 w>0.01=824 w>0.001=824 w>0.0001=824
+n_proposals=613 remaining=4 w>0.1=0 w>0.01=613 w>0.001=613 w>0.0001=613
+n_proposals=646 remaining=10 w>0.1=210 w>0.01=616 w>0.001=646 w>0.0001=646
+n_proposals=1234 remaining=27 w>0.1=261 w>0.01=927 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=59 w>0.01=522 w>0.001=1234 w>0.0001=1234
+n_proposals=604 remaining=3 w>0.1=0 w>0.01=604 w>0.001=604 w>0.0001=604
+n_proposals=805 remaining=16 w>0.1=24 w>0.01=375 w>0.001=622 w>0.0001=805
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=101 w>0.01=363 w>0.001=1001 w>0.0001=1234
+n_proposals=403 remaining=12 w>0.1=0 w>0.01=59 w>0.001=343 w>0.0001=403
+n_proposals=1234 remaining=29 w>0.1=114 w>0.01=902 w>0.001=1234 w>0.0001=1234
+n_proposals=552 remaining=14 w>0.1=264 w>0.01=384 w>0.001=552 w>0.0001=552
+n_proposals=1234 remaining=1 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=184 w>0.01=734 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=7 w>0.1=817 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=308 w>0.01=929 w>0.001=1234 w>0.0001=1234
+n_proposals=819 remaining=10 w>0.1=11 w>0.01=524 w>0.001=819 w>0.0001=819
+n_proposals=1234 remaining=16 w>0.1=117 w>0.01=374 w>0.001=991 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=134 w>0.01=854 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=197 w>0.01=855 w>0.001=1234 w>0.0001=1234
+n_proposals=875 remaining=11 w>0.1=75 w>0.01=598 w>0.001=857 w>0.0001=875
+n_proposals=1234 remaining=25 w>0.1=63 w>0.01=575 w>0.001=1234 w>0.0001=1234
+n_proposals=601 remaining=5 w>0.1=407 w>0.01=407 w>0.001=601 w>0.0001=601
+n_proposals=585 remaining=14 w>0.1=170 w>0.01=425 w>0.001=585 w>0.0001=585
+n_proposals=1234 remaining=7 w>0.1=0 w>0.01=614 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=186 w>0.01=862 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=73 w>0.01=554 w>0.001=1234 w>0.0001=1234
+n_proposals=610 remaining=4 w>0.1=412 w>0.01=610 w>0.001=610 w>0.0001=610
+n_proposals=416 remaining=9 w>0.1=148 w>0.01=225 w>0.001=416 w>0.0001=416
+n_proposals=614 remaining=5 w>0.1=0 w>0.01=0 w>0.001=614 w>0.0001=614
+n_proposals=1234 remaining=36 w>0.1=219 w>0.01=822 w>0.001=1234 w>0.0001=1234
+n_proposals=997 remaining=8 w>0.1=118 w>0.01=609 w>0.001=997 w>0.0001=997
+n_proposals=819 remaining=12 w>0.1=52 w>0.01=187 w>0.001=648 w>0.0001=815
+n_proposals=1234 remaining=22 w>0.1=125 w>0.01=864 w>0.001=1234 w>0.0001=1234
+n_proposals=941 remaining=18 w>0.1=194 w>0.01=694 w>0.001=939 w>0.0001=941
+n_proposals=632 remaining=3 w>0.1=0 w>0.01=0 w>0.001=632 w>0.0001=632
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=148 w>0.01=648 w>0.001=1234 w>0.0001=1234
+n_proposals=644 remaining=6 w>0.1=0 w>0.01=644 w>0.001=644 w>0.0001=644
+n_proposals=997 remaining=15 w>0.1=334 w>0.01=882 w>0.001=997 w>0.0001=997
+n_proposals=174 remaining=10 w>0.1=54 w>0.01=127 w>0.001=174 w>0.0001=174
+n_proposals=1234 remaining=1 w>0.1=0 w>0.01=0 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=161 w>0.01=365 w>0.001=1069 w>0.0001=1234
+n_proposals=915 remaining=19 w>0.1=29 w>0.01=473 w>0.001=913 w>0.0001=915
+n_proposals=1234 remaining=13 w>0.1=584 w>0.01=938 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=0 w>0.01=188 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=73 w>0.01=533 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=299 w>0.01=1078 w>0.001=1234 w>0.0001=1234
+n_proposals=560 remaining=7 w>0.1=0 w>0.01=439 w>0.001=560 w>0.0001=560
+n_proposals=1234 remaining=32 w>0.1=65 w>0.01=543 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=155 w>0.01=400 w>0.001=1098 w>0.0001=1234
+n_proposals=788 remaining=12 w>0.1=236 w>0.01=636 w>0.001=788 w>0.0001=788
+n_proposals=1234 remaining=16 w>0.1=294 w>0.01=1079 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=361 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=335 w>0.01=1000 w>0.001=1234 w>0.0001=1234
+n_proposals=1176 remaining=10 w>0.1=756 w>0.01=1176 w>0.001=1176 w>0.0001=1176
+n_proposals=1234 remaining=14 w>0.1=23 w>0.01=569 w>0.001=1233 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=54 w>0.01=484 w>0.001=1234 w>0.0001=1234
+n_proposals=1019 remaining=5 w>0.1=0 w>0.01=411 w>0.001=822 w>0.0001=1019
+n_proposals=1234 remaining=8 w>0.1=878 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=355 w>0.01=999 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=132 w>0.01=688 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=0 w>0.01=591 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=191 w>0.01=516 w>0.001=1159 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=6 w>0.1=614 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=203 w>0.01=781 w>0.001=1234 w>0.0001=1234
+n_proposals=333 remaining=11 w>0.1=43 w>0.01=264 w>0.001=333 w>0.0001=333
+n_proposals=1234 remaining=36 w>0.1=156 w>0.01=832 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=409 w>0.01=1031 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=191 w>0.01=831 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=34 w>0.01=172 w>0.001=1061 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=157 w>0.01=698 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=302 w>0.01=923 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=175 w>0.01=702 w>0.001=1193 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=615 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=65 w>0.01=504 w>0.001=1234 w>0.0001=1234
+n_proposals=577 remaining=9 w>0.1=52 w>0.01=432 w>0.001=577 w>0.0001=577
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=58 w>0.01=491 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=58 w>0.01=569 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=104 w>0.01=611 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=270 w>0.01=953 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=297 w>0.01=910 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=58 w>0.01=599 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=130 w>0.01=578 w>0.001=1198 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=71 w>0.01=563 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=175 w>0.01=853 w>0.001=1234 w>0.0001=1234
+n_proposals=515 remaining=7 w>0.1=35 w>0.01=515 w>0.001=515 w>0.0001=515
+n_proposals=1234 remaining=31 w>0.1=69 w>0.01=273 w>0.001=1107 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=102 w>0.01=617 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=205 w>0.01=801 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=60 w>0.01=419 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=330 w>0.01=890 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=217 w>0.01=858 w>0.001=1234 w>0.0001=1234
+n_proposals=583 remaining=17 w>0.1=137 w>0.01=484 w>0.001=582 w>0.0001=583
+n_proposals=1234 remaining=23 w>0.1=57 w>0.01=492 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=304 w>0.01=941 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=78 w>0.01=610 w>0.001=1234 w>0.0001=1234
+n_proposals=611 remaining=5 w>0.1=611 w>0.01=611 w>0.001=611 w>0.0001=611
+n_proposals=812 remaining=18 w>0.1=70 w>0.01=396 w>0.001=810 w>0.0001=812
+n_proposals=1234 remaining=36 w>0.1=267 w>0.01=823 w>0.001=1234 w>0.0001=1234
+n_proposals=613 remaining=4 w>0.1=613 w>0.01=613 w>0.001=613 w>0.0001=613
+n_proposals=1234 remaining=27 w>0.1=39 w>0.01=189 w>0.001=1081 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=359 w>0.01=1024 w>0.001=1234 w>0.0001=1234
+n_proposals=392 remaining=15 w>0.1=119 w>0.01=349 w>0.001=391 w>0.0001=392
+n_proposals=1234 remaining=21 w>0.1=242 w>0.01=794 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=101 w>0.01=657 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=365 w>0.01=940 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1044 remaining=16 w>0.1=184 w>0.01=795 w>0.001=1044 w>0.0001=1044
+n_proposals=1234 remaining=30 w>0.1=203 w>0.01=962 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=298 w>0.01=912 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=100 w>0.01=625 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=13 w>0.1=632 w>0.01=1218 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=92 w>0.01=613 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=424 w>0.01=1055 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=112 w>0.01=688 w>0.001=1234 w>0.0001=1234
+n_proposals=893 remaining=19 w>0.1=174 w>0.01=600 w>0.001=893 w>0.0001=893
+n_proposals=332 remaining=14 w>0.1=184 w>0.01=322 w>0.001=332 w>0.0001=332
+n_proposals=1234 remaining=36 w>0.1=308 w>0.01=1030 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=74 w>0.01=492 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=240 w>0.01=828 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=128 w>0.01=436 w>0.001=1219 w>0.0001=1234
+n_proposals=1115 remaining=12 w>0.1=341 w>0.01=777 w>0.001=1115 w>0.0001=1115
+n_proposals=1234 remaining=11 w>0.1=758 w>0.01=1215 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=174 w>0.01=854 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=166 w>0.01=763 w>0.001=1234 w>0.0001=1234
+n_proposals=606 remaining=17 w>0.1=37 w>0.01=303 w>0.001=599 w>0.0001=606
+n_proposals=1234 remaining=35 w>0.1=128 w>0.01=826 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=131 w>0.01=461 w>0.001=1227 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=222 w>0.01=756 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=103 w>0.01=772 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=532 w>0.01=1207 w>0.001=1234 w>0.0001=1234
+n_proposals=569 remaining=9 w>0.1=182 w>0.01=446 w>0.001=569 w>0.0001=569
+n_proposals=1234 remaining=23 w>0.1=143 w>0.01=846 w>0.001=1234 w>0.0001=1234
+n_proposals=110 remaining=10 w>0.1=110 w>0.01=110 w>0.001=110 w>0.0001=110
+n_proposals=1234 remaining=30 w>0.1=139 w>0.01=602 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=135 w>0.01=664 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=131 w>0.01=903 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=348 w>0.01=945 w>0.001=1234 w>0.0001=1234
+n_proposals=586 remaining=15 w>0.1=52 w>0.01=323 w>0.001=581 w>0.0001=586
+n_proposals=1234 remaining=31 w>0.1=112 w>0.01=697 w>0.001=1234 w>0.0001=1234
+n_proposals=599 remaining=18 w>0.1=110 w>0.01=397 w>0.001=599 w>0.0001=599
+n_proposals=1234 remaining=33 w>0.1=72 w>0.01=702 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=89 w>0.01=517 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=7 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=647 w>0.01=1208 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=173 w>0.01=1003 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=152 w>0.01=907 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=89 w>0.01=819 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=238 w>0.01=943 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=425 w>0.01=1126 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=270 w>0.01=941 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=27 w>0.01=489 w>0.001=988 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=56 w>0.01=556 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=287 w>0.01=852 w>0.001=1234 w>0.0001=1234
+n_proposals=490 remaining=7 w>0.1=276 w>0.01=490 w>0.001=490 w>0.0001=490
+n_proposals=1234 remaining=28 w>0.1=115 w>0.01=520 w>0.001=1234 w>0.0001=1234
+n_proposals=550 remaining=13 w>0.1=115 w>0.01=407 w>0.001=548 w>0.0001=550
+n_proposals=1234 remaining=28 w>0.1=498 w>0.01=1215 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=263 w>0.01=965 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=42 w>0.01=569 w>0.001=1234 w>0.0001=1234
+n_proposals=583 remaining=5 w>0.1=583 w>0.01=583 w>0.001=583 w>0.0001=583
+n_proposals=1234 remaining=29 w>0.1=230 w>0.01=902 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=459 w>0.01=1154 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=184 w>0.01=604 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=262 w>0.01=912 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=27 w>0.01=318 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=226 w>0.01=961 w>0.001=1234 w>0.0001=1234
+n_proposals=640 remaining=4 w>0.1=640 w>0.01=640 w>0.001=640 w>0.0001=640
+n_proposals=506 remaining=11 w>0.1=38 w>0.01=259 w>0.001=484 w>0.0001=506
+n_proposals=1234 remaining=33 w>0.1=121 w>0.01=640 w>0.001=1234 w>0.0001=1234
+n_proposals=801 remaining=5 w>0.1=387 w>0.01=801 w>0.001=801 w>0.0001=801
+n_proposals=1234 remaining=30 w>0.1=97 w>0.01=730 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=44 w>0.01=491 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=20 w>0.01=335 w>0.001=1233 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=469 w>0.01=1064 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=144 w>0.01=739 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=144 w>0.01=879 w>0.001=1234 w>0.0001=1234
+n_proposals=604 remaining=3 w>0.1=604 w>0.01=604 w>0.001=604 w>0.0001=604
+n_proposals=1234 remaining=30 w>0.1=58 w>0.01=526 w>0.001=1234 w>0.0001=1234
+n_proposals=382 remaining=17 w>0.1=33 w>0.01=254 w>0.001=382 w>0.0001=382
+n_proposals=705 remaining=15 w>0.1=438 w>0.01=660 w>0.001=705 w>0.0001=705
+n_proposals=1234 remaining=18 w>0.1=190 w>0.01=966 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=131 w>0.01=665 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=162 w>0.01=543 w>0.001=1234 w>0.0001=1234
+n_proposals=204 remaining=9 w>0.1=87 w>0.01=190 w>0.001=204 w>0.0001=204
+n_proposals=1234 remaining=26 w>0.1=748 w>0.01=1194 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=20 w>0.01=335 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=426 w>0.01=1051 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=98 w>0.01=616 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=113 w>0.01=677 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=152 w>0.01=798 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=20 w>0.01=303 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=347 w>0.01=884 w>0.001=1229 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=238 w>0.01=740 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=158 w>0.01=727 w>0.001=1234 w>0.0001=1234
+n_proposals=360 remaining=16 w>0.1=38 w>0.01=236 w>0.001=360 w>0.0001=360
+n_proposals=156 remaining=13 w>0.1=52 w>0.01=135 w>0.001=156 w>0.0001=156
+n_proposals=830 remaining=18 w>0.1=59 w>0.01=576 w>0.001=828 w>0.0001=830
+n_proposals=276 remaining=7 w>0.1=98 w>0.01=270 w>0.001=276 w>0.0001=276
+n_proposals=1234 remaining=21 w>0.1=405 w>0.01=978 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=471 w>0.01=1072 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=272 w>0.01=1059 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=20 w>0.01=307 w>0.001=1233 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=314 w>0.01=979 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=519 w>0.01=1071 w>0.001=1233 w>0.0001=1234
+n_proposals=949 remaining=19 w>0.1=159 w>0.01=479 w>0.001=948 w>0.0001=949
+n_proposals=1234 remaining=24 w>0.1=250 w>0.01=1050 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=487 w>0.01=1228 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=183 w>0.01=795 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=113 w>0.01=621 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=35 w>0.01=642 w>0.001=1070 w>0.0001=1234
+n_proposals=859 remaining=19 w>0.1=267 w>0.01=774 w>0.001=859 w>0.0001=859
+n_proposals=609 remaining=5 w>0.1=203 w>0.01=203 w>0.001=609 w>0.0001=609
+n_proposals=1234 remaining=17 w>0.1=413 w>0.01=1208 w>0.001=1234 w>0.0001=1234
+n_proposals=362 remaining=11 w>0.1=210 w>0.01=334 w>0.001=362 w>0.0001=362
+n_proposals=1234 remaining=24 w>0.1=346 w>0.01=967 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=14 w>0.1=128 w>0.01=812 w>0.001=1230 w>0.0001=1234
+n_proposals=634 remaining=4 w>0.1=200 w>0.01=200 w>0.001=634 w>0.0001=634
+n_proposals=1234 remaining=22 w>0.1=732 w>0.01=1164 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=225 w>0.01=802 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=845 w>0.01=1191 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=434 w>0.01=1222 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=37 w>0.01=428 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=15 w>0.1=242 w>0.01=851 w>0.001=1228 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=132 w>0.01=1152 w>0.001=1234 w>0.0001=1234
+n_proposals=786 remaining=16 w>0.1=61 w>0.01=549 w>0.001=786 w>0.0001=786
+n_proposals=1234 remaining=33 w>0.1=53 w>0.01=422 w>0.001=1076 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=427 w>0.01=1063 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=139 remaining=9 w>0.1=84 w>0.01=139 w>0.001=139 w>0.0001=139
+n_proposals=1234 remaining=22 w>0.1=101 w>0.01=706 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=123 w>0.01=1160 w>0.001=1234 w>0.0001=1234
+n_proposals=886 remaining=19 w>0.1=181 w>0.01=673 w>0.001=886 w>0.0001=886
+n_proposals=1234 remaining=20 w>0.1=730 w>0.01=1165 w>0.001=1234 w>0.0001=1234
+n_proposals=400 remaining=12 w>0.1=239 w>0.01=400 w>0.001=400 w>0.0001=400
+n_proposals=1234 remaining=14 w>0.1=325 w>0.01=919 w>0.001=1233 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=15 w>0.01=342 w>0.001=1232 w>0.0001=1234
+n_proposals=1234 remaining=15 w>0.1=859 w>0.01=1185 w>0.001=1234 w>0.0001=1234
+n_proposals=836 remaining=13 w>0.1=173 w>0.01=644 w>0.001=830 w>0.0001=836
+n_proposals=610 remaining=8 w>0.1=371 w>0.01=485 w>0.001=610 w>0.0001=610
+n_proposals=1234 remaining=20 w>0.1=144 w>0.01=787 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=163 w>0.01=784 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=48 w>0.01=378 w>0.001=1065 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=336 w>0.01=871 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=502 w>0.01=1080 w>0.001=1223 w>0.0001=1234
+n_proposals=564 remaining=14 w>0.1=106 w>0.01=344 w>0.001=564 w>0.0001=564
+n_proposals=1234 remaining=22 w>0.1=218 w>0.01=736 w>0.001=1234 w>0.0001=1234
+n_proposals=774 remaining=17 w>0.1=237 w>0.01=727 w>0.001=774 w>0.0001=774
+n_proposals=803 remaining=12 w>0.1=196 w>0.01=655 w>0.001=799 w>0.0001=803
+n_proposals=1234 remaining=18 w>0.1=1047 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=51 w>0.01=676 w>0.001=1072 w>0.0001=1234
+n_proposals=847 remaining=10 w>0.1=195 w>0.01=808 w>0.001=847 w>0.0001=847
+n_proposals=831 remaining=13 w>0.1=448 w>0.01=681 w>0.001=831 w>0.0001=831
+n_proposals=1234 remaining=20 w>0.1=10 w>0.01=354 w>0.001=1232 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=428 w>0.01=994 w>0.001=1228 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=330 w>0.01=766 w>0.001=1234 w>0.0001=1234
+n_proposals=837 remaining=16 w>0.1=195 w>0.01=652 w>0.001=837 w>0.0001=837
+n_proposals=129 remaining=11 w>0.1=67 w>0.01=129 w>0.001=129 w>0.0001=129
+n_proposals=1234 remaining=29 w>0.1=176 w>0.01=772 w>0.001=1234 w>0.0001=1234
+n_proposals=845 remaining=19 w>0.1=175 w>0.01=541 w>0.001=845 w>0.0001=845
+n_proposals=1234 remaining=25 w>0.1=68 w>0.01=444 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=55 w>0.01=422 w>0.001=1081 w>0.0001=1234
+n_proposals=865 remaining=10 w>0.1=166 w>0.01=513 w>0.001=829 w>0.0001=865
+n_proposals=471 remaining=18 w>0.1=128 w>0.01=398 w>0.001=471 w>0.0001=471
+n_proposals=468 remaining=8 w>0.1=201 w>0.01=423 w>0.001=468 w>0.0001=468
+n_proposals=614 remaining=6 w>0.1=614 w>0.01=614 w>0.001=614 w>0.0001=614
+n_proposals=443 remaining=11 w>0.1=94 w>0.01=285 w>0.001=437 w>0.0001=443
+n_proposals=746 remaining=18 w>0.1=458 w>0.01=739 w>0.001=746 w>0.0001=746
+n_proposals=1234 remaining=22 w>0.1=333 w>0.01=1066 w>0.001=1234 w>0.0001=1234
+n_proposals=223 remaining=17 w>0.1=35 w>0.01=182 w>0.001=223 w>0.0001=223
+n_proposals=463 remaining=11 w>0.1=215 w>0.01=376 w>0.001=453 w>0.0001=463
+n_proposals=808 remaining=15 w>0.1=376 w>0.01=698 w>0.001=808 w>0.0001=808
+n_proposals=1234 remaining=27 w>0.1=284 w>0.01=790 w>0.001=1234 w>0.0001=1234
+n_proposals=423 remaining=9 w>0.1=161 w>0.01=361 w>0.001=423 w>0.0001=423
+n_proposals=1234 remaining=33 w>0.1=307 w>0.01=899 w>0.001=1234 w>0.0001=1234
+n_proposals=490 remaining=14 w>0.1=150 w>0.01=461 w>0.001=490 w>0.0001=490
+n_proposals=1234 remaining=23 w>0.1=93 w>0.01=584 w>0.001=1234 w>0.0001=1234
+n_proposals=216 remaining=16 w>0.1=28 w>0.01=184 w>0.001=216 w>0.0001=216
+n_proposals=56 remaining=8 w>0.1=25 w>0.01=56 w>0.001=56 w>0.0001=56
+n_proposals=1234 remaining=26 w>0.1=201 w>0.01=793 w>0.001=1234 w>0.0001=1234
+n_proposals=643 remaining=4 w>0.1=643 w>0.01=643 w>0.001=643 w>0.0001=643
+n_proposals=1234 remaining=32 w>0.1=321 w>0.01=781 w>0.001=1234 w>0.0001=1234
+n_proposals=829 remaining=8 w>0.1=142 w>0.01=636 w>0.001=801 w>0.0001=829
+n_proposals=401 remaining=16 w>0.1=60 w>0.01=292 w>0.001=401 w>0.0001=401
+n_proposals=633 remaining=6 w>0.1=633 w>0.01=633 w>0.001=633 w>0.0001=633
+n_proposals=1234 remaining=20 w>0.1=940 w>0.01=1226 w>0.001=1234 w>0.0001=1234
+n_proposals=401 remaining=14 w>0.1=103 w>0.01=232 w>0.001=401 w>0.0001=401
+n_proposals=1234 remaining=25 w>0.1=204 w>0.01=817 w>0.001=1234 w>0.0001=1234
+n_proposals=823 remaining=9 w>0.1=808 w>0.01=823 w>0.001=823 w>0.0001=823
+n_proposals=181 remaining=13 w>0.1=181 w>0.01=181 w>0.001=181 w>0.0001=181
+n_proposals=288 remaining=12 w>0.1=154 w>0.01=280 w>0.001=288 w>0.0001=288
+n_proposals=1234 remaining=30 w>0.1=304 w>0.01=866 w>0.001=1234 w>0.0001=1234
+n_proposals=638 remaining=6 w>0.1=202 w>0.01=332 w>0.001=609 w>0.0001=638
+n_proposals=287 remaining=15 w>0.1=9 w>0.01=202 w>0.001=287 w>0.0001=287
+n_proposals=1234 remaining=24 w>0.1=334 w>0.01=854 w>0.001=1234 w>0.0001=1234
+n_proposals=480 remaining=9 w>0.1=171 w>0.01=386 w>0.001=480 w>0.0001=480
+n_proposals=397 remaining=8 w>0.1=179 w>0.01=367 w>0.001=397 w>0.0001=397
+n_proposals=195 remaining=12 w>0.1=195 w>0.01=195 w>0.001=195 w>0.0001=195
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=58 w>0.01=370 w>0.001=995 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=618 w>0.01=618 w>0.001=1234 w>0.0001=1234
+n_proposals=585 remaining=18 w>0.1=307 w>0.01=576 w>0.001=585 w>0.0001=585
+n_proposals=599 remaining=4 w>0.1=599 w>0.01=599 w>0.001=599 w>0.0001=599
+n_proposals=1234 remaining=21 w>0.1=49 w>0.01=920 w>0.001=1197 w>0.0001=1234
+n_proposals=740 remaining=14 w>0.1=148 w>0.01=588 w>0.001=740 w>0.0001=740
+n_proposals=421 remaining=10 w>0.1=323 w>0.01=421 w>0.001=421 w>0.0001=421
+n_proposals=1234 remaining=21 w>0.1=168 w>0.01=886 w>0.001=1234 w>0.0001=1234
+n_proposals=417 remaining=13 w>0.1=256 w>0.01=417 w>0.001=417 w>0.0001=417
+n_proposals=610 remaining=11 w>0.1=345 w>0.01=600 w>0.001=610 w>0.0001=610
+n_proposals=493 remaining=6 w>0.1=298 w>0.01=474 w>0.001=493 w>0.0001=493
+n_proposals=514 remaining=8 w>0.1=180 w>0.01=514 w>0.001=514 w>0.0001=514
+n_proposals=1234 remaining=22 w>0.1=247 w>0.01=837 w>0.001=1234 w>0.0001=1234
+n_proposals=473 remaining=10 w>0.1=473 w>0.01=473 w>0.001=473 w>0.0001=473
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=364 w>0.01=839 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=46 w>0.01=445 w>0.001=1039 w>0.0001=1234
+n_proposals=930 remaining=6 w>0.1=930 w>0.01=930 w>0.001=930 w>0.0001=930
+n_proposals=1234 remaining=20 w>0.1=49 w>0.01=922 w>0.001=1194 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=226 w>0.01=871 w>0.001=1234 w>0.0001=1234
+n_proposals=99 remaining=16 w>0.1=67 w>0.01=99 w>0.001=99 w>0.0001=99
+n_proposals=119 remaining=12 w>0.1=2 w>0.01=99 w>0.001=119 w>0.0001=119
+n_proposals=221 remaining=9 w>0.1=221 w>0.01=221 w>0.001=221 w>0.0001=221
+n_proposals=817 remaining=12 w>0.1=254 w>0.01=772 w>0.001=817 w>0.0001=817
+n_proposals=1234 remaining=14 w>0.1=1104 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=629 remaining=3 w>0.1=629 w>0.01=629 w>0.001=629 w>0.0001=629
+n_proposals=1234 remaining=3 w>0.1=651 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=412 remaining=8 w>0.1=412 w>0.01=412 w>0.001=412 w>0.0001=412
+n_proposals=1234 remaining=36 w>0.1=159 w>0.01=722 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=646 w>0.01=1154 w>0.001=1234 w>0.0001=1234
+n_proposals=872 remaining=18 w>0.1=117 w>0.01=626 w>0.001=872 w>0.0001=872
+n_proposals=605 remaining=7 w>0.1=387 w>0.01=605 w>0.001=605 w>0.0001=605
+n_proposals=889 remaining=18 w>0.1=78 w>0.01=490 w>0.001=884 w>0.0001=889
+n_proposals=1234 remaining=1 w>0.1=663 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=333 remaining=10 w>0.1=231 w>0.01=333 w>0.001=333 w>0.0001=333
+n_proposals=938 remaining=7 w>0.1=938 w>0.01=938 w>0.001=938 w>0.0001=938
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=12 w>0.1=1161 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=547 remaining=6 w>0.1=298 w>0.01=458 w>0.001=547 w>0.0001=547
+n_proposals=1234 remaining=23 w>0.1=606 w>0.01=1149 w>0.001=1234 w>0.0001=1234
+n_proposals=842 remaining=16 w>0.1=25 w>0.01=520 w>0.001=817 w>0.0001=842
+n_proposals=1234 remaining=18 w>0.1=407 w>0.01=983 w>0.001=1228 w>0.0001=1234
+n_proposals=908 remaining=16 w>0.1=33 w>0.01=356 w>0.001=746 w>0.0001=908
+n_proposals=397 remaining=6 w>0.1=397 w>0.01=397 w>0.001=397 w>0.0001=397
+n_proposals=227 remaining=10 w>0.1=76 w>0.01=212 w>0.001=227 w>0.0001=227
+n_proposals=389 remaining=5 w>0.1=203 w>0.01=389 w>0.001=389 w>0.0001=389
+n_proposals=823 remaining=4 w>0.1=823 w>0.01=823 w>0.001=823 w>0.0001=823
+n_proposals=1234 remaining=35 w>0.1=182 w>0.01=765 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=355 w>0.01=836 w>0.001=1234 w>0.0001=1234
+n_proposals=95 remaining=10 w>0.1=85 w>0.01=95 w>0.001=95 w>0.0001=95
+n_proposals=589 remaining=3 w>0.1=589 w>0.01=589 w>0.001=589 w>0.0001=589
+n_proposals=631 remaining=5 w>0.1=631 w>0.01=631 w>0.001=631 w>0.0001=631
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=535 remaining=14 w>0.1=13 w>0.01=228 w>0.001=472 w>0.0001=535
+n_proposals=229 remaining=7 w>0.1=151 w>0.01=229 w>0.001=229 w>0.0001=229
+n_proposals=420 remaining=14 w>0.1=15 w>0.01=321 w>0.001=420 w>0.0001=420
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=633 remaining=4 w>0.1=633 w>0.01=633 w>0.001=633 w>0.0001=633
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=632 remaining=7 w>0.1=243 w>0.01=564 w>0.001=632 w>0.0001=632
+n_proposals=1234 remaining=16 w>0.1=314 w>0.01=937 w>0.001=1229 w>0.0001=1234
+n_proposals=853 remaining=19 w>0.1=237 w>0.01=582 w>0.001=851 w>0.0001=853
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=371 remaining=12 w>0.1=6 w>0.01=154 w>0.001=322 w>0.0001=371
+n_proposals=843 remaining=5 w>0.1=843 w>0.01=843 w>0.001=843 w>0.0001=843
+n_proposals=136 remaining=8 w>0.1=38 w>0.01=136 w>0.001=136 w>0.0001=136
+n_proposals=193 remaining=5 w>0.1=193 w>0.01=193 w>0.001=193 w>0.0001=193
+n_proposals=630 remaining=4 w>0.1=630 w>0.01=630 w>0.001=630 w>0.0001=630
+n_proposals=1234 remaining=17 w>0.1=495 w>0.01=1123 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=188 w>0.01=740 w>0.001=1234 w>0.0001=1234
+n_proposals=630 remaining=10 w>0.1=0 w>0.01=204 w>0.001=630 w>0.0001=630
+n_proposals=1234 remaining=34 w>0.1=177 w>0.01=737 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=11 w>0.1=0 w>0.01=962 w>0.001=1234 w>0.0001=1234
+n_proposals=865 remaining=14 w>0.1=184 w>0.01=540 w>0.001=854 w>0.0001=865
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=15 w>0.1=759 w>0.01=1211 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=6 w>0.1=477 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=9 w>0.1=0 w>0.01=722 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=473 w>0.01=1057 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=186 w>0.01=754 w>0.001=1234 w>0.0001=1234
+n_proposals=331 remaining=7 w>0.1=0 w>0.01=112 w>0.001=331 w>0.0001=331
+n_proposals=1234 remaining=32 w>0.1=467 w>0.01=1047 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=588 remaining=13 w>0.1=150 w>0.01=508 w>0.001=588 w>0.0001=588
+n_proposals=1234 remaining=30 w>0.1=97 w>0.01=625 w>0.001=1234 w>0.0001=1234
+n_proposals=1053 remaining=11 w>0.1=502 w>0.01=872 w>0.001=1053 w>0.0001=1053
+n_proposals=637 remaining=5 w>0.1=0 w>0.01=637 w>0.001=637 w>0.0001=637
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=589 remaining=12 w>0.1=104 w>0.01=445 w>0.001=583 w>0.0001=589
+n_proposals=1077 remaining=7 w>0.1=0 w>0.01=850 w>0.001=1077 w>0.0001=1077
+n_proposals=1234 remaining=30 w>0.1=144 w>0.01=740 w>0.001=1234 w>0.0001=1234
+n_proposals=626 remaining=4 w>0.1=0 w>0.01=135 w>0.001=626 w>0.0001=626
+n_proposals=1234 remaining=28 w>0.1=97 w>0.01=619 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=245 w>0.001=1234 w>0.0001=1234
+n_proposals=767 remaining=9 w>0.1=176 w>0.01=345 w>0.001=687 w>0.0001=767
+n_proposals=1185 remaining=10 w>0.1=1185 w>0.01=1185 w>0.001=1185 w>0.0001=1185
+n_proposals=1234 remaining=26 w>0.1=169 w>0.01=737 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=216 w>0.01=822 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=497 w>0.01=1053 w>0.001=1234 w>0.0001=1234
+n_proposals=576 remaining=5 w>0.1=0 w>0.01=0 w>0.001=576 w>0.0001=576
+n_proposals=1234 remaining=24 w>0.1=187 w>0.01=724 w>0.001=1234 w>0.0001=1234
+n_proposals=922 remaining=7 w>0.1=422 w>0.01=695 w>0.001=922 w>0.0001=922
+n_proposals=1234 remaining=22 w>0.1=42 w>0.01=425 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=4 w>0.1=0 w>0.01=120 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=109 w>0.01=615 w>0.001=1234 w>0.0001=1234
+n_proposals=612 remaining=8 w>0.1=612 w>0.01=612 w>0.001=612 w>0.0001=612
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=128 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=530 w>0.01=1041 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=117 w>0.01=638 w>0.001=1234 w>0.0001=1234
+n_proposals=607 remaining=3 w>0.1=607 w>0.01=607 w>0.001=607 w>0.0001=607
+n_proposals=1234 remaining=33 w>0.1=106 w>0.01=280 w>0.001=951 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=551 remaining=6 w>0.1=551 w>0.01=551 w>0.001=551 w>0.0001=551
+n_proposals=1234 remaining=23 w>0.1=148 w>0.01=720 w>0.001=1234 w>0.0001=1234
+n_proposals=485 remaining=18 w>0.1=7 w>0.01=73 w>0.001=475 w>0.0001=485
+n_proposals=621 remaining=4 w>0.1=621 w>0.01=621 w>0.001=621 w>0.0001=621
+n_proposals=1234 remaining=21 w>0.1=331 w>0.01=1020 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=104 w>0.01=300 w>0.001=998 w>0.0001=1234
+n_proposals=208 remaining=16 w>0.1=3 w>0.01=48 w>0.001=206 w>0.0001=208
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=86 w>0.01=601 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=173 w>0.01=755 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=487 w>0.01=1043 w>0.001=1234 w>0.0001=1234
+n_proposals=364 remaining=14 w>0.1=88 w>0.01=237 w>0.001=364 w>0.0001=364
+n_proposals=1234 remaining=30 w>0.1=238 w>0.01=833 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=17 w>0.1=45 w>0.01=484 w>0.001=1231 w>0.0001=1234
+n_proposals=1234 remaining=36 w>0.1=193 w>0.01=856 w>0.001=1234 w>0.0001=1234
+n_proposals=398 remaining=11 w>0.1=38 w>0.01=181 w>0.001=398 w>0.0001=398
+n_proposals=1234 remaining=34 w>0.1=120 w>0.01=596 w>0.001=1234 w>0.0001=1234
+n_proposals=337 remaining=16 w>0.1=261 w>0.01=337 w>0.001=337 w>0.0001=337
+n_proposals=1234 remaining=27 w>0.1=241 w>0.01=798 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=80 w>0.01=617 w>0.001=1234 w>0.0001=1234
+n_proposals=446 remaining=9 w>0.1=18 w>0.01=202 w>0.001=406 w>0.0001=446
+n_proposals=1234 remaining=25 w>0.1=137 w>0.01=313 w>0.001=1011 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=84 w>0.01=553 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=17 w>0.01=301 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=123 w>0.01=640 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=38 w>0.01=574 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=14 w>0.1=101 w>0.01=733 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=244 w>0.01=1027 w>0.001=1234 w>0.0001=1234
+n_proposals=820 remaining=7 w>0.1=36 w>0.01=420 w>0.001=820 w>0.0001=820
+n_proposals=1234 remaining=36 w>0.1=166 w>0.01=714 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=205 w>0.01=1000 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=133 w>0.01=331 w>0.001=1000 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=158 w>0.01=786 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=117 w>0.01=660 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=157 w>0.01=741 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=104 w>0.01=665 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=168 w>0.01=784 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=276 w>0.01=853 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=281 w>0.01=943 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=19 w>0.01=322 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=137 w>0.01=733 w>0.001=1234 w>0.0001=1234
+n_proposals=581 remaining=5 w>0.1=197 w>0.01=581 w>0.001=581 w>0.0001=581
+n_proposals=1234 remaining=26 w>0.1=108 w>0.01=676 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=1 w>0.01=134 w>0.001=539 w>0.0001=1234
+n_proposals=161 remaining=12 w>0.1=133 w>0.01=161 w>0.001=161 w>0.0001=161
+n_proposals=1234 remaining=21 w>0.1=218 w>0.01=723 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=202 w>0.01=840 w>0.001=1234 w>0.0001=1234
+n_proposals=617 remaining=3 w>0.1=617 w>0.01=617 w>0.001=617 w>0.0001=617
+n_proposals=1234 remaining=26 w>0.1=27 w>0.01=568 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=147 w>0.01=783 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=255 w>0.01=925 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=104 w>0.01=594 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=152 w>0.01=735 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=288 w>0.01=769 w>0.001=1220 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=59 w>0.01=637 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=10 w>0.1=31 w>0.01=511 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=106 w>0.01=652 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=117 w>0.01=652 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=290 w>0.01=886 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=585 w>0.01=1086 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=349 w>0.01=1066 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=320 w>0.01=1011 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=86 w>0.01=562 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=154 w>0.01=765 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=197 w>0.01=1005 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=243 w>0.01=889 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=238 w>0.01=871 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=257 w>0.01=935 w>0.001=1234 w>0.0001=1234
+n_proposals=784 remaining=17 w>0.1=63 w>0.01=155 w>0.001=552 w>0.0001=784
+n_proposals=1234 remaining=36 w>0.1=85 w>0.01=901 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=519 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=358 w>0.01=1072 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=8 w>0.1=37 w>0.01=531 w>0.001=1189 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=79 w>0.01=578 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=315 w>0.01=969 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=147 w>0.01=697 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=552 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=301 w>0.01=980 w>0.001=1234 w>0.0001=1234
+n_proposals=816 remaining=16 w>0.1=128 w>0.01=458 w>0.001=802 w>0.0001=816
+n_proposals=1234 remaining=30 w>0.1=205 w>0.01=764 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=254 w>0.01=1037 w>0.001=1234 w>0.0001=1234
+n_proposals=616 remaining=18 w>0.1=138 w>0.01=437 w>0.001=613 w>0.0001=616
+n_proposals=1234 remaining=36 w>0.1=341 w>0.01=982 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=420 w>0.01=1055 w>0.001=1234 w>0.0001=1234
+n_proposals=922 remaining=19 w>0.1=282 w>0.01=757 w>0.001=922 w>0.0001=922
+n_proposals=1038 remaining=6 w>0.1=1038 w>0.01=1038 w>0.001=1038 w>0.0001=1038
+n_proposals=380 remaining=14 w>0.1=21 w>0.01=51 w>0.001=222 w>0.0001=380
+n_proposals=1234 remaining=22 w>0.1=297 w>0.01=909 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=200 w>0.01=824 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=209 w>0.01=792 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=8 w>0.01=237 w>0.001=705 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=714 w>0.01=1142 w>0.001=1234 w>0.0001=1234
+n_proposals=1020 remaining=4 w>0.1=1020 w>0.01=1020 w>0.001=1020 w>0.0001=1020
+n_proposals=1234 remaining=26 w>0.1=299 w>0.01=922 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=33 w>0.1=84 w>0.01=623 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=717 w>0.01=1130 w>0.001=1234 w>0.0001=1234
+n_proposals=563 remaining=12 w>0.1=61 w>0.01=129 w>0.001=391 w>0.0001=563
+n_proposals=1234 remaining=15 w>0.1=355 w>0.01=992 w>0.001=1231 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=749 remaining=17 w>0.1=189 w>0.01=569 w>0.001=749 w>0.0001=749
+n_proposals=1234 remaining=23 w>0.1=452 w>0.01=1091 w>0.001=1234 w>0.0001=1234
+n_proposals=654 remaining=19 w>0.1=363 w>0.01=654 w>0.001=654 w>0.0001=654
+n_proposals=1234 remaining=21 w>0.1=350 w>0.01=1016 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=139 w>0.01=684 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=465 w>0.01=1079 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=113 w>0.01=516 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=324 w>0.01=1048 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=7 w>0.01=259 w>0.001=817 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=393 w>0.01=1052 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=380 w>0.01=1104 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=389 w>0.01=1183 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=89 w>0.01=645 w>0.001=1234 w>0.0001=1234
+n_proposals=374 remaining=13 w>0.1=237 w>0.01=374 w>0.001=374 w>0.0001=374
+n_proposals=257 remaining=10 w>0.1=35 w>0.01=150 w>0.001=249 w>0.0001=257
+n_proposals=403 remaining=17 w>0.1=98 w>0.01=273 w>0.001=403 w>0.0001=403
+n_proposals=495 remaining=15 w>0.1=170 w>0.01=383 w>0.001=495 w>0.0001=495
+n_proposals=1234 remaining=24 w>0.1=127 w>0.01=652 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=597 w>0.01=1158 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=795 w>0.01=1169 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=533 w>0.01=1130 w>0.001=1233 w>0.0001=1234
+n_proposals=585 remaining=13 w>0.1=417 w>0.01=557 w>0.001=585 w>0.0001=585
+n_proposals=1234 remaining=36 w>0.1=315 w>0.01=842 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=381 w>0.01=1209 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=25 w>0.1=147 w>0.01=717 w>0.001=1234 w>0.0001=1234
+n_proposals=372 remaining=15 w>0.1=120 w>0.01=297 w>0.001=371 w>0.0001=372
+n_proposals=1234 remaining=20 w>0.1=261 w>0.01=1140 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=109 w>0.01=728 w>0.001=1234 w>0.0001=1234
+n_proposals=922 remaining=11 w>0.1=0 w>0.01=922 w>0.001=922 w>0.0001=922
+n_proposals=1234 remaining=30 w>0.1=170 w>0.01=668 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=364 w>0.01=1195 w>0.001=1233 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=128 w>0.01=595 w>0.001=1234 w>0.0001=1234
+n_proposals=612 remaining=7 w>0.1=196 w>0.01=432 w>0.001=612 w>0.0001=612
+n_proposals=1234 remaining=35 w>0.1=89 w>0.01=306 w>0.001=937 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=339 w>0.01=969 w>0.001=1234 w>0.0001=1234
+n_proposals=587 remaining=11 w>0.1=346 w>0.01=582 w>0.001=587 w>0.0001=587
+n_proposals=358 remaining=13 w>0.1=327 w>0.01=358 w>0.001=358 w>0.0001=358
+n_proposals=1234 remaining=36 w>0.1=359 w>0.01=975 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=100 w>0.01=555 w>0.001=1234 w>0.0001=1234
+n_proposals=791 remaining=18 w>0.1=347 w>0.01=725 w>0.001=791 w>0.0001=791
+n_proposals=1234 remaining=20 w>0.1=108 w>0.01=709 w>0.001=1234 w>0.0001=1234
+n_proposals=845 remaining=18 w>0.1=325 w>0.01=784 w>0.001=845 w>0.0001=845
+n_proposals=1234 remaining=34 w>0.1=67 w>0.01=635 w>0.001=1234 w>0.0001=1234
+n_proposals=422 remaining=9 w>0.1=221 w>0.01=422 w>0.001=422 w>0.0001=422
+n_proposals=1234 remaining=28 w>0.1=119 w>0.01=585 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=161 w>0.01=786 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=389 w>0.01=1103 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=14 w>0.1=429 w>0.01=940 w>0.001=1234 w>0.0001=1234
+n_proposals=386 remaining=5 w>0.1=386 w>0.01=386 w>0.001=386 w>0.0001=386
+n_proposals=438 remaining=14 w>0.1=344 w>0.01=438 w>0.001=438 w>0.0001=438
+n_proposals=1234 remaining=8 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=375 remaining=11 w>0.1=166 w>0.01=375 w>0.001=375 w>0.0001=375
+n_proposals=1234 remaining=33 w>0.1=207 w>0.01=800 w>0.001=1234 w>0.0001=1234
+n_proposals=747 remaining=9 w>0.1=377 w>0.01=593 w>0.001=747 w>0.0001=747
+n_proposals=424 remaining=4 w>0.1=424 w>0.01=424 w>0.001=424 w>0.0001=424
+n_proposals=1234 remaining=21 w>0.1=20 w>0.01=271 w>0.001=1021 w>0.0001=1234
+n_proposals=826 remaining=16 w>0.1=172 w>0.01=741 w>0.001=826 w>0.0001=826
+n_proposals=1234 remaining=36 w>0.1=51 w>0.01=188 w>0.001=983 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=412 w>0.01=1032 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=94 w>0.01=682 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=203 w>0.01=667 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=16 w>0.1=519 w>0.01=1168 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=170 w>0.01=775 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=118 w>0.01=565 w>0.001=1160 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=16 w>0.01=267 w>0.001=1014 w>0.0001=1234
+n_proposals=442 remaining=9 w>0.1=391 w>0.01=442 w>0.001=442 w>0.0001=442
+n_proposals=1234 remaining=28 w>0.1=516 w>0.01=1091 w>0.001=1234 w>0.0001=1234
+n_proposals=809 remaining=6 w>0.1=432 w>0.01=809 w>0.001=809 w>0.0001=809
+n_proposals=705 remaining=12 w>0.1=705 w>0.01=705 w>0.001=705 w>0.0001=705
+n_proposals=1234 remaining=34 w>0.1=398 w>0.01=957 w>0.001=1234 w>0.0001=1234
+n_proposals=927 remaining=11 w>0.1=762 w>0.01=927 w>0.001=927 w>0.0001=927
+n_proposals=1226 remaining=14 w>0.1=810 w>0.01=1199 w>0.001=1226 w>0.0001=1226
+n_proposals=1234 remaining=23 w>0.1=243 w>0.01=597 w>0.001=1234 w>0.0001=1234
+n_proposals=612 remaining=7 w>0.1=328 w>0.01=496 w>0.001=612 w>0.0001=612
+n_proposals=1234 remaining=30 w>0.1=434 w>0.01=922 w>0.001=1234 w>0.0001=1234
+n_proposals=768 remaining=16 w>0.1=54 w>0.01=456 w>0.001=760 w>0.0001=768
+n_proposals=1234 remaining=31 w>0.1=249 w>0.01=905 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=14 w>0.1=425 w>0.01=937 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=100 w>0.01=438 w>0.001=1093 w>0.0001=1234
+n_proposals=695 remaining=7 w>0.1=626 w>0.01=695 w>0.001=695 w>0.0001=695
+n_proposals=1234 remaining=33 w>0.1=235 w>0.01=790 w>0.001=1234 w>0.0001=1234
+n_proposals=764 remaining=18 w>0.1=92 w>0.01=393 w>0.001=761 w>0.0001=764
+n_proposals=1234 remaining=26 w>0.1=519 w>0.01=1000 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=375 w>0.01=894 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=34 w>0.1=681 w>0.01=1143 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=278 w>0.01=845 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=385 w>0.01=863 w>0.001=1234 w>0.0001=1234
+n_proposals=312 remaining=10 w>0.1=272 w>0.01=312 w>0.001=312 w>0.0001=312
+n_proposals=1234 remaining=9 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=32 w>0.1=271 w>0.01=813 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=45 w>0.01=1171 w>0.001=1234 w>0.0001=1234
+n_proposals=464 remaining=16 w>0.1=64 w>0.01=233 w>0.001=463 w>0.0001=464
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=20 w>0.1=267 w>0.01=846 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=27 w>0.1=105 w>0.01=395 w>0.001=1070 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=646 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=44 w>0.01=1167 w>0.001=1234 w>0.0001=1234
+n_proposals=329 remaining=11 w>0.1=159 w>0.01=315 w>0.001=329 w>0.0001=329
+n_proposals=1234 remaining=12 w>0.1=341 w>0.01=401 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=24 w>0.1=491 w>0.01=958 w>0.001=1234 w>0.0001=1234
+n_proposals=861 remaining=14 w>0.1=63 w>0.01=376 w>0.001=799 w>0.0001=861
+n_proposals=1234 remaining=30 w>0.1=421 w>0.01=1146 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=126 w>0.01=714 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=956 remaining=14 w>0.1=9 w>0.01=321 w>0.001=951 w>0.0001=956
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=408 remaining=7 w>0.1=408 w>0.01=408 w>0.001=408 w>0.0001=408
+n_proposals=1234 remaining=22 w>0.1=1031 w>0.01=1233 w>0.001=1234 w>0.0001=1234
+n_proposals=232 remaining=18 w>0.1=78 w>0.01=172 w>0.001=232 w>0.0001=232
+n_proposals=614 remaining=8 w>0.1=614 w>0.01=614 w>0.001=614 w>0.0001=614
+n_proposals=1234 remaining=24 w>0.1=369 w>0.01=878 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=30 w>0.1=525 w>0.01=1162 w>0.001=1234 w>0.0001=1234
+n_proposals=1227 remaining=9 w>0.1=1089 w>0.01=1227 w>0.001=1227 w>0.0001=1227
+n_proposals=1234 remaining=25 w>0.1=178 w>0.01=756 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=326 w>0.01=1040 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=31 w>0.1=758 w>0.01=1158 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=467 w>0.01=1120 w>0.001=1234 w>0.0001=1234
+n_proposals=544 remaining=12 w>0.1=28 w>0.01=255 w>0.001=511 w>0.0001=544
+n_proposals=166 remaining=22 w>0.1=96 w>0.01=155 w>0.001=166 w>0.0001=166
+n_proposals=854 remaining=10 w>0.1=723 w>0.01=854 w>0.001=854 w>0.0001=854
+n_proposals=1234 remaining=20 w>0.1=1176 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=26 w>0.1=480 w>0.01=922 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=565 w>0.01=1193 w>0.001=1234 w>0.0001=1234
+n_proposals=840 remaining=12 w>0.1=57 w>0.01=384 w>0.001=812 w>0.0001=840
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=636 remaining=7 w>0.1=636 w>0.01=636 w>0.001=636 w>0.0001=636
+n_proposals=1234 remaining=23 w>0.1=158 w>0.01=533 w>0.001=1119 w>0.0001=1234
+n_proposals=834 remaining=6 w>0.1=834 w>0.01=834 w>0.001=834 w>0.0001=834
+n_proposals=1234 remaining=24 w>0.1=55 w>0.01=1068 w>0.001=1234 w>0.0001=1234
+n_proposals=84 remaining=15 w>0.1=46 w>0.01=82 w>0.001=84 w>0.0001=84
+n_proposals=1234 remaining=26 w>0.1=359 w>0.01=990 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=29 w>0.1=77 w>0.01=250 w>0.001=998 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=764 w>0.01=1131 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=23 w>0.1=549 w>0.01=1133 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=28 w>0.1=54 w>0.01=242 w>0.001=993 w>0.0001=1234
+n_proposals=1234 remaining=10 w>0.1=186 w>0.01=294 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=56 w>0.01=754 w>0.001=1234 w>0.0001=1234
+n_proposals=89 remaining=19 w>0.1=72 w>0.01=89 w>0.001=89 w>0.0001=89
+n_proposals=591 remaining=8 w>0.1=508 w>0.01=591 w>0.001=591 w>0.0001=591
+n_proposals=664 remaining=10 w>0.1=154 w>0.01=376 w>0.001=623 w>0.0001=664
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=22 w>0.1=277 w>0.01=988 w>0.001=1234 w>0.0001=1234
+n_proposals=638 remaining=5 w>0.1=638 w>0.01=638 w>0.001=638 w>0.0001=638
+n_proposals=142 remaining=13 w>0.1=70 w>0.01=114 w>0.001=142 w>0.0001=142
+n_proposals=627 remaining=3 w>0.1=627 w>0.01=627 w>0.001=627 w>0.0001=627
+n_proposals=1234 remaining=26 w>0.1=810 w>0.01=1171 w>0.001=1234 w>0.0001=1234
+n_proposals=416 remaining=17 w>0.1=378 w>0.01=416 w>0.001=416 w>0.0001=416
+n_proposals=562 remaining=16 w>0.1=372 w>0.01=562 w>0.001=562 w>0.0001=562
+n_proposals=1234 remaining=21 w>0.1=506 w>0.01=903 w>0.001=1234 w>0.0001=1234
+n_proposals=607 remaining=3 w>0.1=607 w>0.01=607 w>0.001=607 w>0.0001=607
+n_proposals=126 remaining=12 w>0.1=41 w>0.01=126 w>0.001=126 w>0.0001=126
+n_proposals=1234 remaining=23 w>0.1=725 w>0.01=1192 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=19 w>0.1=146 w>0.01=834 w>0.001=1234 w>0.0001=1234
+n_proposals=68 remaining=10 w>0.1=68 w>0.01=68 w>0.001=68 w>0.0001=68
+n_proposals=936 remaining=19 w>0.1=190 w>0.01=740 w>0.001=936 w>0.0001=936
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1151 remaining=7 w>0.1=235 w>0.01=674 w>0.001=1151 w>0.0001=1151
+n_proposals=46 remaining=15 w>0.1=44 w>0.01=46 w>0.001=46 w>0.0001=46
+n_proposals=938 remaining=6 w>0.1=938 w>0.01=938 w>0.001=938 w>0.0001=938
+n_proposals=868 remaining=19 w>0.1=431 w>0.01=785 w>0.001=868 w>0.0001=868
+n_proposals=912 remaining=7 w>0.1=495 w>0.01=774 w>0.001=912 w>0.0001=912
+n_proposals=1234 remaining=21 w>0.1=448 w>0.01=1025 w>0.001=1234 w>0.0001=1234
+n_proposals=295 remaining=14 w>0.1=153 w>0.01=271 w>0.001=292 w>0.0001=295
+n_proposals=1234 remaining=23 w>0.1=70 w>0.01=382 w>0.001=1040 w>0.0001=1234
+n_proposals=145 remaining=8 w>0.1=145 w>0.01=145 w>0.001=145 w>0.0001=145
+n_proposals=546 remaining=17 w>0.1=200 w>0.01=426 w>0.001=543 w>0.0001=546
+n_proposals=1234 remaining=20 w>0.1=463 w>0.01=1049 w>0.001=1234 w>0.0001=1234
+n_proposals=540 remaining=17 w>0.1=41 w>0.01=381 w>0.001=538 w>0.0001=540
+n_proposals=332 remaining=13 w>0.1=332 w>0.01=332 w>0.001=332 w>0.0001=332
+n_proposals=1234 remaining=17 w>0.1=227 w>0.01=1205 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=1089 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=850 remaining=4 w>0.1=850 w>0.01=850 w>0.001=850 w>0.0001=850
+n_proposals=1234 remaining=16 w>0.1=572 w>0.01=1054 w>0.001=1233 w>0.0001=1234
+n_proposals=1234 remaining=18 w>0.1=688 w>0.01=1202 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=21 w>0.1=587 w>0.01=1178 w>0.001=1234 w>0.0001=1234
+n_proposals=618 remaining=4 w>0.1=412 w>0.01=412 w>0.001=618 w>0.0001=618
+n_proposals=575 remaining=16 w>0.1=63 w>0.01=429 w>0.001=574 w>0.0001=575
+n_proposals=1234 remaining=4 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=150 remaining=6 w>0.1=150 w>0.01=150 w>0.001=150 w>0.0001=150
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=500 remaining=11 w>0.1=500 w>0.01=500 w>0.001=500 w>0.0001=500
+n_proposals=1234 remaining=20 w>0.1=589 w>0.01=1184 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=15 w>0.1=333 w>0.01=1178 w>0.001=1234 w>0.0001=1234
+n_proposals=441 remaining=11 w>0.1=297 w>0.01=441 w>0.001=441 w>0.0001=441
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=712 remaining=14 w>0.1=390 w>0.01=694 w>0.001=712 w>0.0001=712
+n_proposals=644 remaining=4 w>0.1=644 w>0.01=644 w>0.001=644 w>0.0001=644
+n_proposals=597 remaining=14 w>0.1=233 w>0.01=532 w>0.001=597 w>0.0001=597
+n_proposals=307 remaining=9 w>0.1=307 w>0.01=307 w>0.001=307 w>0.0001=307
+n_proposals=996 remaining=18 w>0.1=7 w>0.01=187 w>0.001=620 w>0.0001=996
+n_proposals=819 remaining=13 w>0.1=810 w>0.01=819 w>0.001=819 w>0.0001=819
+n_proposals=787 remaining=15 w>0.1=202 w>0.01=545 w>0.001=787 w>0.0001=787
+n_proposals=271 remaining=9 w>0.1=195 w>0.01=271 w>0.001=271 w>0.0001=271
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=363 remaining=8 w>0.1=363 w>0.01=363 w>0.001=363 w>0.0001=363
+n_proposals=1234 remaining=12 w>0.1=675 w>0.01=1102 w>0.001=1234 w>0.0001=1234
+n_proposals=382 remaining=8 w>0.1=268 w>0.01=382 w>0.001=382 w>0.0001=382
+n_proposals=108 remaining=12 w>0.1=29 w>0.01=80 w>0.001=108 w>0.0001=108
+n_proposals=495 remaining=11 w>0.1=305 w>0.01=484 w>0.001=495 w>0.0001=495
+n_proposals=956 remaining=6 w>0.1=956 w>0.01=956 w>0.001=956 w>0.0001=956
+n_proposals=768 remaining=13 w>0.1=445 w>0.01=742 w>0.001=768 w>0.0001=768
+n_proposals=446 remaining=10 w>0.1=29 w>0.01=334 w>0.001=446 w>0.0001=446
+n_proposals=770 remaining=10 w>0.1=744 w>0.01=770 w>0.001=770 w>0.0001=770
+n_proposals=876 remaining=15 w>0.1=11 w>0.01=153 w>0.001=493 w>0.0001=876
+n_proposals=403 remaining=6 w>0.1=403 w>0.01=403 w>0.001=403 w>0.0001=403
+n_proposals=754 remaining=12 w>0.1=387 w>0.01=726 w>0.001=754 w>0.0001=754
+n_proposals=897 remaining=9 w>0.1=623 w>0.01=897 w>0.001=897 w>0.0001=897
+n_proposals=629 remaining=4 w>0.1=629 w>0.01=629 w>0.001=629 w>0.0001=629
+n_proposals=799 remaining=13 w>0.1=465 w>0.01=790 w>0.001=799 w>0.0001=799
+n_proposals=1234 remaining=4 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=405 remaining=10 w>0.1=133 w>0.01=309 w>0.001=405 w>0.0001=405
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=12 w>0.1=10 w>0.01=299 w>0.001=684 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=627 remaining=7 w>0.1=580 w>0.01=627 w>0.001=627 w>0.0001=627
+n_proposals=975 remaining=7 w>0.1=911 w>0.01=975 w>0.001=975 w>0.0001=975
+n_proposals=339 remaining=7 w>0.1=115 w>0.01=208 w>0.001=339 w>0.0001=339
+n_proposals=1234 remaining=8 w>0.1=363 w>0.01=1129 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=10 w>0.1=1102 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=816 remaining=5 w>0.1=622 w>0.01=816 w>0.001=816 w>0.0001=816
+n_proposals=424 remaining=5 w>0.1=424 w>0.01=424 w>0.001=424 w>0.0001=424
+n_proposals=642 remaining=3 w>0.1=642 w>0.01=642 w>0.001=642 w>0.0001=642
+n_proposals=1234 remaining=3 w>0.1=651 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=627 remaining=4 w>0.1=207 w>0.01=589 w>0.001=627 w>0.0001=627
+n_proposals=923 remaining=6 w>0.1=599 w>0.01=923 w>0.001=923 w>0.0001=923
+n_proposals=1234 remaining=8 w>0.1=1007 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=932 remaining=6 w>0.1=932 w>0.01=932 w>0.001=932 w>0.0001=932
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=643 remaining=4 w>0.1=643 w>0.01=643 w>0.001=643 w>0.0001=643
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234
+n_proposals=1234 remaining=35 w>0.1=168 w>0.01=794 w>0.001=1234 w>0.0001=1234 A/B=1.727 A/C=8.534
+n_proposals=1234 remaining=36 w>0.1=314 w>0.01=973 w>0.001=1234 w>0.0001=1234 A/B=1.049 A/C=1.345
+n_proposals=1234 remaining=35 w>0.1=83 w>0.01=616 w>0.001=1234 w>0.0001=1234 A/B=2.037 A/C=18.935
+n_proposals=1234 remaining=35 w>0.1=72 w>0.01=671 w>0.001=1234 w>0.0001=1234 A/B=2.171 A/C=43.476
+n_proposals=1234 remaining=33 w>0.1=180 w>0.01=800 w>0.001=1234 w>0.0001=1234 A/B=1.124 A/C=3.596
+n_proposals=1234 remaining=33 w>0.1=143 w>0.01=643 w>0.001=1234 w>0.0001=1234 A/B=2.727 A/C=8.946
+n_proposals=1234 remaining=33 w>0.1=91 w>0.01=665 w>0.001=1234 w>0.0001=1234 A/B=2.256 A/C=14.131
+n_proposals=1234 remaining=36 w>0.1=52 w>0.01=416 w>0.001=1234 w>0.0001=1234 A/B=8.270 A/C=63.818
+n_proposals=1234 remaining=32 w>0.1=180 w>0.01=794 w>0.001=1234 w>0.0001=1234 A/B=1.130 A/C=3.113
+n_proposals=1234 remaining=34 w>0.1=264 w>0.01=877 w>0.001=1234 w>0.0001=1234 A/B=1.090 A/C=1.910
+n_proposals=1234 remaining=36 w>0.1=128 w>0.01=740 w>0.001=1234 w>0.0001=1234 A/B=1.217 A/C=9.139
+n_proposals=1234 remaining=35 w>0.1=230 w>0.01=573 w>0.001=1128 w>0.0001=1234 A/B=1.052 A/C=1.139
+n_proposals=1234 remaining=31 w>0.1=111 w>0.01=665 w>0.001=1234 w>0.0001=1234 A/B=1.752 A/C=10.402
+n_proposals=1234 remaining=31 w>0.1=69 w>0.01=662 w>0.001=1234 w>0.0001=1234 A/B=5.558 A/C=19.459
+n_proposals=1234 remaining=36 w>0.1=86 w>0.01=702 w>0.001=1234 w>0.0001=1234 A/B=2.577 A/C=16.269
+n_proposals=1234 remaining=36 w>0.1=103 w>0.01=672 w>0.001=1234 w>0.0001=1234 A/B=2.239 A/C=10.799
+n_proposals=1234 remaining=35 w>0.1=59 w>0.01=520 w>0.001=1234 w>0.0001=1234 A/B=6.839 A/C=42.318
+n_proposals=1234 remaining=29 w>0.1=72 w>0.01=663 w>0.001=1234 w>0.0001=1234 A/B=1.509 A/C=30.776
+n_proposals=1234 remaining=29 w>0.1=139 w>0.01=840 w>0.001=1234 w>0.0001=1234 A/B=1.211 A/C=6.961
+n_proposals=1234 remaining=36 w>0.1=86 w>0.01=644 w>0.001=1234 w>0.0001=1234 A/B=3.701 A/C=14.867
+n_proposals=1234 remaining=30 w>0.1=187 w>0.01=811 w>0.001=1234 w>0.0001=1234 A/B=1.318 A/C=5.829
+n_proposals=1234 remaining=28 w>0.1=139 w>0.01=697 w>0.001=1234 w>0.0001=1234 A/B=2.642 A/C=9.339
+n_proposals=1234 remaining=33 w>0.1=59 w>0.01=796 w>0.001=1234 w>0.0001=1234 A/B=8.185 A/C=11.626
+n_proposals=1234 remaining=28 w>0.1=168 w>0.01=856 w>0.001=1234 w>0.0001=1234 A/B=1.121 A/C=5.474
+n_proposals=1234 remaining=33 w>0.1=22 w>0.01=398 w>0.001=1234 w>0.0001=1234 A/B=16.681 A/C=74.439
+n_proposals=1234 remaining=34 w>0.1=107 w>0.01=671 w>0.001=1234 w>0.0001=1234 A/B=2.037 A/C=9.733
+n_proposals=1234 remaining=34 w>0.1=181 w>0.01=795 w>0.001=1234 w>0.0001=1234 A/B=1.450 A/C=8.653
+n_proposals=1234 remaining=26 w>0.1=81 w>0.01=674 w>0.001=1234 w>0.0001=1234 A/B=1.603 A/C=20.281
+n_proposals=1234 remaining=32 w>0.1=17 w>0.01=367 w>0.001=1234 w>0.0001=1234 A/B=39.525 A/C=75.049
+n_proposals=1234 remaining=36 w>0.1=289 w>0.01=944 w>0.001=1234 w>0.0001=1234 A/B=1.052 A/C=1.162
+n_proposals=1234 remaining=31 w>0.1=440 w>0.01=1064 w>0.001=1234 w>0.0001=1234 A/B=1.058 A/C=1.151
+n_proposals=1234 remaining=31 w>0.1=184 w>0.01=513 w>0.001=1146 w>0.0001=1234 A/B=1.063 A/C=1.179
+n_proposals=1234 remaining=26 w>0.1=102 w>0.01=720 w>0.001=1234 w>0.0001=1234 A/B=3.881 A/C=11.477
+n_proposals=1234 remaining=34 w>0.1=114 w>0.01=761 w>0.001=1234 w>0.0001=1234 A/B=2.651 A/C=10.264
+n_proposals=1234 remaining=27 w>0.1=151 w>0.01=769 w>0.001=1234 w>0.0001=1234 A/B=1.216 A/C=7.439
+n_proposals=1234 remaining=34 w>0.1=199 w>0.01=878 w>0.001=1234 w>0.0001=1234 A/B=3.601 A/C=8.932
+n_proposals=1234 remaining=25 w>0.1=95 w>0.01=732 w>0.001=1234 w>0.0001=1234 A/B=1.917 A/C=12.752
+n_proposals=1234 remaining=23 w>0.1=146 w>0.01=816 w>0.001=1234 w>0.0001=1234 A/B=1.471 A/C=9.011
+n_proposals=1234 remaining=29 w>0.1=405 w>0.01=1080 w>0.001=1234 w>0.0001=1234 A/B=1.062 A/C=1.199
+n_proposals=1234 remaining=31 w>0.1=68 w>0.01=700 w>0.001=1234 w>0.0001=1234 A/B=2.574 A/C=26.910
+n_proposals=1234 remaining=34 w>0.1=254 w>0.01=772 w>0.001=1234 w>0.0001=1234 A/B=2.060 A/C=7.182
+n_proposals=1234 remaining=30 w>0.1=20 w>0.01=462 w>0.001=1234 w>0.0001=1234 A/B=4.306 A/C=14.340
+n_proposals=1234 remaining=23 w>0.1=176 w>0.01=825 w>0.001=1234 w>0.0001=1234 A/B=2.155 A/C=8.783
+n_proposals=1234 remaining=29 w>0.1=149 w>0.01=1013 w>0.001=1234 w>0.0001=1234 A/B=6.318 A/C=9.019
+n_proposals=1234 remaining=24 w>0.1=142 w>0.01=738 w>0.001=1234 w>0.0001=1234 A/B=1.630 A/C=8.141
+n_proposals=1234 remaining=28 w>0.1=498 w>0.01=1088 w>0.001=1234 w>0.0001=1234 A/B=1.040 A/C=1.124
+n_proposals=1234 remaining=29 w>0.1=166 w>0.01=775 w>0.001=1234 w>0.0001=1234 A/B=1.632 A/C=9.068
+n_proposals=1234 remaining=31 w>0.1=47 w>0.01=450 w>0.001=1234 w>0.0001=1234 A/B=8.665 A/C=70.461
+n_proposals=1234 remaining=28 w>0.1=167 w>0.01=459 w>0.001=1139 w>0.0001=1234 A/B=1.055 A/C=1.184
+n_proposals=1234 remaining=32 w>0.1=349 w>0.01=910 w>0.001=1234 w>0.0001=1234 A/B=1.644 A/C=6.086
+n_proposals=1234 remaining=28 w>0.1=183 w>0.01=826 w>0.001=1234 w>0.0001=1234 A/B=1.433 A/C=8.772
+n_proposals=1234 remaining=35 w>0.1=39 w>0.01=366 w>0.001=1234 w>0.0001=1234 A/B=4.617 A/C=29.759
+n_proposals=1234 remaining=21 w>0.1=721 w>0.01=1162 w>0.001=1234 w>0.0001=1234 A/B=1.024 A/C=1.089
+n_proposals=1234 remaining=26 w>0.1=228 w>0.01=1068 w>0.001=1234 w>0.0001=1234 A/B=1.695 A/C=8.451
+n_proposals=1234 remaining=22 w>0.1=228 w>0.01=911 w>0.001=1234 w>0.0001=1234 A/B=1.075 A/C=2.009
+n_proposals=1234 remaining=32 w>0.1=191 w>0.01=886 w>0.001=1234 w>0.0001=1234 A/B=3.562 A/C=8.927
+n_proposals=1234 remaining=31 w>0.1=109 w>0.01=743 w>0.001=1234 w>0.0001=1234 A/B=1.574 A/C=10.763
+n_proposals=1234 remaining=21 w>0.1=200 w>0.01=918 w>0.001=1234 w>0.0001=1234 A/B=1.088 A/C=1.450
+n_proposals=1234 remaining=35 w>0.1=223 w>0.01=744 w>0.001=1234 w>0.0001=1234 A/B=3.043 A/C=8.702
+n_proposals=1234 remaining=26 w>0.1=450 w>0.01=1063 w>0.001=1234 w>0.0001=1234 A/B=1.063 A/C=1.249
+n_proposals=1234 remaining=27 w>0.1=21 w>0.01=487 w>0.001=1234 w>0.0001=1234 A/B=37.920 A/C=59.061
+n_proposals=1234 remaining=35 w>0.1=72 w>0.01=627 w>0.001=1234 w>0.0001=1234 A/B=3.485 A/C=26.864
+n_proposals=1234 remaining=29 w>0.1=165 w>0.01=883 w>0.001=1234 w>0.0001=1234 A/B=1.141 A/C=8.539
+n_proposals=1234 remaining=30 w>0.1=114 w>0.01=735 w>0.001=1234 w>0.0001=1234 A/B=3.009 A/C=10.074
+n_proposals=1234 remaining=26 w>0.1=65 w>0.01=715 w>0.001=1234 w>0.0001=1234 A/B=3.130 A/C=27.250
+n_proposals=1234 remaining=36 w>0.1=155 w>0.01=728 w>0.001=1234 w>0.0001=1234 A/B=1.183 A/C=8.078
+n_proposals=1234 remaining=24 w>0.1=213 w>0.01=476 w>0.001=1150 w>0.0001=1234 A/B=1.061 A/C=1.158
+n_proposals=1234 remaining=33 w>0.1=197 w>0.01=1018 w>0.001=1234 w>0.0001=1234 A/B=3.162 A/C=9.004
+n_proposals=1234 remaining=19 w>0.1=607 w>0.01=1141 w>0.001=1234 w>0.0001=1234 A/B=1.074 A/C=1.182
+n_proposals=1234 remaining=24 w>0.1=427 w>0.01=1089 w>0.001=1234 w>0.0001=1234 A/B=1.059 A/C=1.182
+n_proposals=1234 remaining=24 w>0.1=80 w>0.01=762 w>0.001=1234 w>0.0001=1234 A/B=2.213 A/C=20.025
+n_proposals=1234 remaining=25 w>0.1=30 w>0.01=452 w>0.001=1234 w>0.0001=1234 A/B=9.295 A/C=70.305
+n_proposals=1234 remaining=30 w>0.1=271 w>0.01=948 w>0.001=1234 w>0.0001=1234 A/B=1.115 A/C=2.763
+n_proposals=1234 remaining=27 w>0.1=187 w>0.01=886 w>0.001=1234 w>0.0001=1234 A/B=1.143 A/C=8.819
+n_proposals=901 remaining=19 w>0.1=151 w>0.01=659 w>0.001=901 w>0.0001=901 A/B=1.140 A/C=3.288
+n_proposals=1234 remaining=22 w>0.1=342 w>0.01=1035 w>0.001=1234 w>0.0001=1234 A/B=1.192 A/C=3.694
+n_proposals=1234 remaining=29 w>0.1=106 w>0.01=736 w>0.001=1234 w>0.0001=1234 A/B=2.010 A/C=10.813
+n_proposals=877 remaining=19 w>0.1=243 w>0.01=692 w>0.001=877 w>0.0001=877 A/B=1.100 A/C=1.839
+n_proposals=1234 remaining=33 w>0.1=298 w>0.01=1017 w>0.001=1234 w>0.0001=1234 A/B=1.082 A/C=1.520
+n_proposals=1234 remaining=22 w>0.1=588 w>0.01=1067 w>0.001=1234 w>0.0001=1234 A/B=1.042 A/C=1.141
+n_proposals=1234 remaining=36 w>0.1=361 w>0.01=926 w>0.001=1234 w>0.0001=1234 A/B=1.109 A/C=2.209
+n_proposals=1234 remaining=33 w>0.1=10 w>0.01=138 w>0.001=904 w>0.0001=1234 A/B=5.501 A/C=9.791
+n_proposals=1234 remaining=20 w>0.1=301 w>0.01=657 w>0.001=1189 w>0.0001=1234 A/B=1.034 A/C=1.113
+n_proposals=1234 remaining=32 w>0.1=79 w>0.01=658 w>0.001=1234 w>0.0001=1234 A/B=4.331 A/C=26.707
+n_proposals=1234 remaining=20 w>0.1=628 w>0.01=1109 w>0.001=1234 w>0.0001=1234 A/B=1.035 A/C=1.123
+n_proposals=1234 remaining=34 w>0.1=397 w>0.01=1021 w>0.001=1234 w>0.0001=1234 A/B=1.103 A/C=2.268
+n_proposals=1234 remaining=36 w>0.1=24 w>0.01=122 w>0.001=847 w>0.0001=1234 A/B=3.459 A/C=10.742
+n_proposals=1234 remaining=23 w>0.1=34 w>0.01=524 w>0.001=1234 w>0.0001=1234 A/B=9.814 A/C=75.276
+n_proposals=1234 remaining=25 w>0.1=91 w>0.01=572 w>0.001=1234 w>0.0001=1234 A/B=5.195 A/C=12.152
+n_proposals=1234 remaining=32 w>0.1=16 w>0.01=150 w>0.001=923 w>0.0001=1234 A/B=2.697 A/C=9.751
+n_proposals=1234 remaining=27 w>0.1=346 w>0.01=961 w>0.001=1234 w>0.0001=1234 A/B=1.270 A/C=3.668
+n_proposals=1234 remaining=22 w>0.1=139 w>0.01=831 w>0.001=1234 w>0.0001=1234 A/B=2.648 A/C=9.566
+n_proposals=1234 remaining=27 w>0.1=310 w>0.01=1040 w>0.001=1234 w>0.0001=1234 A/B=1.084 A/C=1.697
+n_proposals=1234 remaining=36 w>0.1=329 w>0.01=1030 w>0.001=1234 w>0.0001=1234 A/B=1.124 A/C=1.686
+n_proposals=1234 remaining=31 w>0.1=56 w>0.01=361 w>0.001=1234 w>0.0001=1234 A/B=7.302 A/C=22.112
+n_proposals=577 remaining=17 w>0.1=436 w>0.01=572 w>0.001=577 w>0.0001=577 A/B=1.054 A/C=1.148
+n_proposals=1234 remaining=27 w>0.1=74 w>0.01=737 w>0.001=1234 w>0.0001=1234 A/B=3.198 A/C=24.440
+n_proposals=1234 remaining=30 w>0.1=329 w>0.01=1053 w>0.001=1234 w>0.0001=1234 A/B=1.067 A/C=1.334
+n_proposals=824 remaining=17 w>0.1=167 w>0.01=619 w>0.001=824 w>0.0001=824 A/B=1.333 A/C=8.739
+n_proposals=583 remaining=17 w>0.1=303 w>0.01=524 w>0.001=583 w>0.0001=583 A/B=1.175 A/C=2.544
+n_proposals=1234 remaining=35 w>0.1=26 w>0.01=509 w>0.001=1234 w>0.0001=1234 A/B=15.978 A/C=70.177
+n_proposals=1234 remaining=34 w>0.1=209 w>0.01=823 w>0.001=1234 w>0.0001=1234 A/B=1.098 A/C=2.133
+n_proposals=1234 remaining=25 w>0.1=115 w>0.01=768 w>0.001=1234 w>0.0001=1234 A/B=1.563 A/C=9.560
+n_proposals=1234 remaining=23 w>0.1=61 w>0.01=515 w>0.001=1234 w>0.0001=1234 A/B=8.533 A/C=45.106
+n_proposals=1234 remaining=21 w>0.1=319 w>0.01=915 w>0.001=1234 w>0.0001=1234 A/B=7.246 A/C=7.627
+n_proposals=839 remaining=18 w>0.1=337 w>0.01=784 w>0.001=839 w>0.0001=839 A/B=1.074 A/C=1.241
+n_proposals=1234 remaining=25 w>0.1=162 w>0.01=885 w>0.001=1234 w>0.0001=1234 A/B=1.250 A/C=8.595
+n_proposals=1234 remaining=25 w>0.1=279 w>0.01=1070 w>0.001=1234 w>0.0001=1234 A/B=2.097 A/C=8.872
+n_proposals=466 remaining=18 w>0.1=83 w>0.01=373 w>0.001=466 w>0.0001=466 A/B=6.473 A/C=7.431
+n_proposals=816 remaining=16 w>0.1=172 w>0.01=636 w>0.001=816 w>0.0001=816 A/B=1.223 A/C=8.846
+n_proposals=1234 remaining=24 w>0.1=145 w>0.01=847 w>0.001=1234 w>0.0001=1234 A/B=1.183 A/C=8.666
+n_proposals=1234 remaining=29 w>0.1=70 w>0.01=1024 w>0.001=1234 w>0.0001=1234 A/B=7.933 A/C=23.188
+n_proposals=1234 remaining=21 w>0.1=289 w>0.01=1078 w>0.001=1234 w>0.0001=1234 A/B=1.065 A/C=1.307
+n_proposals=1234 remaining=20 w>0.1=140 w>0.01=1128 w>0.001=1234 w>0.0001=1234 A/B=5.139 A/C=8.829
+n_proposals=1234 remaining=34 w>0.1=29 w>0.01=687 w>0.001=1234 w>0.0001=1234 A/B=12.547 A/C=71.880
+n_proposals=622 remaining=15 w>0.1=375 w>0.01=608 w>0.001=622 w>0.0001=622 A/B=1.080 A/C=1.219
+n_proposals=1234 remaining=24 w>0.1=634 w>0.01=1062 w>0.001=1234 w>0.0001=1234 A/B=1.256 A/C=2.944
+n_proposals=1234 remaining=24 w>0.1=424 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.075 A/C=1.180
+n_proposals=1234 remaining=30 w>0.1=262 w>0.01=842 w>0.001=1234 w>0.0001=1234 A/B=1.920 A/C=8.714
+n_proposals=532 remaining=15 w>0.1=377 w>0.01=505 w>0.001=532 w>0.0001=532 A/B=1.139 A/C=1.514
+n_proposals=1234 remaining=34 w>0.1=99 w>0.01=774 w>0.001=1234 w>0.0001=1234 A/B=3.726 A/C=11.704
+n_proposals=1234 remaining=31 w>0.1=188 w>0.01=760 w>0.001=1234 w>0.0001=1234 A/B=1.137 A/C=4.404
+n_proposals=1234 remaining=34 w>0.1=312 w>0.01=977 w>0.001=1234 w>0.0001=1234 A/B=1.064 A/C=1.203
+n_proposals=1234 remaining=19 w>0.1=125 w>0.01=861 w>0.001=1234 w>0.0001=1234 A/B=1.158 A/C=9.736
+n_proposals=1234 remaining=32 w>0.1=25 w>0.01=642 w>0.001=1234 w>0.0001=1234 A/B=21.232 A/C=75.543
+n_proposals=1234 remaining=32 w>0.1=257 w>0.01=875 w>0.001=1234 w>0.0001=1234 A/B=1.076 A/C=1.217
+n_proposals=1234 remaining=27 w>0.1=131 w>0.01=1073 w>0.001=1234 w>0.0001=1234 A/B=2.546 A/C=9.866
+n_proposals=1234 remaining=19 w>0.1=335 w>0.01=1113 w>0.001=1234 w>0.0001=1234 A/B=1.053 A/C=1.182
+n_proposals=1234 remaining=27 w>0.1=69 w>0.01=738 w>0.001=1234 w>0.0001=1234 A/B=4.495 A/C=30.402
+n_proposals=809 remaining=16 w>0.1=346 w>0.01=729 w>0.001=809 w>0.0001=809 A/B=1.072 A/C=1.334
+n_proposals=1234 remaining=22 w>0.1=132 w>0.01=872 w>0.001=1234 w>0.0001=1234 A/B=1.210 A/C=8.957
+n_proposals=1234 remaining=22 w>0.1=296 w>0.01=1163 w>0.001=1234 w>0.0001=1234 A/B=5.405 A/C=8.646
+n_proposals=849 remaining=18 w>0.1=273 w>0.01=775 w>0.001=849 w>0.0001=849 A/B=7.915 A/C=8.558
+n_proposals=1234 remaining=22 w>0.1=172 w>0.01=858 w>0.001=1234 w>0.0001=1234 A/B=1.127 A/C=5.135
+n_proposals=1234 remaining=16 w>0.1=154 w>0.01=920 w>0.001=1234 w>0.0001=1234 A/B=3.821 A/C=7.919
+n_proposals=1234 remaining=28 w>0.1=297 w>0.01=792 w>0.001=1234 w>0.0001=1234 A/B=1.963 A/C=8.343
+n_proposals=282 remaining=14 w>0.1=132 w>0.01=264 w>0.001=282 w>0.0001=282 A/B=1.187 A/C=6.057
+n_proposals=1234 remaining=32 w>0.1=103 w>0.01=821 w>0.001=1234 w>0.0001=1234 A/B=2.548 A/C=10.988
+n_proposals=641 remaining=13 w>0.1=641 w>0.01=641 w>0.001=641 w>0.0001=641 A/B=1.112 A/C=1.261
+n_proposals=1234 remaining=29 w>0.1=393 w>0.01=1057 w>0.001=1234 w>0.0001=1234 A/B=1.096 A/C=2.036
+n_proposals=812 remaining=17 w>0.1=82 w>0.01=598 w>0.001=811 w>0.0001=812 A/B=7.963 A/C=12.174
+n_proposals=1234 remaining=13 w>0.1=1043 w>0.01=1227 w>0.001=1234 w>0.0001=1234 A/B=1.033 A/C=1.090
+n_proposals=1234 remaining=30 w>0.1=178 w>0.01=846 w>0.001=1234 w>0.0001=1234 A/B=1.113 A/C=2.967
+n_proposals=1234 remaining=25 w>0.1=138 w>0.01=678 w>0.001=1234 w>0.0001=1234 A/B=5.938 A/C=8.208
+n_proposals=1234 remaining=33 w>0.1=474 w>0.01=1035 w>0.001=1234 w>0.0001=1234 A/B=1.221 A/C=3.818
+n_proposals=1234 remaining=26 w>0.1=13 w>0.01=83 w>0.001=890 w>0.0001=1234 A/B=8.287 A/C=23.298
+n_proposals=1234 remaining=30 w>0.1=367 w>0.01=972 w>0.001=1234 w>0.0001=1234 A/B=1.108 A/C=1.731
+n_proposals=1234 remaining=17 w>0.1=464 w>0.01=1139 w>0.001=1234 w>0.0001=1234 A/B=1.043 A/C=1.156
+n_proposals=1234 remaining=19 w>0.1=594 w>0.01=1233 w>0.001=1234 w>0.0001=1234 A/B=4.647 A/C=6.253
+n_proposals=1234 remaining=25 w>0.1=696 w>0.01=1195 w>0.001=1234 w>0.0001=1234 A/B=1.024 A/C=1.074
+n_proposals=1234 remaining=28 w>0.1=107 w>0.01=779 w>0.001=1234 w>0.0001=1234 A/B=1.179 A/C=10.443
+n_proposals=1234 remaining=27 w>0.1=187 w>0.01=773 w>0.001=1234 w>0.0001=1234 A/B=1.151 A/C=4.931
+n_proposals=1234 remaining=32 w>0.1=279 w>0.01=971 w>0.001=1234 w>0.0001=1234 A/B=1.078 A/C=1.223
+n_proposals=1234 remaining=32 w>0.1=492 w>0.01=1025 w>0.001=1234 w>0.0001=1234 A/B=1.144 A/C=3.283
+n_proposals=856 remaining=14 w>0.1=422 w>0.01=782 w>0.001=856 w>0.0001=856 A/B=1.059 A/C=1.196
+n_proposals=851 remaining=19 w>0.1=94 w>0.01=609 w>0.001=851 w>0.0001=851 A/B=1.169 A/C=13.743
+n_proposals=730 remaining=11 w>0.1=730 w>0.01=730 w>0.001=730 w>0.0001=730 A/B=1.051 A/C=1.156
+n_proposals=406 remaining=12 w>0.1=66 w>0.01=265 w>0.001=406 w>0.0001=406 A/B=5.342 A/C=35.134
+n_proposals=1234 remaining=24 w>0.1=699 w>0.01=1191 w>0.001=1234 w>0.0001=1234 A/B=1.029 A/C=1.074
+n_proposals=769 remaining=15 w>0.1=51 w>0.01=545 w>0.001=768 w>0.0001=769 A/B=7.831 A/C=21.563
+n_proposals=620 remaining=14 w>0.1=186 w>0.01=386 w>0.001=611 w>0.0001=620 A/B=1.200 A/C=1.613
+n_proposals=1234 remaining=19 w>0.1=747 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.141 A/C=1.572
+n_proposals=1234 remaining=30 w>0.1=48 w>0.01=197 w>0.001=968 w>0.0001=1234 A/B=1.167 A/C=8.859
+n_proposals=766 remaining=15 w>0.1=311 w>0.01=712 w>0.001=766 w>0.0001=766 A/B=1.195 A/C=1.339
+n_proposals=1234 remaining=25 w>0.1=419 w>0.01=1067 w>0.001=1234 w>0.0001=1234 A/B=1.116 A/C=1.738
+n_proposals=1234 remaining=28 w>0.1=395 w>0.01=951 w>0.001=1234 w>0.0001=1234 A/B=1.077 A/C=1.232
+n_proposals=1234 remaining=23 w>0.1=123 w>0.01=564 w>0.001=1234 w>0.0001=1234 A/B=7.262 A/C=8.466
+n_proposals=1234 remaining=30 w>0.1=398 w>0.01=956 w>0.001=1234 w>0.0001=1234 A/B=1.113 A/C=1.590
+n_proposals=1234 remaining=26 w>0.1=12 w>0.01=642 w>0.001=1234 w>0.0001=1234 A/B=68.756 A/C=71.773
+n_proposals=1234 remaining=24 w>0.1=402 w>0.01=1058 w>0.001=1234 w>0.0001=1234 A/B=1.127 A/C=2.947
+n_proposals=328 remaining=17 w>0.1=61 w>0.01=328 w>0.001=328 w>0.0001=328 A/B=1.161 A/C=29.088
+n_proposals=1234 remaining=23 w>0.1=249 w>0.01=776 w>0.001=1234 w>0.0001=1234 A/B=3.527 A/C=8.748
+n_proposals=345 remaining=11 w>0.1=310 w>0.01=345 w>0.001=345 w>0.0001=345 A/B=1.104 A/C=1.354
+n_proposals=1234 remaining=26 w>0.1=245 w>0.01=858 w>0.001=1234 w>0.0001=1234 A/B=1.090 A/C=1.378
+n_proposals=1234 remaining=15 w>0.1=429 w>0.01=1117 w>0.001=1234 w>0.0001=1234 A/B=1.122 A/C=1.243
+n_proposals=831 remaining=17 w>0.1=66 w>0.01=587 w>0.001=830 w>0.0001=831 A/B=3.482 A/C=22.617
+n_proposals=1234 remaining=17 w>0.1=192 w>0.01=862 w>0.001=1234 w>0.0001=1234 A/B=1.096 A/C=3.027
+n_proposals=1234 remaining=30 w>0.1=42 w>0.01=515 w>0.001=1234 w>0.0001=1234 A/B=9.082 A/C=68.594
+n_proposals=1234 remaining=22 w>0.1=109 w>0.01=639 w>0.001=1234 w>0.0001=1234 A/B=1.347 A/C=10.201
+n_proposals=806 remaining=12 w>0.1=480 w>0.01=767 w>0.001=806 w>0.0001=806 A/B=1.045 A/C=1.133
+n_proposals=369 remaining=10 w>0.1=201 w>0.01=334 w>0.001=369 w>0.0001=369 A/B=1.183 A/C=5.185
+n_proposals=403 remaining=9 w>0.1=403 w>0.01=403 w>0.001=403 w>0.0001=403 A/B=1.075 A/C=1.174
+n_proposals=241 remaining=13 w>0.1=241 w>0.01=241 w>0.001=241 w>0.0001=241 A/B=1.090 A/C=7.367
+n_proposals=507 remaining=13 w>0.1=79 w>0.01=389 w>0.001=505 w>0.0001=507 A/B=1.958 A/C=13.808
+n_proposals=813 remaining=12 w>0.1=249 w>0.01=467 w>0.001=781 w>0.0001=813 A/B=1.177 A/C=1.471
+n_proposals=1234 remaining=21 w>0.1=187 w>0.01=1034 w>0.001=1234 w>0.0001=1234 A/B=1.319 A/C=8.814
+n_proposals=811 remaining=16 w>0.1=177 w>0.01=659 w>0.001=811 w>0.0001=811 A/B=1.087 A/C=2.508
+n_proposals=1234 remaining=20 w>0.1=165 w>0.01=774 w>0.001=1234 w>0.0001=1234 A/B=1.153 A/C=4.944
+n_proposals=1234 remaining=24 w>0.1=20 w>0.01=623 w>0.001=1234 w>0.0001=1234 A/B=20.268 A/C=42.286
+n_proposals=1234 remaining=21 w>0.1=23 w>0.01=205 w>0.001=1084 w>0.0001=1234 A/B=2.234 A/C=8.895
+n_proposals=1234 remaining=27 w>0.1=61 w>0.01=217 w>0.001=1033 w>0.0001=1234 A/B=1.141 A/C=6.247
+n_proposals=1234 remaining=22 w>0.1=182 w>0.01=821 w>0.001=1234 w>0.0001=1234 A/B=1.121 A/C=3.788
+n_proposals=1234 remaining=15 w>0.1=1124 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.014 A/C=1.051
+n_proposals=574 remaining=13 w>0.1=191 w>0.01=555 w>0.001=574 w>0.0001=574 A/B=1.046 A/C=1.135
+n_proposals=1234 remaining=28 w>0.1=486 w>0.01=1073 w>0.001=1234 w>0.0001=1234 A/B=1.130 A/C=2.891
+n_proposals=769 remaining=15 w>0.1=63 w>0.01=481 w>0.001=769 w>0.0001=769 A/B=5.689 A/C=47.616
+n_proposals=1234 remaining=24 w>0.1=288 w>0.01=937 w>0.001=1234 w>0.0001=1234 A/B=1.082 A/C=1.280
+n_proposals=1234 remaining=22 w>0.1=292 w>0.01=939 w>0.001=1234 w>0.0001=1234 A/B=1.237 A/C=3.025
+n_proposals=1072 remaining=18 w>0.1=421 w>0.01=859 w>0.001=1072 w>0.0001=1072 A/B=1.036 A/C=1.105
+n_proposals=1234 remaining=27 w>0.1=345 w>0.01=996 w>0.001=1234 w>0.0001=1234 A/B=1.071 A/C=1.178
+n_proposals=1234 remaining=22 w>0.1=247 w>0.01=972 w>0.001=1234 w>0.0001=1234 A/B=1.065 A/C=1.209
+n_proposals=817 remaining=9 w>0.1=455 w>0.01=769 w>0.001=817 w>0.0001=817 A/B=1.355 A/C=1.715
+n_proposals=864 remaining=10 w>0.1=549 w>0.01=832 w>0.001=864 w>0.0001=864 A/B=1.131 A/C=1.383
+n_proposals=445 remaining=11 w>0.1=186 w>0.01=411 w>0.001=445 w>0.0001=445 A/B=1.307 A/C=2.015
+n_proposals=800 remaining=12 w>0.1=409 w>0.01=768 w>0.001=800 w>0.0001=800 A/B=1.075 A/C=1.281
+n_proposals=421 remaining=11 w>0.1=344 w>0.01=421 w>0.001=421 w>0.0001=421 A/B=1.167 A/C=1.398
+n_proposals=682 remaining=7 w>0.1=682 w>0.01=682 w>0.001=682 w>0.0001=682 A/B=1.023 A/C=1.099
+n_proposals=881 remaining=19 w>0.1=155 w>0.01=768 w>0.001=881 w>0.0001=881 A/B=1.410 A/C=9.372
+n_proposals=1234 remaining=25 w>0.1=440 w>0.01=987 w>0.001=1234 w>0.0001=1234 A/B=1.088 A/C=1.332
+n_proposals=1234 remaining=14 w>0.1=482 w>0.01=1095 w>0.001=1234 w>0.0001=1234 A/B=1.037 A/C=1.106
+n_proposals=1234 remaining=25 w>0.1=293 w>0.01=993 w>0.001=1234 w>0.0001=1234 A/B=1.087 A/C=1.468
+n_proposals=493 remaining=10 w>0.1=95 w>0.01=300 w>0.001=493 w>0.0001=493 A/B=1.299 A/C=2.741
+n_proposals=1234 remaining=26 w>0.1=66 w>0.01=502 w>0.001=1234 w>0.0001=1234 A/B=8.564 A/C=37.960
+n_proposals=375 remaining=13 w>0.1=66 w>0.01=375 w>0.001=375 w>0.0001=375 A/B=1.076 A/C=14.259
+n_proposals=527 remaining=8 w>0.1=372 w>0.01=503 w>0.001=527 w>0.0001=527 A/B=1.163 A/C=1.597
+n_proposals=640 remaining=7 w>0.1=334 w>0.01=640 w>0.001=640 w>0.0001=640 A/B=1.082 A/C=1.308
+n_proposals=887 remaining=19 w>0.1=24 w>0.01=100 w>0.001=771 w>0.0001=887 A/B=2.841 A/C=13.242
+n_proposals=1006 remaining=16 w>0.1=423 w>0.01=818 w>0.001=1006 w>0.0001=1006 A/B=1.039 A/C=1.124
+n_proposals=382 remaining=13 w>0.1=142 w>0.01=379 w>0.001=382 w>0.0001=382 A/B=5.623 A/C=9.755
+n_proposals=1234 remaining=24 w>0.1=306 w>0.01=1035 w>0.001=1234 w>0.0001=1234 A/B=1.078 A/C=1.380
+n_proposals=438 remaining=8 w>0.1=54 w>0.01=251 w>0.001=438 w>0.0001=438 A/B=1.165 A/C=3.259
+n_proposals=1234 remaining=19 w>0.1=658 w>0.01=1224 w>0.001=1234 w>0.0001=1234 A/B=1.072 A/C=1.254
+n_proposals=1234 remaining=10 w>0.1=351 w>0.01=1191 w>0.001=1234 w>0.0001=1234 A/B=1.036 A/C=1.111
+n_proposals=217 remaining=9 w>0.1=108 w>0.01=217 w>0.001=217 w>0.0001=217 A/B=1.142 A/C=8.228
+n_proposals=252 remaining=7 w>0.1=252 w>0.01=252 w>0.001=252 w>0.0001=252 A/B=1.033 A/C=1.130
+n_proposals=833 remaining=19 w>0.1=261 w>0.01=673 w>0.001=833 w>0.0001=833 A/B=1.331 A/C=3.137
+n_proposals=1234 remaining=23 w>0.1=382 w>0.01=1041 w>0.001=1234 w>0.0001=1234 A/B=1.041 A/C=1.145
+n_proposals=395 remaining=9 w>0.1=395 w>0.01=395 w>0.001=395 w>0.0001=395 A/B=1.036 A/C=1.097
+n_proposals=996 remaining=17 w>0.1=186 w>0.01=670 w>0.001=996 w>0.0001=996 A/B=5.340 A/C=5.856
+n_proposals=649 remaining=5 w>0.1=649 w>0.01=649 w>0.001=649 w>0.0001=649 A/B=1.011 A/C=1.033
+n_proposals=1234 remaining=24 w>0.1=541 w>0.01=1127 w>0.001=1234 w>0.0001=1234 A/B=1.119 A/C=1.893
+n_proposals=772 remaining=17 w>0.1=370 w>0.01=619 w>0.001=754 w>0.0001=772 A/B=1.173 A/C=8.814
+n_proposals=365 remaining=12 w>0.1=139 w>0.01=365 w>0.001=365 w>0.0001=365 A/B=3.830 A/C=8.661
+n_proposals=1234 remaining=22 w>0.1=149 w>0.01=314 w>0.001=1109 w>0.0001=1234 A/B=1.064 A/C=1.165
+n_proposals=728 remaining=6 w>0.1=203 w>0.01=728 w>0.001=728 w>0.0001=728 A/B=1.052 A/C=1.421
+n_proposals=813 remaining=5 w>0.1=401 w>0.01=813 w>0.001=813 w>0.0001=813 A/B=1.039 A/C=1.103
+n_proposals=968 remaining=19 w>0.1=269 w>0.01=771 w>0.001=968 w>0.0001=968 A/B=1.083 A/C=1.464
+n_proposals=1087 remaining=14 w>0.1=111 w>0.01=628 w>0.001=1087 w>0.0001=1087 A/B=1.691 A/C=9.030
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.015
+n_proposals=624 remaining=6 w>0.1=475 w>0.01=624 w>0.001=624 w>0.0001=624 A/B=1.036 A/C=1.134
+n_proposals=836 remaining=12 w>0.1=337 w>0.01=743 w>0.001=836 w>0.0001=836 A/B=1.069 A/C=1.228
+n_proposals=554 remaining=16 w>0.1=150 w>0.01=392 w>0.001=554 w>0.0001=554 A/B=1.871 A/C=8.551
+n_proposals=1234 remaining=11 w>0.1=1187 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.010 A/C=1.027
+n_proposals=581 remaining=10 w>0.1=382 w>0.01=569 w>0.001=581 w>0.0001=581 A/B=1.176 A/C=1.518
+n_proposals=809 remaining=16 w>0.1=24 w>0.01=116 w>0.001=711 w>0.0001=809 A/B=2.531 A/C=11.627
+n_proposals=1234 remaining=20 w>0.1=157 w>0.01=319 w>0.001=1110 w>0.0001=1234 A/B=1.045 A/C=1.157
+n_proposals=1234 remaining=8 w>0.1=613 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.051 A/C=1.113
+n_proposals=412 remaining=17 w>0.1=50 w>0.01=237 w>0.001=412 w>0.0001=412 A/B=5.772 A/C=73.249
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.015 A/C=1.043
+n_proposals=1234 remaining=21 w>0.1=445 w>0.01=979 w>0.001=1234 w>0.0001=1234 A/B=1.094 A/C=1.319
+n_proposals=1234 remaining=7 w>0.1=932 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.011 A/C=1.033
+n_proposals=1234 remaining=17 w>0.1=141 w>0.01=811 w>0.001=1234 w>0.0001=1234 A/B=1.305 A/C=8.995
+n_proposals=549 remaining=7 w>0.1=360 w>0.01=549 w>0.001=549 w>0.0001=549 A/B=1.039 A/C=1.107
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.016
+n_proposals=1234 remaining=22 w>0.1=66 w>0.01=620 w>0.001=1234 w>0.0001=1234 A/B=8.321 A/C=37.751
+n_proposals=821 remaining=4 w>0.1=421 w>0.01=821 w>0.001=821 w>0.0001=821 A/B=1.027 A/C=1.091
+n_proposals=821 remaining=4 w>0.1=614 w>0.01=821 w>0.001=821 w>0.0001=821 A/B=1.041 A/C=1.094
+n_proposals=919 remaining=6 w>0.1=680 w>0.01=919 w>0.001=919 w>0.0001=919 A/B=1.033 A/C=1.055
+n_proposals=410 remaining=16 w>0.1=215 w>0.01=397 w>0.001=410 w>0.0001=410 A/B=1.146 A/C=2.075
+n_proposals=631 remaining=4 w>0.1=389 w>0.01=631 w>0.001=631 w>0.0001=631 A/B=1.031 A/C=1.092
+n_proposals=461 remaining=17 w>0.1=252 w>0.01=453 w>0.001=461 w>0.0001=461 A/B=1.055 A/C=1.237
+n_proposals=425 remaining=19 w>0.1=179 w>0.01=363 w>0.001=425 w>0.0001=425 A/B=1.175 A/C=8.461
+n_proposals=604 remaining=4 w>0.1=604 w>0.01=604 w>0.001=604 w>0.0001=604 A/B=1.013 A/C=1.034
+n_proposals=736 remaining=16 w>0.1=452 w>0.01=701 w>0.001=736 w>0.0001=736 A/B=1.088 A/C=1.234
+n_proposals=402 remaining=5 w>0.1=402 w>0.01=402 w>0.001=402 w>0.0001=402 A/B=1.017 A/C=1.048
+n_proposals=1223 remaining=18 w>0.1=1078 w>0.01=1222 w>0.001=1223 w>0.0001=1223 A/B=1.084 A/C=1.157
+n_proposals=464 remaining=8 w>0.1=464 w>0.01=464 w>0.001=464 w>0.0001=464 A/B=1.096 A/C=1.630
+n_proposals=715 remaining=12 w>0.1=690 w>0.01=715 w>0.001=715 w>0.0001=715 A/B=1.017 A/C=1.044
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.015
+n_proposals=638 remaining=9 w>0.1=216 w>0.01=638 w>0.001=638 w>0.0001=638 A/B=1.032 A/C=1.086
+n_proposals=528 remaining=14 w>0.1=261 w>0.01=458 w>0.001=528 w>0.0001=528 A/B=1.209 A/C=9.221
+n_proposals=918 remaining=14 w>0.1=249 w>0.01=824 w>0.001=918 w>0.0001=918 A/B=1.051 A/C=1.100
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.015
+n_proposals=1234 remaining=20 w>0.1=805 w>0.01=1217 w>0.001=1234 w>0.0001=1234 A/B=1.117 A/C=2.978
+n_proposals=647 remaining=5 w>0.1=647 w>0.01=647 w>0.001=647 w>0.0001=647 A/B=1.009 A/C=1.025
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=1234 remaining=10 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.083 A/C=1.143
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.003 A/C=1.013
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.008 A/C=1.030
+n_proposals=1234 remaining=8 w>0.1=1213 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.007 A/C=1.023
+n_proposals=1234 remaining=6 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.014 A/C=1.040
+n_proposals=849 remaining=17 w>0.1=324 w>0.01=754 w>0.001=849 w>0.0001=849 A/B=1.069 A/C=1.285
+n_proposals=1148 remaining=15 w>0.1=669 w>0.01=1124 w>0.001=1148 w>0.0001=1148 A/B=1.020 A/C=1.067
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.016
+n_proposals=888 remaining=14 w>0.1=95 w>0.01=377 w>0.001=796 w>0.0001=888 A/B=2.203 A/C=12.316
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.003 A/C=1.014
+n_proposals=960 remaining=16 w>0.1=938 w>0.01=960 w>0.001=960 w>0.0001=960 A/B=1.025 A/C=1.090
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.015
+n_proposals=950 remaining=14 w>0.1=247 w>0.01=763 w>0.001=950 w>0.0001=950 A/B=1.182 A/C=1.496
+n_proposals=110 remaining=10 w>0.1=110 w>0.01=110 w>0.001=110 w>0.0001=110 A/B=1.046 A/C=1.161
+n_proposals=171 remaining=12 w>0.1=98 w>0.01=171 w>0.001=171 w>0.0001=171 A/B=1.075 A/C=1.359
+n_proposals=815 remaining=18 w>0.1=30 w>0.01=232 w>0.001=815 w>0.0001=815 A/B=14.047 A/C=71.722
+n_proposals=792 remaining=16 w>0.1=297 w>0.01=709 w>0.001=792 w>0.0001=792 A/B=1.094 A/C=1.464
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.016
+n_proposals=1234 remaining=12 w>0.1=125 w>0.01=567 w>0.001=1228 w>0.0001=1234 A/B=2.057 A/C=7.686
+n_proposals=570 remaining=11 w>0.1=1 w>0.01=388 w>0.001=570 w>0.0001=570 A/B=5.350 A/C=7.659
+n_proposals=814 remaining=6 w>0.1=395 w>0.01=814 w>0.001=814 w>0.0001=814 A/B=1.016 A/C=1.050
+n_proposals=592 remaining=4 w>0.1=592 w>0.01=592 w>0.001=592 w>0.0001=592 A/B=1.032 A/C=1.089
+n_proposals=411 remaining=12 w>0.1=340 w>0.01=411 w>0.001=411 w>0.0001=411 A/B=1.041 A/C=1.119
+n_proposals=731 remaining=8 w>0.1=731 w>0.01=731 w>0.001=731 w>0.0001=731 A/B=1.030 A/C=1.093
+n_proposals=1234 remaining=14 w>0.1=761 w>0.01=1043 w>0.001=1234 w>0.0001=1234 A/B=1.025 A/C=1.071
+n_proposals=831 remaining=13 w>0.1=295 w>0.01=756 w>0.001=831 w>0.0001=831 A/B=1.167 A/C=1.509
+n_proposals=986 remaining=7 w>0.1=986 w>0.01=986 w>0.001=986 w>0.0001=986 A/B=1.026 A/C=1.065
+n_proposals=403 remaining=10 w>0.1=221 w>0.01=403 w>0.001=403 w>0.0001=403 A/B=1.067 A/C=1.133
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.006 A/C=1.017
+n_proposals=778 remaining=10 w>0.1=778 w>0.01=778 w>0.001=778 w>0.0001=778 A/B=1.019 A/C=1.051
+n_proposals=306 remaining=14 w>0.1=141 w>0.01=226 w>0.001=306 w>0.0001=306 A/B=1.182 A/C=8.981
+n_proposals=392 remaining=6 w>0.1=392 w>0.01=392 w>0.001=392 w>0.0001=392 A/B=1.012 A/C=1.042
+n_proposals=1234 remaining=12 w>0.1=675 w>0.01=929 w>0.001=1234 w>0.0001=1234 A/B=1.041 A/C=1.123
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.016
+n_proposals=469 remaining=15 w>0.1=38 w>0.01=183 w>0.001=466 w>0.0001=469 A/B=8.381 A/C=64.992
+n_proposals=803 remaining=9 w>0.1=73 w>0.01=436 w>0.001=803 w>0.0001=803 A/B=1.124 A/C=1.279
+n_proposals=1191 remaining=12 w>0.1=727 w>0.01=1125 w>0.001=1191 w>0.0001=1191 A/B=1.109 A/C=1.334
+n_proposals=873 remaining=10 w>0.1=229 w>0.01=720 w>0.001=873 w>0.0001=873 A/B=1.102 A/C=1.201
+n_proposals=820 remaining=5 w>0.1=820 w>0.01=820 w>0.001=820 w>0.0001=820 A/B=1.026 A/C=1.085
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.014
+n_proposals=751 remaining=8 w>0.1=712 w>0.01=751 w>0.001=751 w>0.0001=751 A/B=1.025 A/C=1.078
+n_proposals=1234 remaining=13 w>0.1=1147 w>0.01=1205 w>0.001=1234 w>0.0001=1234 A/B=1.069 A/C=1.162
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.014
+n_proposals=252 remaining=8 w>0.1=151 w>0.01=252 w>0.001=252 w>0.0001=252 A/B=1.048 A/C=1.130
+n_proposals=1234 remaining=10 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.015
+n_proposals=842 remaining=4 w>0.1=842 w>0.01=842 w>0.001=842 w>0.0001=842 A/B=1.036 A/C=1.100
+n_proposals=359 remaining=10 w>0.1=105 w>0.01=326 w>0.001=359 w>0.0001=359 A/B=1.175 A/C=9.234
+n_proposals=839 remaining=8 w>0.1=321 w>0.01=665 w>0.001=839 w>0.0001=839 A/B=1.103 A/C=1.286
+n_proposals=741 remaining=7 w>0.1=169 w>0.01=545 w>0.001=741 w>0.0001=741 A/B=1.093 A/C=1.181
+n_proposals=1025 remaining=6 w>0.1=1025 w>0.01=1025 w>0.001=1025 w>0.0001=1025 A/B=1.009 A/C=1.023
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.003 A/C=1.014
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.006 A/C=1.016
+n_proposals=444 remaining=11 w>0.1=100 w>0.01=198 w>0.001=437 w>0.0001=444 A/B=1.637 A/C=8.913
+n_proposals=682 remaining=11 w>0.1=508 w>0.01=682 w>0.001=682 w>0.0001=682 A/B=1.029 A/C=1.099
+n_proposals=1234 remaining=8 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=701 remaining=6 w>0.1=0 w>0.01=701 w>0.001=701 w>0.0001=701 A/B=1.010 A/C=1.031
+n_proposals=823 remaining=9 w>0.1=784 w>0.01=823 w>0.001=823 w>0.0001=823 A/B=1.039 A/C=1.089
+n_proposals=386 remaining=8 w>0.1=123 w>0.01=386 w>0.001=386 w>0.0001=386 A/B=1.177 A/C=4.922
+n_proposals=322 remaining=6 w>0.1=226 w>0.01=226 w>0.001=322 w>0.0001=322 A/B=1.054 A/C=1.191
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.006 A/C=1.015
+n_proposals=1234 remaining=5 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.031 A/C=1.098
+n_proposals=819 remaining=4 w>0.1=385 w>0.01=385 w>0.001=819 w>0.0001=819 A/B=1.014 A/C=1.052
+n_proposals=920 remaining=6 w>0.1=501 w>0.01=920 w>0.001=920 w>0.0001=920 A/B=1.011 A/C=1.039
+n_proposals=166 remaining=9 w>0.1=166 w>0.01=166 w>0.001=166 w>0.0001=166 A/B=1.251 A/C=1.447
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=1234 remaining=3 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.012
+n_proposals=354 remaining=7 w>0.1=123 w>0.01=123 w>0.001=354 w>0.0001=354 A/B=1.040 A/C=1.158
+n_proposals=409 remaining=4 w>0.1=0 w>0.01=409 w>0.001=409 w>0.0001=409 A/B=1.022 A/C=1.054
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=425 remaining=6 w>0.1=425 w>0.01=425 w>0.001=425 w>0.0001=425 A/B=1.014 A/C=1.039
+n_proposals=1234 remaining=1 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.005 A/C=1.012
+n_proposals=820 remaining=4 w>0.1=610 w>0.01=820 w>0.001=820 w>0.0001=820 A/B=1.010 A/C=1.025
+n_proposals=1234 remaining=2 w>0.1=0 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.015
+n_proposals=231 remaining=7 w>0.1=181 w>0.01=231 w>0.001=231 w>0.0001=231 A/B=1.127 A/C=1.459
+n_proposals=1234 remaining=5 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.007 A/C=1.025
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.015
+n_proposals=626 remaining=3 w>0.1=626 w>0.01=626 w>0.001=626 w>0.0001=626 A/B=1.007 A/C=1.034
+n_proposals=823 remaining=5 w>0.1=823 w>0.01=823 w>0.001=823 w>0.0001=823 A/B=1.012 A/C=1.044
+n_proposals=1234 remaining=4 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.007 A/C=1.028
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=1234 remaining=3 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.010 A/C=1.030
+n_proposals=1234 remaining=2 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.013
+n_proposals=1234 remaining=1 w>0.1=1234 w>0.01=1234 w>0.001=1234 w>0.0001=1234 A/B=1.004 A/C=1.015
+n_proposals=1234 remaining=36 w>0.1=30 w>0.01=207 w>0.001=785 w>0.0001=1234 A/B=6.562 A/C=10.606
+n_proposals=1234 remaining=35 w>0.1=222 w>0.01=851 w>0.001=1234 w>0.0001=1234 A/B=1.094 A/C=2.425
+n_proposals=1234 remaining=36 w>0.1=88 w>0.01=651 w>0.001=1234 w>0.0001=1234 A/B=4.357 A/C=14.325
+n_proposals=1234 remaining=34 w>0.1=132 w>0.01=632 w>0.001=1234 w>0.0001=1234 A/B=1.375 A/C=8.349
+n_proposals=1234 remaining=33 w>0.1=263 w>0.01=893 w>0.001=1234 w>0.0001=1234 A/B=1.108 A/C=3.100
+n_proposals=1234 remaining=32 w>0.1=162 w>0.01=716 w>0.001=1234 w>0.0001=1234 A/B=1.282 A/C=6.969
+n_proposals=1234 remaining=34 w>0.1=90 w>0.01=553 w>0.001=1234 w>0.0001=1234 A/B=3.165 A/C=14.271
+n_proposals=1234 remaining=35 w>0.1=191 w>0.01=717 w>0.001=1234 w>0.0001=1234 A/B=1.612 A/C=8.285
+n_proposals=1234 remaining=31 w>0.1=229 w>0.01=872 w>0.001=1234 w>0.0001=1234 A/B=1.104 A/C=2.814
+n_proposals=1234 remaining=36 w>0.1=270 w>0.01=901 w>0.001=1234 w>0.0001=1234 A/B=1.078 A/C=1.898
+n_proposals=1234 remaining=30 w>0.1=117 w>0.01=705 w>0.001=1234 w>0.0001=1234 A/B=1.598 A/C=9.626
+n_proposals=1234 remaining=36 w>0.1=117 w>0.01=383 w>0.001=1002 w>0.0001=1234 A/B=1.135 A/C=4.351
+n_proposals=1234 remaining=35 w>0.1=190 w>0.01=802 w>0.001=1234 w>0.0001=1234 A/B=1.223 A/C=4.390
+n_proposals=1234 remaining=31 w>0.1=109 w>0.01=632 w>0.001=1234 w>0.0001=1234 A/B=2.109 A/C=10.024
+n_proposals=1234 remaining=29 w>0.1=274 w>0.01=906 w>0.001=1234 w>0.0001=1234 A/B=1.117 A/C=2.764
+n_proposals=1234 remaining=33 w>0.1=290 w>0.01=948 w>0.001=1234 w>0.0001=1234 A/B=1.083 A/C=2.074
+n_proposals=1234 remaining=33 w>0.1=225 w>0.01=869 w>0.001=1234 w>0.0001=1234 A/B=1.093 A/C=1.597
+n_proposals=1234 remaining=27 w>0.1=86 w>0.01=678 w>0.001=1234 w>0.0001=1234 A/B=3.214 A/C=19.546
+n_proposals=1234 remaining=36 w>0.1=149 w>0.01=710 w>0.001=1234 w>0.0001=1234 A/B=2.075 A/C=8.940
+n_proposals=1234 remaining=36 w>0.1=284 w>0.01=887 w>0.001=1234 w>0.0001=1234 A/B=1.090 A/C=2.237
+n_proposals=1234 remaining=32 w>0.1=177 w>0.01=845 w>0.001=1234 w>0.0001=1234 A/B=1.170 A/C=4.733
+n_proposals=1234 remaining=29 w>0.1=31 w>0.01=235 w>0.001=841 w>0.0001=1234 A/B=6.678 A/C=9.862
+n_proposals=1234 remaining=27 w>0.1=291 w>0.01=912 w>0.001=1234 w>0.0001=1234 A/B=1.100 A/C=2.339
+n_proposals=1234 remaining=32 w>0.1=311 w>0.01=941 w>0.001=1234 w>0.0001=1234 A/B=1.109 A/C=1.645
+n_proposals=1234 remaining=34 w>0.1=18 w>0.01=92 w>0.001=730 w>0.0001=1234 A/B=4.712 A/C=20.749
+n_proposals=1234 remaining=25 w>0.1=162 w>0.01=719 w>0.001=1234 w>0.0001=1234 A/B=1.191 A/C=7.077
+n_proposals=1234 remaining=25 w>0.1=321 w>0.01=951 w>0.001=1234 w>0.0001=1234 A/B=1.080 A/C=1.221
+n_proposals=1234 remaining=27 w>0.1=16 w>0.01=196 w>0.001=778 w>0.0001=1234 A/B=9.048 A/C=13.852
+n_proposals=1234 remaining=30 w>0.1=263 w>0.01=912 w>0.001=1234 w>0.0001=1234 A/B=1.093 A/C=1.345
+n_proposals=1234 remaining=24 w>0.1=133 w>0.01=720 w>0.001=1234 w>0.0001=1234 A/B=1.383 A/C=8.753
+n_proposals=1234 remaining=36 w>0.1=102 w>0.01=491 w>0.001=1234 w>0.0001=1234 A/B=6.745 A/C=8.703
+n_proposals=1234 remaining=30 w>0.1=174 w>0.01=855 w>0.001=1234 w>0.0001=1234 A/B=1.528 A/C=8.098
+n_proposals=1234 remaining=23 w>0.1=304 w>0.01=959 w>0.001=1234 w>0.0001=1234 A/B=1.050 A/C=1.360
+n_proposals=1234 remaining=25 w>0.1=109 w>0.01=569 w>0.001=1234 w>0.0001=1234 A/B=3.250 A/C=9.891
+n_proposals=1234 remaining=22 w>0.1=143 w>0.01=725 w>0.001=1234 w>0.0001=1234 A/B=1.369 A/C=8.257
+n_proposals=1234 remaining=32 w>0.1=20 w>0.01=95 w>0.001=729 w>0.0001=1234 A/B=4.532 A/C=20.623
+n_proposals=1234 remaining=36 w>0.1=124 w>0.01=593 w>0.001=1234 w>0.0001=1234 A/B=2.153 A/C=9.389
+n_proposals=1234 remaining=36 w>0.1=44 w>0.01=415 w>0.001=1234 w>0.0001=1234 A/B=8.855 A/C=52.328
+n_proposals=1234 remaining=36 w>0.1=89 w>0.01=603 w>0.001=1234 w>0.0001=1234 A/B=1.934 A/C=17.437
+n_proposals=1234 remaining=23 w>0.1=101 w>0.01=580 w>0.001=1234 w>0.0001=1234 A/B=3.287 A/C=10.728
+n_proposals=1234 remaining=21 w>0.1=491 w>0.01=1061 w>0.001=1234 w>0.0001=1234 A/B=1.034 A/C=1.107
+n_proposals=1234 remaining=27 w>0.1=199 w>0.01=876 w>0.001=1234 w>0.0001=1234 A/B=1.166 A/C=4.628
+n_proposals=1234 remaining=34 w>0.1=97 w>0.01=359 w>0.001=972 w>0.0001=1234 A/B=1.123 A/C=2.412
+n_proposals=1234 remaining=35 w>0.1=79 w>0.01=512 w>0.001=1234 w>0.0001=1234 A/B=7.571 A/C=16.833
+n_proposals=1234 remaining=27 w>0.1=174 w>0.01=922 w>0.001=1234 w>0.0001=1234 A/B=1.428 A/C=8.212
+n_proposals=1234 remaining=34 w>0.1=91 w>0.01=484 w>0.001=1234 w>0.0001=1234 A/B=5.582 A/C=11.932
+n_proposals=1234 remaining=34 w>0.1=77 w>0.01=570 w>0.001=1234 w>0.0001=1234 A/B=3.914 A/C=20.262
+n_proposals=1234 remaining=34 w>0.1=413 w>0.01=919 w>0.001=1234 w>0.0001=1234 A/B=1.120 A/C=3.055
+n_proposals=1234 remaining=30 w>0.1=177 w>0.01=771 w>0.001=1234 w>0.0001=1234 A/B=3.328 A/C=8.887
+n_proposals=1234 remaining=21 w>0.1=56 w>0.01=347 w>0.001=1033 w>0.0001=1234 A/B=2.082 A/C=9.254
+n_proposals=141 remaining=19 w>0.1=34 w>0.01=95 w>0.001=141 w>0.0001=141 A/B=10.323 A/C=156.993
+n_proposals=1234 remaining=19 w>0.1=480 w>0.01=1102 w>0.001=1234 w>0.0001=1234 A/B=1.073 A/C=1.161
+n_proposals=1234 remaining=25 w>0.1=139 w>0.01=746 w>0.001=1234 w>0.0001=1234 A/B=1.156 A/C=8.043
+n_proposals=1234 remaining=34 w>0.1=159 w>0.01=729 w>0.001=1234 w>0.0001=1234 A/B=1.182 A/C=6.283
+n_proposals=1234 remaining=34 w>0.1=21 w>0.01=92 w>0.001=696 w>0.0001=1234 A/B=4.168 A/C=15.717
+n_proposals=1234 remaining=32 w>0.1=126 w>0.01=419 w>0.001=1049 w>0.0001=1234 A/B=1.128 A/C=3.438
+n_proposals=1234 remaining=25 w>0.1=711 w>0.01=1183 w>0.001=1234 w>0.0001=1234 A/B=1.049 A/C=1.134
+n_proposals=1234 remaining=20 w>0.1=60 w>0.01=355 w>0.001=1050 w>0.0001=1234 A/B=1.584 A/C=9.150
+n_proposals=1234 remaining=32 w>0.1=93 w>0.01=390 w>0.001=985 w>0.0001=1234 A/B=1.119 A/C=2.406
+n_proposals=1234 remaining=24 w>0.1=243 w>0.01=905 w>0.001=1234 w>0.0001=1234 A/B=1.141 A/C=2.844
+n_proposals=1234 remaining=24 w>0.1=344 w>0.01=1002 w>0.001=1234 w>0.0001=1234 A/B=1.126 A/C=2.179
+n_proposals=1234 remaining=30 w>0.1=80 w>0.01=470 w>0.001=1234 w>0.0001=1234 A/B=5.494 A/C=19.776
+n_proposals=1234 remaining=27 w>0.1=70 w>0.01=321 w>0.001=973 w>0.0001=1234 A/B=1.122 A/C=3.172
+n_proposals=793 remaining=17 w>0.1=267 w>0.01=703 w>0.001=791 w>0.0001=793 A/B=1.107 A/C=1.463
+n_proposals=1234 remaining=22 w>0.1=705 w>0.01=1173 w>0.001=1234 w>0.0001=1234 A/B=1.052 A/C=1.156
+n_proposals=1234 remaining=35 w>0.1=56 w>0.01=430 w>0.001=871 w>0.0001=1234 A/B=1.145 A/C=3.888
+n_proposals=75 remaining=17 w>0.1=54 w>0.01=75 w>0.001=75 w>0.0001=75 A/B=5.615 A/C=nan
+n_proposals=1234 remaining=31 w>0.1=86 w>0.01=568 w>0.001=1234 w>0.0001=1234 A/B=2.550 A/C=13.101
+n_proposals=1234 remaining=32 w>0.1=250 w>0.01=872 w>0.001=1234 w>0.0001=1234 A/B=1.131 A/C=3.092
+n_proposals=1234 remaining=32 w>0.1=20 w>0.01=100 w>0.001=670 w>0.0001=1234 A/B=2.488 A/C=14.709
+n_proposals=1234 remaining=30 w>0.1=133 w>0.01=581 w>0.001=1234 w>0.0001=1234 A/B=6.830 A/C=8.114
+n_proposals=864 remaining=18 w>0.1=52 w>0.01=388 w>0.001=862 w>0.0001=864 A/B=6.089 A/C=51.092
+n_proposals=1234 remaining=22 w>0.1=236 w>0.01=822 w>0.001=1234 w>0.0001=1234 A/B=1.097 A/C=2.236
+n_proposals=1234 remaining=25 w>0.1=166 w>0.01=726 w>0.001=1234 w>0.0001=1234 A/B=1.300 A/C=8.286
+n_proposals=1234 remaining=33 w>0.1=99 w>0.01=1142 w>0.001=1234 w>0.0001=1234 A/B=1.442 A/C=1.822
+n_proposals=1234 remaining=27 w>0.1=162 w>0.01=688 w>0.001=1234 w>0.0001=1234 A/B=1.902 A/C=8.947
+n_proposals=103 remaining=15 w>0.1=74 w>0.01=100 w>0.001=103 w>0.0001=103 A/B=2.981 A/C=121.340
+n_proposals=560 remaining=15 w>0.1=214 w>0.01=494 w>0.001=560 w>0.0001=560 A/B=1.159 A/C=1.554
+n_proposals=1234 remaining=29 w>0.1=91 w>0.01=643 w>0.001=1234 w>0.0001=1234 A/B=2.024 A/C=15.837
+n_proposals=1234 remaining=30 w>0.1=361 w>0.01=894 w>0.001=1234 w>0.0001=1234 A/B=1.199 A/C=6.266
+n_proposals=1234 remaining=32 w>0.1=120 w>0.01=1123 w>0.001=1234 w>0.0001=1234 A/B=2.851 A/C=3.237
+n_proposals=1234 remaining=30 w>0.1=166 w>0.01=802 w>0.001=1234 w>0.0001=1234 A/B=2.184 A/C=7.896
+n_proposals=1234 remaining=28 w>0.1=151 w>0.01=598 w>0.001=1234 w>0.0001=1234 A/B=4.920 A/C=6.681
+n_proposals=854 remaining=19 w>0.1=173 w>0.01=732 w>0.001=854 w>0.0001=854 A/B=1.124 A/C=4.985
+n_proposals=1234 remaining=28 w>0.1=118 w>0.01=629 w>0.001=1234 w>0.0001=1234 A/B=2.316 A/C=9.461
+n_proposals=1234 remaining=33 w>0.1=421 w>0.01=862 w>0.001=1234 w>0.0001=1234 A/B=4.676 A/C=8.848
+n_proposals=899 remaining=19 w>0.1=140 w>0.01=638 w>0.001=899 w>0.0001=899 A/B=1.570 A/C=8.023
+n_proposals=1234 remaining=23 w>0.1=85 w>0.01=340 w>0.001=970 w>0.0001=1234 A/B=1.111 A/C=2.417
+n_proposals=1234 remaining=28 w>0.1=17 w>0.01=89 w>0.001=696 w>0.0001=1234 A/B=4.462 A/C=20.607
+n_proposals=1234 remaining=26 w>0.1=109 w>0.01=363 w>0.001=963 w>0.0001=1234 A/B=1.090 A/C=1.806
+n_proposals=1234 remaining=32 w>0.1=388 w>0.01=865 w>0.001=1234 w>0.0001=1234 A/B=5.440 A/C=8.025
+n_proposals=1234 remaining=25 w>0.1=175 w>0.01=612 w>0.001=1117 w>0.0001=1234 A/B=1.088 A/C=1.566
+n_proposals=512 remaining=13 w>0.1=336 w>0.01=489 w>0.001=512 w>0.0001=512 A/B=1.102 A/C=1.309
+n_proposals=1234 remaining=17 w>0.1=237 w>0.01=891 w>0.001=1233 w>0.0001=1234 A/B=1.114 A/C=1.725
+n_proposals=512 remaining=13 w>0.1=410 w>0.01=503 w>0.001=512 w>0.0001=512 A/B=1.047 A/C=1.107
+n_proposals=584 remaining=15 w>0.1=26 w>0.01=230 w>0.001=584 w>0.0001=584 A/B=9.772 A/C=64.940
+n_proposals=1234 remaining=28 w>0.1=297 w>0.01=840 w>0.001=1234 w>0.0001=1234 A/B=1.221 A/C=6.679
+n_proposals=1234 remaining=24 w>0.1=96 w>0.01=445 w>0.001=1028 w>0.0001=1234 A/B=1.100 A/C=2.400
+n_proposals=1234 remaining=30 w>0.1=163 w>0.01=756 w>0.001=1234 w>0.0001=1234 A/B=3.588 A/C=8.199
+n_proposals=1234 remaining=26 w>0.1=135 w>0.01=795 w>0.001=1234 w>0.0001=1234 A/B=2.369 A/C=7.776
+n_proposals=1234 remaining=31 w>0.1=273 w>0.01=888 w>0.001=1234 w>0.0001=1234 A/B=1.094 A/C=1.519
+n_proposals=1234 remaining=16 w>0.1=233 w>0.01=870 w>0.001=1234 w>0.0001=1234 A/B=1.114 A/C=2.109
+n_proposals=531 remaining=12 w>0.1=415 w>0.01=525 w>0.001=531 w>0.0001=531 A/B=1.100 A/C=1.217
+n_proposals=1234 remaining=26 w>0.1=346 w>0.01=982 w>0.001=1234 w>0.0001=1234 A/B=1.092 A/C=1.368
+n_proposals=1234 remaining=21 w>0.1=193 w>0.01=856 w>0.001=1234 w>0.0001=1234 A/B=1.201 A/C=7.047
+n_proposals=1234 remaining=26 w>0.1=357 w>0.01=946 w>0.001=1234 w>0.0001=1234 A/B=1.068 A/C=1.190
+n_proposals=1234 remaining=22 w>0.1=140 w>0.01=569 w>0.001=1234 w>0.0001=1234 A/B=6.316 A/C=8.586
+n_proposals=1234 remaining=23 w>0.1=243 w>0.01=757 w>0.001=1234 w>0.0001=1234 A/B=1.299 A/C=7.428
+n_proposals=1234 remaining=35 w>0.1=70 w>0.01=555 w>0.001=1234 w>0.0001=1234 A/B=4.877 A/C=20.309
+n_proposals=681 remaining=11 w>0.1=345 w>0.01=643 w>0.001=681 w>0.0001=681 A/B=1.142 A/C=1.353
+n_proposals=845 remaining=17 w>0.1=426 w>0.01=812 w>0.001=845 w>0.0001=845 A/B=1.044 A/C=1.131
+n_proposals=1234 remaining=13 w>0.1=112 w>0.01=542 w>0.001=1234 w>0.0001=1234 A/B=1.368 A/C=5.189
+n_proposals=1234 remaining=30 w>0.1=59 w>0.01=500 w>0.001=952 w>0.0001=1234 A/B=1.139 A/C=3.371
+n_proposals=1234 remaining=29 w>0.1=167 w>0.01=729 w>0.001=1234 w>0.0001=1234 A/B=1.270 A/C=7.344
+n_proposals=1234 remaining=35 w>0.1=156 w>0.01=722 w>0.001=1234 w>0.0001=1234 A/B=5.558 A/C=9.614
+n_proposals=1234 remaining=23 w>0.1=106 w>0.01=844 w>0.001=1234 w>0.0001=1234 A/B=6.257 A/C=7.509
+n_proposals=1234 remaining=14 w>0.1=349 w>0.01=1058 w>0.001=1234 w>0.0001=1234 A/B=1.039 A/C=1.103
+n_proposals=385 remaining=9 w>0.1=336 w>0.01=385 w>0.001=385 w>0.0001=385 A/B=1.151 A/C=1.306
+n_proposals=1234 remaining=28 w>0.1=164 w>0.01=1159 w>0.001=1234 w>0.0001=1234 A/B=2.749 A/C=3.047
+n_proposals=1234 remaining=36 w>0.1=165 w>0.01=678 w>0.001=1234 w>0.0001=1234 A/B=1.885 A/C=8.770
+n_proposals=1234 remaining=23 w>0.1=279 w>0.01=832 w>0.001=1234 w>0.0001=1234 A/B=1.529 A/C=6.657
+n_proposals=1234 remaining=21 w>0.1=313 w>0.01=683 w>0.001=1179 w>0.0001=1234 A/B=1.066 A/C=1.153
+n_proposals=946 remaining=19 w>0.1=156 w>0.01=643 w>0.001=946 w>0.0001=946 A/B=1.352 A/C=8.058
+n_proposals=426 remaining=10 w>0.1=374 w>0.01=416 w>0.001=426 w>0.0001=426 A/B=1.061 A/C=1.251
+n_proposals=1234 remaining=35 w>0.1=55 w>0.01=470 w>0.001=1234 w>0.0001=1234 A/B=4.124 A/C=74.252
+n_proposals=817 remaining=16 w>0.1=87 w>0.01=640 w>0.001=817 w>0.0001=817 A/B=4.686 A/C=15.941
+n_proposals=1234 remaining=28 w>0.1=169 w>0.01=774 w>0.001=1234 w>0.0001=1234 A/B=1.163 A/C=5.497
+n_proposals=1234 remaining=20 w>0.1=194 w>0.01=691 w>0.001=1234 w>0.0001=1234 A/B=1.504 A/C=8.161
+n_proposals=1234 remaining=34 w>0.1=117 w>0.01=671 w>0.001=1234 w>0.0001=1234 A/B=4.653 A/C=9.701
+n_proposals=1234 remaining=21 w>0.1=17 w>0.01=71 w>0.001=648 w>0.0001=1234 A/B=2.952 A/C=45.235
+n_proposals=900 remaining=11 w>0.1=45 w>0.01=296 w>0.001=900 w>0.0001=900 A/B=1.163 A/C=11.215
+n_proposals=873 remaining=19 w>0.1=132 w>0.01=467 w>0.001=873 w>0.0001=873 A/B=6.139 A/C=8.180

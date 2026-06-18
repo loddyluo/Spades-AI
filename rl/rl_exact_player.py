@@ -1003,13 +1003,13 @@ class RLExactPlayer(AIPlayer):
                         if my_team == 0:
                             multiplier = float(q) - max_q  # Subtract max_q for numerical stability
                             if multiplier < -40.0:
-                                multiplier *= 2.0
+                                multiplier *= 1.0
                             agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
                         else:
                             #print("the player use this way")
                             multiplier = float(q) - min_q
                             if multiplier > 40.0:
-                                multiplier *= 2.0
+                                multiplier *= 1.0
                             agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
 
         # Reconstruct action -> q using Card objects

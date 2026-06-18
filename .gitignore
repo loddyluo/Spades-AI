@@ -19,6 +19,7 @@ rl_checkpoints0531*/
 logs_mid/
 *.zip
 .ipynb_ch*
+*.md
 
 # Node.js / frontend (gui) — never commit installed deps; run `npm install`.
 # Note: the generic `dist/` rule above also strips package internals like

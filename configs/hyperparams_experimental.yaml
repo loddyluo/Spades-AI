@@ -1,0 +1,28 @@
+is_pool:
+  num_proposals: 500
+  num_proposals_limit: 3000
+  min_pool_size: 50
+
+budget:
+  thresholds:
+  - remaining_in: 16
+    top_k: 128
+    max_samples: 256
+  - remaining_in: 24
+    top_k: 64
+    max_samples: 128
+  - remaining_in: 28
+    top_k: 32
+    max_samples: 64
+  - remaining_in: 32
+    top_k: 16
+    max_samples: 32
+  default:
+    top_k: 12
+    max_samples: 24
+
+bad_action_weight: "0.0"
+trick_num_threshold: 6
+swap_is_fill: true
+multiplier_clip: 20.0
+multiplier_clip_factor: 2.0
