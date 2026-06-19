@@ -26,6 +26,8 @@ logs_mid/
 # gui/node_modules/vite/dist, so committing node_modules yields a BROKEN tree.
 node_modules/
 gui/node_modules/
+SCL/
+configs/
 
 # Locally compiled untagged solver binaries (arch-specific copies are tracked).
 trick_taking/solvers/_*_core.so

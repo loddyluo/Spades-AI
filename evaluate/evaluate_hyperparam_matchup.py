@@ -4,8 +4,47 @@
 用法:
     # 用默认超参数 vs 自定义超参数，打 100 局
     python evaluate/evaluate_hyperparam_matchup.py \
-        --config-a configs/hyperparams_default.yaml \
-        --config-b configs/1.yaml \
+        --config-a configs/4.yaml \
+        --config-b configs/3.yaml \
+        --num-games 100 --seed 8880000 --num-workers 20
+
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/1.yaml \
+        --config-b configs/7.yaml \
+        --num-games 100 --seed 8880000 --num-workers 20
+
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/8.yaml \
+        --config-b configs/seed2.yaml \
+        --num-games 72 --seed 8880014 --num-workers 20
+
+
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/5.yaml \
+        --config-b configs/6.yaml \
+        --num-games 100 --seed 8880000 --num-workers 20
+
+    【半决赛】
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/7.yaml \
+        --config-b configs/5.yaml \
+        --num-games 100 --seed 8880000 --num-workers 20
+
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/4.yaml \
+        --config-b configs/8.yaml \
+        --num-games 100 --seed 8880000 --num-workers 20
+
+    【决赛】
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/5.yaml \
+        --config-b configs/4.yaml \
+        --num-games 100 --seed 8880000 --num-workers 20
+
+    【铜牌赛】
+    python evaluate/evaluate_hyperparam_matchup.py \
+        --config-a configs/7.yaml \
+        --config-b configs/8.yaml \
         --num-games 100 --seed 8880000 --num-workers 20
 
     # 只指定一个 config：另一侧用默认值
@@ -78,7 +117,7 @@ def parse_args() -> argparse.Namespace:
                         help="Max redeals per game when encountering nil bids")
     parser.add_argument("--print-every", type=int, default=50,
                         help="Progress print interval (0 = silent)")
-    parser.add_argument("--trace-log-dir", type=str, default="logs",
+    parser.add_argument("--trace-log-dir", type=str, default="SCL",
                         help="Directory for per-game trace logs; set to empty string to disable")
     parser.add_argument("--output", type=str, default="",
                         help="Optional JSON output path")
@@ -432,7 +471,7 @@ def main() -> None:
     print("评估完成", flush=True)
     print(f"有效 episode: {n_ep}/{num_episodes} (跳过 {skipped_episodes})", flush=True)
     print(f"总耗时: {t_elapsed:.0f}s "
-          f"(平均 {t_elapsed / max(n_ep, 1):.1f}s/episode)", flush=True)
+          f"(平均 {t_elapsed / max(n_ep, 1):.2f}s/episode)", flush=True)
     print(f"重发已移除（nil-skip 已删除，与 evaluate_rl_exact_vs_rule_first4_exact.py 一致）", flush=True)
     print(flush=True)
 
@@ -443,9 +482,9 @@ def main() -> None:
 
     print(f"{'统计项':<35} {'数值':>10}", flush=True)
     print("-" * 47, flush=True)
-    print(f"{'Config A 平均 game 奖励':<35} {np.mean(all_rewards):>+10.1f}", flush=True)
-    print(f"{'Config A 方平均总分':<35} {np.mean(a_scores):>+10.1f}", flush=True)
-    print(f"{'Config B 方平均总分':<35} {np.mean(b_scores):>+10.1f}", flush=True)
+    print(f"{'Config A 平均 game 奖励':<35} {np.mean(all_rewards):>+10.2f}", flush=True)
+    print(f"{'Config A 方平均总分':<35} {np.mean(a_scores):>+10.2f}", flush=True)
+    print(f"{'Config B 方平均总分':<35} {np.mean(b_scores):>+10.2f}", flush=True)
     print(f"{'总对局数':<35} {n_games:>10d}", flush=True)
     print(f"{'A - B 均值':<35} {np.mean(all_rewards):>+10.2f}", flush=True)
 
@@ -457,7 +496,7 @@ def main() -> None:
             end = min(start + max(1, n_ep // 5), n_ep)
             seg = all_rewards[start:end]
             if seg:
-                print(f"{start * 2 + 1:>4}~{end * 2:>4}  {np.mean(seg):>+15.1f}", flush=True)
+                print(f"{start * 2 + 1:>4}~{end * 2:>4}  {np.mean(seg):>+15.2f}", flush=True)
 
     print("=" * 72, flush=True)
 

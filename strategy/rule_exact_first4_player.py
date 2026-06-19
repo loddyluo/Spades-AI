@@ -586,10 +586,18 @@ class RuleExactFirst4Player(AIPlayer):
                     ckpt = str(p.resolve())
                     break
             if ckpt:
-                self._bid_model_is = BidMLP()
-                sd = torch.load(ckpt, weights_only=True, map_location="cpu")
+                device = getattr(self, "_bid_device", "cpu")
+                if device == "cpu" and torch.cuda.is_available():
+                    device = "cuda"
+                self._bid_model_is = BidMLP().to(device)
+                sd = torch.load(ckpt, weights_only=True, map_location=device)
                 self._bid_model_is.load_state_dict(sd)
                 self._bid_model_is.eval()
+                if device != "cpu":
+                    self._bid_model_is = torch.jit.optimize_for_inference(
+                        torch.jit.script(self._bid_model_is)
+                    )  # JIT compile for GPU inference
+                self._bid_device_is = device   # 存储实际 device，避免 JIT 冻结后 parameters() 为空
                 self._bid_encoder_is = BidEncoder()
                 return True
             else:
@@ -631,6 +639,7 @@ class RuleExactFirst4Player(AIPlayer):
             features_list.append(features.unsqueeze(0))
 
         x = torch.cat(features_list, dim=0)
+        x = x.to(self._bid_device_is)
         with torch.no_grad():
             logits = self._bid_model_is(x)
         probs = torch.softmax(logits, dim=-1)
@@ -675,6 +684,7 @@ class RuleExactFirst4Player(AIPlayer):
                 all_features.append(features.unsqueeze(0))
 
         x = torch.cat(all_features, dim=0)
+        x = x.to(self._bid_device_is)
         with torch.no_grad():
             logits = self._bid_model_is(x)
         probs = torch.softmax(logits, dim=-1)
