@@ -31,3 +31,6 @@ config/
 
 # Locally compiled untagged solver binaries (arch-specific copies are tracked).
 trick_taking/solvers/_*_core.so
+
+# macOS Finder metadata
+.DS_Store
