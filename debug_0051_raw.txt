@@ -1,0 +1,72 @@
+=== GAME seed=8900051 ===
+Players:
+  seat 0: rl_exact           hand=[T♥, 4♥, Q♠, 5♣, 5♥, 7♦, Q♥, A♠, T♠, 7♣, T♦, K♠, 5♠]
+  seat 1: rule_first4_exact  hand=[T♣, J♣, 2♠, 2♦, 3♦, K♦, 3♣, 9♠, 9♣, 9♦, 6♠, 7♥, K♥]
+  seat 2: rl_exact           hand=[8♥, 3♥, 8♠, 9♥, 6♥, Q♣, 4♦, A♥, 5♦, 2♣, A♣, 4♠, J♦]
+  seat 3: rule_first4_exact  hand=[7♠, J♠, 8♦, 2♥, Q♦, 4♣, K♣, J♥, 6♣, 8♣, 3♠, A♦, 6♦]
+Bidding:
+  [01] seat=0 spec=rl_exact           legal=[nil, bid_1, bid_2, bid_3, bid_4, bid_5, bid_6, bid_7, bid_8, bid_9, bid_10, bid_11, bid_12, bid_13] chosen=bid_5
+  [02] seat=1 spec=rule_first4_exact  legal=[nil, bid_1, bid_2, bid_3, bid_4, bid_5, bid_6, bid_7, bid_8, bid_9, bid_10, bid_11, bid_12, bid_13] chosen=bid_1
+  [03] seat=2 spec=rl_exact           legal=[nil, bid_1, bid_2, bid_3, bid_4, bid_5, bid_6, bid_7, bid_8, bid_9, bid_10, bid_11, bid_12, bid_13] chosen=bid_2
+  [04] seat=3 spec=rule_first4_exact  legal=[nil, bid_1, bid_2, bid_3, bid_4, bid_5, bid_6, bid_7, bid_8, bid_9, bid_10, bid_11, bid_12, bid_13] chosen=bid_3
+Play:
+  [01] seat=0 spec=rl_exact           legal=[T♥, 4♥, 5♣, 5♥, 7♦, Q♥, 7♣, T♦] chosen=T♦
+  [02] seat=1 spec=rule_first4_exact  legal=[2♦, 3♦, K♦, 9♦] chosen=K♦
+  [03] seat=2 spec=rl_exact           legal=[4♦, 5♦, J♦] chosen=4♦
+  [04] seat=3 spec=rule_first4_exact  legal=[8♦, Q♦, A♦, 6♦] chosen=6♦
+  [05] seat=1 spec=rule_first4_exact  legal=[T♣, J♣, 2♦, 3♦, 3♣, 9♣, 9♦, 7♥, K♥] chosen=K♥
+  [06] seat=2 spec=rl_exact           legal=[8♥, 3♥, 9♥, 6♥, A♥] chosen=A♥
+  [07] seat=3 spec=rule_first4_exact  legal=[2♥, J♥] chosen=2♥
+  [08] seat=0 spec=rl_exact           legal=[T♥, 4♥, 5♥, Q♥] chosen=4♥
+  [09] seat=2 spec=rl_exact           legal=[8♥, 3♥, 9♥, 6♥, Q♣, 5♦, 2♣, A♣, J♦] chosen=A♣
+  [10] seat=3 spec=rule_first4_exact  legal=[4♣, K♣, 6♣, 8♣] chosen=4♣
+  [11] seat=0 spec=rl_exact           legal=[5♣, 7♣] chosen=5♣
+  [12] seat=1 spec=rule_first4_exact  legal=[T♣, J♣, 3♣, 9♣] chosen=3♣
+  [13] seat=2 spec=rl_exact           legal=[8♥, 3♥, 9♥, 6♥, Q♣, 5♦, 2♣, J♦] chosen=9♥
+  [14] seat=3 spec=rule_first4_exact  legal=[J♥] chosen=J♥
+  [15] seat=0 spec=rl_exact           legal=[T♥, 5♥, Q♥] chosen=Q♥
+  [16] seat=1 spec=rule_first4_exact  legal=[7♥] chosen=7♥
+  [17] seat=0 spec=rl_exact           legal=[T♥, 5♥, 7♦, 7♣] chosen=7♣ best_value=-1.125320 q=[7♣=-1.125320, 7♦=-6.296203, 5♥=-6.616997, T♥=-14.882388]
+  [18] seat=1 spec=rule_first4_exact  legal=[T♣, J♣, 9♣] chosen=J♣ best_value=+0.000000 q=[J♣=+0.000000]
+  [19] seat=2 spec=rl_exact           legal=[Q♣, 2♣] chosen=2♣ best_value=-0.600922 q=[2♣=-0.600922, Q♣=-0.871718]
+  [20] seat=3 spec=rule_first4_exact  legal=[K♣, 6♣, 8♣] chosen=6♣ best_value=+0.000000 q=[6♣=+0.000000, 8♣=+0.000000, K♣=+0.000000]
+  [21] seat=1 spec=rule_first4_exact  legal=[T♣, 2♦, 3♦, 9♣, 9♦] chosen=3♦ best_value=+0.000000 q=[T♣=+5.628800, 9♦=+1.381072, 3♦=+0.000000]
+  [22] seat=2 spec=rl_exact           legal=[5♦, J♦] chosen=J♦ best_value=+0.000000 q=[J♦=+0.000000, 5♦=-1.272722]
+  [23] seat=3 spec=rule_first4_exact  legal=[8♦, Q♦, A♦] chosen=A♦ best_value=+1.780273 q=[8♦=+5.023678, A♦=+1.780273]
+  [24] seat=0 spec=rl_exact           legal=[7♦] chosen=7♦ best_value=+0.000000 q=[7♦=+0.000000]
+  [25] seat=3 spec=rule_first4_exact  legal=[8♦, Q♦, K♣, 8♣] chosen=8♣ best_value=+1.769588 q=[K♣=+6.454805, Q♦=+3.686859, 8♦=+3.159940, 8♣=+1.769588]
+  [26] seat=0 spec=rl_exact           legal=[T♥, Q♠, 5♥, A♠, T♠, K♠, 5♠] chosen=A♠ best_value=-3.429278 q=[A♠=-3.429278, T♠=-3.980374, T♥=-4.840834, 5♥=-5.976921, 5♠=-8.313632]
+  [27] seat=1 spec=rule_first4_exact  legal=[T♣, 9♣] chosen=T♣ best_value=+0.000000 q=[T♣=+0.000000]
+  [28] seat=2 spec=rl_exact           legal=[Q♣] chosen=Q♣ best_value=+0.000000 q=[Q♣=+0.000000]
+  [29] seat=0 spec=rl_exact           legal=[T♥, Q♠, 5♥, T♠, K♠, 5♠] chosen=5♥ best_value=-0.276464 q=[5♥=-0.276464, T♥=-2.088053, K♠=-2.362180, 5♠=-2.419409, T♠=-3.755330]
+  [30] seat=1 spec=rule_first4_exact  legal=[2♠, 2♦, 9♠, 9♣, 9♦, 6♠] chosen=9♦ best_value=+3.058959 q=[2♠=+11.174502, 6♠=+9.458452, 2♦=+8.862598, 9♠=+8.182707, 9♣=+3.059012, 9♦=+3.058959]
+  [31] seat=2 spec=rl_exact           legal=[8♥, 3♥, 6♥] chosen=8♥ best_value=+0.000000 q=[8♥=+0.000000, 3♥=-0.083023]
+  [32] seat=3 spec=rule_first4_exact  legal=[7♠, J♠, 8♦, Q♦, K♣, 3♠] chosen=K♣ best_value=+0.000000 q=[3♠=+12.423804, 7♠=+11.117132, J♠=+3.571100, 8♦=+0.174862, Q♦=+0.174862, K♣=+0.000000]
+  [33] seat=2 spec=rl_exact           legal=[3♥, 8♠, 6♥, 5♦, 4♠] chosen=5♦ best_value=+0.000000 q=[5♦=+0.000000, 4♠=-3.499822, 8♠=-4.813473, 6♥=-11.606925]
+  [34] seat=3 spec=rule_first4_exact  legal=[8♦, Q♦] chosen=Q♦ best_value=+0.000000 q=[Q♦=+0.000000]
+  [35] seat=0 spec=rl_exact           legal=[T♥, Q♠, T♠, K♠, 5♠] chosen=K♠ best_value=-0.019171 q=[K♠=-0.019171, T♠=-0.942052, T♥=-4.193120, 5♠=-7.097568]
+  [36] seat=1 spec=rule_first4_exact  legal=[2♦] chosen=2♦ best_value=+0.000000 q=[2♦=+0.000000]
+  [37] seat=0 spec=rl_exact           legal=[T♥, Q♠, T♠, 5♠] chosen=5♠ best_value=-0.351066 q=[5♠=-0.351066, T♠=-4.754105, Q♠=-7.767546, T♥=-7.767546]
+  [38] seat=1 spec=rule_first4_exact  legal=[2♠, 9♠, 6♠] chosen=2♠ best_value=+0.000234 q=[9♠=+1.155172, 6♠=+0.971240, 2♠=+0.000234]
+  [39] seat=2 spec=rl_exact           legal=[8♠, 4♠] chosen=8♠ best_value=+0.000000 q=[8♠=+0.000000, 4♠=-3.198040]
+  [40] seat=3 spec=rule_first4_exact  legal=[7♠, J♠, 3♠] chosen=7♠ best_value=+0.001873 q=[J♠=+1.946014, 3♠=+0.001873, 7♠=+0.001873]
+  [41] seat=2 spec=rl_exact           legal=[3♥, 6♥, 4♠] chosen=4♠ best_value=-0.006822 q=[4♠=-0.006822, 6♥=-15.629188]
+  [42] seat=3 spec=rule_first4_exact  legal=[J♠, 3♠] chosen=3♠ best_value=+0.000000 q=[J♠=+0.000000, 3♠=+0.000000]
+  [43] seat=0 spec=rl_exact           legal=[Q♠, T♠] chosen=T♠ best_value=-7.346940 q=[T♠=-7.346940, Q♠=-16.598447]
+  [44] seat=1 spec=rule_first4_exact  legal=[9♠, 6♠] chosen=9♠ best_value=+0.000000 q=[9♠=+0.000000]
+  [45] seat=0 spec=rl_exact           legal=[T♥, Q♠] chosen=Q♠ best_value=+0.000000 q=[Q♠=+0.000000, T♥=-54.450120]
+  [46] seat=1 spec=rule_first4_exact  legal=[6♠] chosen=6♠ best_value=+0.000000 q=[6♠=+0.000000]
+  [47] seat=2 spec=rl_exact           legal=[3♥, 6♥] chosen=6♥ best_value=+0.000000 q=[6♥=+0.000000]
+  [48] seat=3 spec=rule_first4_exact  legal=[J♠] chosen=J♠ best_value=+0.000000 q=[J♠=+0.000000]
+  [49] seat=0 spec=rl_exact           legal=[T♥] chosen=T♥ best_value=+0.000000 q=[T♥=+0.000000]
+  [50] seat=1 spec=rule_first4_exact  legal=[9♣] chosen=9♣ best_value=+0.000000 q=[9♣=+0.000000]
+  [51] seat=2 spec=rl_exact           legal=[3♥] chosen=3♥ best_value=+0.000000 q=[3♥=+0.000000]
+  [52] seat=3 spec=rule_first4_exact  legal=[8♦] chosen=8♦ best_value=+0.000000 q=[8♦=+0.000000]
+
+Results (tricks/bid):
+  seat 0: rl_exact           6/5
+  seat 1: rule_first4_exact  2/1
+  seat 2: rl_exact           4/2
+  seat 3: rule_first4_exact  1/3
+Team rl_exact: +83.0
+Team rule_first4_exact: -83.0

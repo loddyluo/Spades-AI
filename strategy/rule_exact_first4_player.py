@@ -33,7 +33,7 @@ from typing import Any
 
 import torch
 
-from trick_taking.card import Card, Suit, _STANDARD_CARDS as STANDARD_52
+from trick_taking.card import Card, Rank, Suit, _STANDARD_CARDS as STANDARD_52
 from trick_taking.game_state import GameState
 from trick_taking.player import AIPlayer
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
@@ -61,6 +61,7 @@ class RuleExactFirst4Player(AIPlayer):
         policy_net_nil: Any | None = None,
         encoder: Any | None = None,
         hyperparam_config: HyperparamConfig | None = None,
+        debug: bool = False,
     ) -> None:
         # 内部规则式玩家. 不让它处理后 36 张 (我们自己路由)。
         self._rule_player = RuleBasedFirst4Player()
@@ -73,6 +74,7 @@ class RuleExactFirst4Player(AIPlayer):
         self.hand: list[Card] = []
         self.last_play_info: dict[str, Any] = {}
         self.last_bid_info: dict[str, Any] | None = None
+        self._debug = debug  # 调试模式：在 last_play_info 中记录采样提案和 Q 值
 
         # nil 策略网络（有人叫 0 时替代 rule-based 打前 4 墩）
         self._policy_net_nil = policy_net_nil
@@ -182,6 +184,12 @@ class RuleExactFirst4Player(AIPlayer):
             self.last_play_info = {"mode": "no_state_fallback"}
             return legal_cards[0]
 
+        # 最后一墩，手里只剩 1 张牌 → 直接打出，不做 solver / rule 计算
+        my_remaining = len(state.hands[self.position])
+        if my_remaining <= 1 and legal_cards:
+            self.last_play_info = {"mode": "last_card_direct"}
+            return legal_cards[0]
+
         # 与 RLExactPlayer 完全相同的切换条件
         remaining = sum(len(h) for h in state.hands)
 
@@ -224,20 +232,48 @@ class RuleExactFirst4Player(AIPlayer):
 
         agg_q: dict[int, float] = {}
         my_team = 0 if self.position in (0, 2) else 1
+
+        # ── debug: 记录 IS pool 原始统计 ──
+        _debug_pool_info: dict[str, Any] | None = None
+        _debug_unique_paired: list[dict[str, Any]] | None = None
+        _debug_samples: list[dict[str, Any]] | None = None
+        _debug_n_fill: int = 0
+        _debug_n_is: int = 0
+        if self._debug:
+            _debug_pool_info = {
+                "pool_size": len(pool_hands),
+                "pool_weights_min": float(min(pool_weights)) if pool_weights else None,
+                "pool_weights_max": float(max(pool_weights)) if pool_weights else None,
+                "pool_weights_mean": float(sum(pool_weights) / len(pool_weights)) if pool_weights else None,
+            }
+
         if not pool_hands:
             # Fallback: uniform determinization
             counts = 0
+            _debug_fallback_qs: list[dict[str, Any]] = [] if self._debug else []
             for _ in range(K):
                 sim_state = copy.deepcopy(state)
                 self._determinize_state(sim_state, state.turn, rng)
                 result = self.exact_solver.solve_with_q(sim_state)
                 counts += 1
-                for action, q in result.get("action_q_values", {}).items():
+                action_qs = result.get("action_q_values", {})
+                if self._debug:
+                    _debug_fallback_qs.append({
+                        "norm_weight": 1.0 / K,
+                        "action_q_values": {str(c): float(q) for c, q in action_qs.items()} if action_qs else {},
+                        "all_hands": {
+                            p: [str(c) for c in sim_state.hands[p]]
+                            for p in range(4)
+                        },
+                    })
+                for action, q in action_qs.items():
                     aid = action.card_id
                     agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
             n_samples_used = counts
+            if self._debug:
+                _debug_samples = _debug_fallback_qs
         else:
             # 去重并按权重降序排列
             paired = list(zip(pool_hands, pool_weights))
@@ -254,6 +290,20 @@ class RuleExactFirst4Player(AIPlayer):
                     unique_paired.append((hand_proposal, w))
                     if len(unique_paired) >= 5120:
                         break
+
+            # ── debug: 记录去重后的 proposal pool ──
+            if self._debug and _debug_pool_info is not None:
+                _debug_unique_paired = []
+                for hp, w in unique_paired:
+                    _debug_unique_paired.append({
+                        "weight_raw": float(w),
+                        "hands_summary": {
+                            p: [str(c) for c in hp[p][:6]] + (
+                                [f"...({len(hp[p]) - 6} more)"] if len(hp[p]) > 6 else []
+                            )
+                            for p in range(4)
+                        },
+                    })
 
             # 确定要检查分布的花色：
             # 如果不是领出且手中有领出花色，则检查该花色；否则检查黑桃
@@ -308,6 +358,9 @@ class RuleExactFirst4Player(AIPlayer):
                 n_selected = len(top_hands)
                 n_fill = len(fill_indices)
                 n_is = len(is_idx_list) - n_fill
+                if self._debug:
+                    _debug_n_fill = n_fill
+                    _debug_n_is = n_is
 
                 # ── 权重计算 ──
                 # top_hands = [fill..., IS...], norm_factors 也与之匹配
@@ -317,11 +370,11 @@ class RuleExactFirst4Player(AIPlayer):
                     fill_total_prob = sum(fill_probs)
                 else:
                     fill_total_prob = 0.0
+                if n_fill > 0:
+                    norm_factors.extend(fill_probs)  # fill 在前
                 if n_is > 0:
                     is_weight = (1.0 - fill_total_prob) / n_is
-                    norm_factors.extend([is_weight] * n_is)
-                if n_fill > 0:
-                    norm_factors.extend(fill_probs)  # fill 在前，IS 在后
+                    norm_factors.extend([is_weight] * n_is)  # IS 在后
                 n_samples_used = n_selected
 
             else:
@@ -377,6 +430,9 @@ class RuleExactFirst4Player(AIPlayer):
                 n_selected = len(top_hands)
                 n_is = len(is_idx)        # IS 样本数（含重复，可能 > len(is_idx_set)）
                 n_fill = n_selected - n_is
+                if self._debug:
+                    _debug_n_fill = n_fill
+                    _debug_n_is = n_is
 
                 # ── 权重计算 ──
                 # IS 组：等分剩余概率；补全组：直接用归一化概率 pool_probs
@@ -393,11 +449,22 @@ class RuleExactFirst4Player(AIPlayer):
                     norm_factors.extend(fill_probs)
                 n_samples_used = n_selected
 
+            # ── debug: 记录每个采样的 Q 值 ──
+            _debug_samples: list[dict[str, Any]] | None = [] if self._debug else None
             for hand_proposal, norm_w in zip(top_hands, norm_factors):
                 sim_state = copy.deepcopy(state)
                 self._apply_proposal(sim_state, state.turn, hand_proposal)
                 result = self.exact_solver.solve_with_q(sim_state)
                 action_q_dict = result.get("action_q_values", {})
+                if self._debug and _debug_samples is not None:
+                    _debug_samples.append({
+                        "norm_weight": float(norm_w),
+                        "action_q_values": {str(c): float(q) for c, q in action_q_dict.items()} if action_q_dict else {},
+                        "all_hands": {
+                            p: [str(c) for c in hand_proposal[p]]
+                            for p in range(4)
+                        },
+                    })
                 if action_q_dict:
                     max_q = max(float(q) for q in action_q_dict.values())
                     min_q = min(float(q) for q in action_q_dict.values())
@@ -465,12 +532,25 @@ class RuleExactFirst4Player(AIPlayer):
                 key=lambda x: x["value"], reverse=True,
             )
             best_value = float(action_q_values.get(best_action, 0.0))
-            self.last_play_info = {
+            info = {
                 "mode": "exact_is_determinized",
                 "samples": n_samples_used,
                 "best_value": best_value,
                 "action_scores": action_scores,
             }
+            if self._debug and _debug_pool_info is not None:
+                info["debug"] = {
+                    "pool": _debug_pool_info,
+                    "unique_proposals": _debug_unique_paired,
+                    "samples": _debug_samples,
+                    "n_fill": _debug_n_fill,
+                    "n_is": _debug_n_is,
+                    "remaining_cards": sum(len(h) for h in state.hands),
+                    "my_team": my_team,
+                    "agg_q_raw": {str(id_to_card.get(aid, Card(Suit.SPADES, Rank.TWO))): float(q)
+                                  for aid, q in agg_q.items()},
+                }
+            self.last_play_info = info
             return best_action
 
         self.last_play_info = {"mode": "exact_no_match_fallback"}
@@ -570,7 +650,7 @@ class RuleExactFirst4Player(AIPlayer):
             return hasattr(self, "_bid_encoder_is") and self._bid_encoder_is is not None
 
         try:
-            go_dir = Path(__file__).resolve().parents[1] / "evaluate" / "GO-MCTS"
+            go_dir = Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS"
             if str(go_dir) not in sys.path:
                 sys.path.insert(0, str(go_dir))
             from spades_ai.models.bid_mlp import BidMLP

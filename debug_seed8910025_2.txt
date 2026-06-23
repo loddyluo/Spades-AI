@@ -1,0 +1,46 @@
+# seed=8910025, seat=2, before play [42]
+position: 2
+hand: DK, SK, DA, S3, D6, D2, HT, H9, S6, H7, H2, S9, SJ
+bids: bid_1, bid_4, bid_5, bid_1
+plays:
+0 HK
+1 HA
+2 H2
+3 H3
+1 C9
+2 S3
+3 C3
+0 C2
+2 H7
+3 H8
+0 H6
+1 H5
+3 CA
+0 C4
+1 CQ
+2 S6
+2 HT
+3 H4
+0 SA
+1 D4
+0 D3
+1 D8
+2 D6
+3 D5
+1 DJ
+2 D2
+3 D7
+0 D9
+1 DT
+2 DA
+3 ST
+0 DQ
+3 S2
+0 C6
+1 S8
+2 SJ
+2 H9
+3 HQ
+0 C5
+1 S7
+1 S5

@@ -1529,10 +1529,10 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         for (int i = 0; i < n; i++) {
             UndoInfo undo = make_move(&s, s.turn, actions.cards[i]);
             if (maximize) {
-                q_values[i] = minimax(&s, best_val, std::numeric_limits<double>::infinity(), ctx);
+                q_values[i] = minimax(&s, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), ctx);
                 if (q_values[i] > best_val) best_val = q_values[i];
             } else {
-                q_values[i] = minimax(&s, -std::numeric_limits<double>::infinity(), best_val, ctx);
+                q_values[i] = minimax(&s, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), ctx);
                 if (q_values[i] < best_val) best_val = q_values[i];
             }
             unmake_move(&s, undo);

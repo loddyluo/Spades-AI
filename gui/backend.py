@@ -1,25 +1,26 @@
-"""Local Python AI backend for the Spades GUI — powered by rl_exact.
+"""Local Python AI backend for the Spades GUI — powered by rule_exact_first4.
 
 The frontend (gui/src/game.js) sends ONLY public history plus the current
 player's remaining hand.  This backend reconstructs a partial
-`trick_taking.game_state.GameState` and drives the **rl_exact** player:
+`trick_taking.game_state.GameState` and drives the **rule_exact_first4** player:
 
-- First 4 tricks (16 cards, remaining > exact_threshold): a policy MLP
-  (55-dim head) chooses the card from self-hand + public info only.
+- First 4 tricks (remaining > exact_threshold): RuleBasedFirst4Player
+  (rule-based heuristics, blind to opponents' hands).
 - Last 36 cards (remaining <= exact_threshold): the exact double-dummy
   solver with importance-sampling determinization.  It RECONSTRUCTS the
   opponents' hidden hands from public history — it never peeks at the
   human's real cards.
-
-Checkpoint selection mirrors evaluate/evaluate_dds_vs_rl.py BothPlayer:
-- Someone bids nil/blind_nil → 55_2nil.pt
-- No one bids nil            → 55_2.pt
+- When someone bids nil/blind_nil: the first 4 tricks switch to a nil
+  policy network (55_2nil.pt) instead of the rule-based player.
 
 Bidding uses the GO-MCTS MLP bid model (bid_nsfp.pt) via the bridge, exactly
 like DDSPlayer / RLExactPlayer in evaluation.
 
+Hyperparameter config defaults to configs/8.yaml.
+
 The HTTP layer is stateless: every request rebuilds the GameState from the
-posted payload, so there is no cross-request memory to keep in sync.
+posted payload and replays the full trick history into the rule-based player,
+so there is no cross-request memory to keep in sync.
 """
 
 from __future__ import annotations
@@ -48,8 +49,8 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
 )
 
 from rl.policy_network import PolicyMLP  # noqa: E402
-from rl.rl_exact_player import RLExactPlayer  # noqa: E402
-from rl.rl_feature_encoder import RLFeatureEncoder  # noqa: E402
+from strategy.rule_exact_first4_player import RuleExactFirst4Player  # noqa: E402
+from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
 
 MODEL_INPUT_DIM = 264
 MODEL_HIDDEN_DIMS = [1024, 512, 512]
@@ -96,10 +97,6 @@ def frontend_bid_to_local(entry: dict[str, Any] | None) -> Any:
     value = int(entry.get("value", 0))
     return numeric_bid_to_str(value)
 
-
-def _has_nil_bid(bids: list[Any]) -> bool:
-    """True if any seat has a nil / blind_nil bid (drives checkpoint switch)."""
-    return any(isinstance(b, str) and b in ("nil", "blind_nil") for b in bids)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -239,7 +236,7 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
 
 
 # ────────────────────────────────────────────────────────────────────────
-# rl_exact provider — one player instance per seat
+# rule_exact provider — one player instance per seat
 # ────────────────────────────────────────────────────────────────────────
 @dataclass
 class AiChoice:
@@ -271,7 +268,7 @@ def _load_policy(path: str, device: str) -> PolicyMLP:
 
 
 def _load_bid_model(path: str, device: str):
-    """Load the GO-MCTS MLP bid model; None → RLExactPlayer heuristic fallback."""
+    """Load the GO-MCTS MLP bid model; None → heuristic fallback."""
     cp = Path(path)
     if not cp.exists():
         print(f"  [WARN] bid checkpoint not found: {cp} — bidding falls back to heuristic",
@@ -288,11 +285,11 @@ def _load_bid_model(path: str, device: str):
         return None
 
 
-class RlExactProvider:
-    """Holds the shared models and one rl_exact player per seat.
+class RuleExactProvider:
+    """Holds the shared models and one rule_exact_first4 player per seat.
 
-    Stateless across HTTP requests: each request rebuilds the GameState and the
-    nil-checkpoint choice from the posted payload alone.
+    Stateless across HTTP requests: each request rebuilds the GameState and
+    replays the full trick history into the rule-based player's internal state.
     """
 
     def __init__(self, args: argparse.Namespace) -> None:
@@ -301,40 +298,66 @@ class RlExactProvider:
         self.exact_threshold = int(args.exact_threshold)
         self.seed = args.seed
 
-        print("Loading rl_exact models ...", flush=True)
-        self.policy_nonil = _load_policy(args.checkpoint_nonil, device)
+        print("Loading rule_exact_first4 models ...", flush=True)
+
+        # Load hyperparam config
+        self.hyperparam_config = HyperparamConfig.from_yaml(args.config)
+        print(f"  [OK] loaded config: {args.config}", flush=True)
+
+        # Only nil policy is needed (non-nil first 4 → rule-based)
         self.policy_nil = _load_policy(args.checkpoint_nil, device)
         self.bid_model = _load_bid_model(args.bid_checkpoint, device)
 
-        # The solver/encoder are safe to share read-only across seats.
+        # The solver is safe to share read-only across seats.
         self.exact_solver = ExactDoubleDummyCppFastestSolver()
-        self.encoder = RLFeatureEncoder()
         self.rules = SpadesRules()
 
         # One player instance per seat (keeps position / trajectory isolated).
-        self.players: list[RLExactPlayer] = [
-            RLExactPlayer(
-                policy_nets=[self.policy_nonil],
+        self.players: list[RuleExactFirst4Player] = [
+            RuleExactFirst4Player(
                 exact_solver=self.exact_solver,
-                encoder=self.encoder,
                 exact_threshold=self.exact_threshold,
-                is_training=False,           # argmax / greedy, no exploration
                 bid_model=self.bid_model,
                 bid_device=device,
+                policy_net_nil=self.policy_nil,
+                hyperparam_config=self.hyperparam_config,
             )
             for _ in range(4)
         ]
-        self.ai_name = "rl_exact"
+        self.ai_name = "rule_exact"
 
     # ── core dispatch ────────────────────────────────────────────────
     def choose_action(self, payload: dict[str, Any]) -> AiChoice:
         state, seat = build_local_state(payload)
         player = self.players[seat]
-        player.position = seat
-        player.hand = list(state.hands[seat])
+
+        # Reconstruct the AI's original 13-card hand (current hand + already
+        # played cards) so the rule-based player can compute its preference
+        # order correctly from the full starting hand.
+        ai_played: list[Card] = []
+        for trick in state.trick_history:
+            for pid, card in trick.cards:
+                if pid == seat:
+                    ai_played.append(card)
+        for pid, card in state.table_cards:
+            if pid == seat:
+                ai_played.append(card)
+        original_hand = list(state.hands[seat]) + ai_played
+
+        # Reset the player and replay the full public card-play history so the
+        # internal rule-based player (and optional nil player) have up-to-date
+        # tracked state (_history, _opp_led_suits, _our_first_led_suit, etc.).
+        player.start_game(seat, original_hand, 4)
+        player.set_teams(state.teams, state.max_bid)
+
+        for trick in state.trick_history:
+            for pid, card in trick.cards:
+                player.card_played(pid, card)
+        for pid, card in state.table_cards:
+            player.card_played(pid, card)
 
         view = state.get_player_view(seat)
-        view["state"] = state  # the contract RLExactPlayer.play_card expects
+        view["state"] = state  # the contract play_card expects
 
         if state.phase == Phase.BIDDING:
             return self._choose_bid(player, view)
@@ -342,10 +365,10 @@ class RlExactProvider:
             return self._choose_play(player, state, seat, view)
         raise ValueError(f"AI invoked in invalid phase: {state.phase}")
 
-    def _choose_bid(self, player: RLExactPlayer, view: dict[str, Any]) -> AiChoice:
+    def _choose_bid(self, player: RuleExactFirst4Player, view: dict[str, Any]) -> AiChoice:
         # Present a normal single-round bid menu (no blind_nil prompt — the GUI
-        # has a flat one-shot bidding flow).  RLExactPlayer.place_bid routes
-        # through the MLP bid model via the bridge.
+        # has a flat one-shot bidding flow).  place_bid routes through the MLP
+        # bid model via the bridge.
         legal_bids = ["nil"] + [numeric_bid_to_str(i) for i in range(1, 14)]
         raw = player.place_bid(legal_bids, view)
         if raw == "nil":
@@ -356,14 +379,13 @@ class RlExactProvider:
         # Defensive fallback
         return AiChoice(kind="bid", value=1, bid_type="normal", detail="fallback")
 
-    def _choose_play(self, player: RLExactPlayer, state: GameState, seat: int,
+    def _choose_play(self, player: RuleExactFirst4Player, state: GameState, seat: int,
                      view: dict[str, Any]) -> AiChoice:
-        # Stateless nil-checkpoint switch (mirrors BothPlayer.set_teams).
-        if _has_nil_bid(state.max_bid):
-            player.policy_nets = [self.policy_nil]
-        else:
-            player.policy_nets = [self.policy_nonil]
-        player.n_policies = 1
+        # Nil detection and policy-net setup already done by set_teams() in
+        # choose_action().  RuleExactFirst4Player.play_card internally routes:
+        #   - nil game + first 4 tricks → nil policy net (55_2nil.pt)
+        #   - non-nil + first 4 tricks  → rule-based player
+        #   - remaining <= exact_threshold → exact solver
 
         legal_cards = self.rules.playable(state, state.hands[seat], seat)
         if not legal_cards:
@@ -399,7 +421,7 @@ def choice_to_payload(choice: AiChoice, ai_name: str) -> dict[str, Any]:
 # ────────────────────────────────────────────────────────────────────────
 # HTTP server
 # ────────────────────────────────────────────────────────────────────────
-def build_response_handler(provider: RlExactProvider):
+def build_response_handler(provider: RuleExactProvider):
     class Handler(BaseHTTPRequestHandler):
         def _send_json(self, status: int, payload: dict[str, Any]) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -443,18 +465,18 @@ def build_response_handler(provider: RlExactProvider):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="rl_exact AI backend for the Spades GUI")
+    parser = argparse.ArgumentParser(description="rule_exact_first4 AI backend for the Spades GUI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--ai", default="rl_exact",
-                        help="Kept for compatibility; only rl_exact is served.")
+    parser.add_argument("--ai", default="rule_exact",
+                        help="Kept for compatibility; only rule_exact is served.")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--exact-threshold", type=int, default=36,
                         help="remaining cards <= this → exact solver (first "
-                             "52-threshold cards use the policy net)")
-    parser.add_argument("--checkpoint-nonil", type=str,
-                        default=str(REPO_ROOT / "55_2.pt"),
-                        help="policy for games where no one bids nil")
+                             "52-threshold cards use rule-based / nil policy)")
+    parser.add_argument("--config", type=str,
+                        default=str(REPO_ROOT / "configs" / "8.yaml"),
+                        help="path to hyperparam YAML config for RuleExactFirst4Player")
     parser.add_argument("--checkpoint-nil", type=str,
                         default=str(REPO_ROOT / "55_2nil.pt"),
                         help="policy for games where someone bids nil")
@@ -486,11 +508,11 @@ def main() -> None:
     args = parse_args()
     if args.seed is not None:
         set_random_seed(args.seed)
-    provider = RlExactProvider(args)
+    provider = RuleExactProvider(args)
     server = ThreadingHTTPServer((args.host, args.port), build_response_handler(provider))
-    print(f"rl_exact backend listening on http://{args.host}:{args.port}", flush=True)
+    print(f"rule_exact backend listening on http://{args.host}:{args.port}", flush=True)
     print(f"  exact_threshold={provider.exact_threshold} "
-          f"(first {52 - provider.exact_threshold} cards use policy net)", flush=True)
+          f"(first {52 - provider.exact_threshold} cards use rule-based / nil policy)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

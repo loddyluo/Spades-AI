@@ -12,9 +12,9 @@ Both use their respective sampling of opponent hands and exact solving
 for the later 9 tricks.
 
 Usage:
-    python evaluate/evaluate_rl_exact_vs_rule_first4_exact.py \
+    python evaluate/evaluate_rl_exact_vs_rule_first4_exact_after.py \
         --p0 rl_exact --p1 rule_first4_exact --p2 rl_exact --p3 rule_first4_exact \
-        --num-games 50 --seed 8900000 --num-workers 12
+        --num-games 10 --seed 8900050 --num-workers 20 --rule-config ./configs/8.yaml
 
 Defaults: p0=rl_exact, p1=rule_first4_exact, p2=rl_exact, p3=rule_first4_exact
 """
