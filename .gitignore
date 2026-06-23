@@ -27,7 +27,7 @@ logs_mid/
 node_modules/
 gui/node_modules/
 SCL/
-configs/
+config/
 
 # Locally compiled untagged solver binaries (arch-specific copies are tracked).
 trick_taking/solvers/_*_core.so
