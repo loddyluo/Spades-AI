@@ -43,6 +43,67 @@ from strategy.hyperparam_config import HyperparamConfig
 from strategy.rule_based_first4_player import RuleBasedFirst4Player
 
 
+# ── parallel solver worker (module-level for multiprocessing picklability) ──
+
+def _parallel_solve_worker(args: tuple) -> dict[int, float]:
+    """Solve one proposal in a worker process. Returns {card_id: q_value}.
+
+    This function runs in a forked child process (Linux) or spawned process.
+    It creates its own solver instance and deep-copies the state, so the
+    global TT buffer is isolated per worker.
+
+    Args:
+        args: (state, observer_id, hand_proposal) where
+              state is a GameState (dataclass, picklable),
+              hand_proposal is list[list[Card]] (4 player's full starting hands).
+
+    Returns:
+        dict mapping card_id → q_value.  Returns empty dict on failure.
+    """
+    import copy as _copy
+    from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
+        ExactDoubleDummyCppFastestSolver as _WorkerSolver,
+    )
+
+    state, observer_id, hand_proposal = args
+
+    try:
+        sim_state = _copy.deepcopy(state)
+
+        # ── inline _apply_proposal (avoid importing the whole module) ──
+        played_by: dict[int, set] = {i: set() for i in range(4)}
+        for record in sim_state.trick_history:
+            for pid, card in record.cards:
+                played_by[pid].add(card.card_id)
+        for pid, card in sim_state.table_cards:
+            played_by[pid].add(card.card_id)
+
+        for p in range(4):
+            if p != observer_id:
+                remaining = [c for c in hand_proposal[p]
+                             if c.card_id not in played_by[p]]
+                sim_state.hands[p] = remaining
+
+        if hasattr(sim_state, 'hand_bitsets'):
+            for p in range(4):
+                bit = 0
+                for c in sim_state.hands[p]:
+                    bit |= (1 << c.card_id)
+                sim_state.hand_bitsets[p] = bit
+
+        # ── solve ──
+        solver = _WorkerSolver()
+        result = solver.solve_with_q(sim_state)
+        action_q = result.get("action_q_values", {})
+        return {c.card_id: float(q) for c, q in action_q.items()}
+    except Exception:
+        return {}
+
+
+# ── minimum batch size to trigger parallel solving ──
+_MIN_PARALLEL_BATCH = 8
+
+
 class RuleExactFirst4Player(AIPlayer):
     """前 4 墩 rule-based + 后 36 张 exact solver 的混合玩家。
 
@@ -61,6 +122,7 @@ class RuleExactFirst4Player(AIPlayer):
         policy_net_nil: Any | None = None,
         encoder: Any | None = None,
         hyperparam_config: HyperparamConfig | None = None,
+        num_workers: int = 0,
         debug: bool = False,
     ) -> None:
         # 内部规则式玩家. 不让它处理后 36 张 (我们自己路由)。
@@ -69,6 +131,15 @@ class RuleExactFirst4Player(AIPlayer):
         self._bid_model = bid_model
         self._bid_device = bid_device
         self.config = hyperparam_config or HyperparamConfig.default()
+
+        # 并行 worker 数：构造参数优先，否则从 config 取，0 = auto (cpu_count)
+        if num_workers > 0:
+            self._num_workers = num_workers
+        elif hasattr(self.config, 'num_workers') and self.config.num_workers > 0:
+            self._num_workers = self.config.num_workers
+        else:
+            import os as _os
+            self._num_workers = max(1, (_os.cpu_count() or 4) - 1)  # 给主进程留 1 核
 
         self.position: int = -1
         self.hand: list[Card] = []
@@ -449,37 +520,65 @@ class RuleExactFirst4Player(AIPlayer):
                     norm_factors.extend(fill_probs)
                 n_samples_used = n_selected
 
+            # ── solver calls (parallel if enough proposals) ──
+            observer_id = state.turn
+            n_proposals = len(top_hands)
+
+            if n_proposals >= _MIN_PARALLEL_BATCH and self._num_workers > 1:
+                work_items = [(state, observer_id, hp) for hp in top_hands]
+                n_workers = min(self._num_workers, n_proposals)
+                try:
+                    import multiprocessing as _mp
+                    _ctx = _mp.get_context("fork")
+                    with _ctx.Pool(n_workers) as pool:
+                        q_results: list[dict[int, float]] = pool.map(
+                            _parallel_solve_worker, work_items
+                        )
+                except Exception:
+                    # Fallback to sequential on multiprocessing errors
+                    q_results = [
+                        _parallel_solve_worker(item) for item in work_items
+                    ]
+            else:
+                # Sequential (small batch or single worker configured)
+                q_results = [
+                    _parallel_solve_worker((state, observer_id, hp))
+                    for hp in top_hands
+                ]
+
             # ── debug: 记录每个采样的 Q 值 ──
             _debug_samples: list[dict[str, Any]] | None = [] if self._debug else None
-            for hand_proposal, norm_w in zip(top_hands, norm_factors):
-                sim_state = copy.deepcopy(state)
-                self._apply_proposal(sim_state, state.turn, hand_proposal)
-                result = self.exact_solver.solve_with_q(sim_state)
-                action_q_dict = result.get("action_q_values", {})
+            for (hand_proposal, norm_w), worker_result in zip(
+                zip(top_hands, norm_factors), q_results
+            ):
+                # worker_result is {card_id: q_value} from the worker
+                action_q_dict = worker_result
                 if self._debug and _debug_samples is not None:
                     _debug_samples.append({
                         "norm_weight": float(norm_w),
-                        "action_q_values": {str(c): float(q) for c, q in action_q_dict.items()} if action_q_dict else {},
+                        "action_q_values": {
+                            str(id_to_card.get(cid, Card(Suit.SPADES, Rank.TWO))): float(q)
+                            for cid, q in action_q_dict.items()
+                        } if action_q_dict else {},
                         "all_hands": {
                             p: [str(c) for c in hand_proposal[p]]
                             for p in range(4)
                         },
                     })
                 if action_q_dict:
-                    max_q = max(float(q) for q in action_q_dict.values())
-                    min_q = min(float(q) for q in action_q_dict.values())
-                    for action, q in action_q_dict.items():
-                        aid = action.card_id
+                    max_q = max(action_q_dict.values())
+                    min_q = min(action_q_dict.values())
+                    for card_id, q in action_q_dict.items():
                         if my_team == 0:
-                            multiplier = float(q) - max_q
+                            multiplier = q - max_q
                             if multiplier < -self.config.multiplier_clip:
                                 multiplier *= self.config.multiplier_clip_factor
-                            agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+                            agg_q[card_id] = agg_q.get(card_id, 0.0) + norm_w * multiplier
                         else:
-                            multiplier = float(q) - min_q
+                            multiplier = q - min_q
                             if multiplier > self.config.multiplier_clip:
                                 multiplier *= self.config.multiplier_clip_factor
-                            agg_q[aid] = agg_q.get(aid, 0.0) + norm_w * multiplier
+                            agg_q[card_id] = agg_q.get(card_id, 0.0) + norm_w * multiplier
 
         # Reconstruct action -> q using Card objects
         action_q_values: dict[Card, float] = {}

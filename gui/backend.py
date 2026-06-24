@@ -10,8 +10,9 @@ player's remaining hand.  This backend reconstructs a partial
   solver with importance-sampling determinization.  It RECONSTRUCTS the
   opponents' hidden hands from public history — it never peeks at the
   human's real cards.
-- When someone bids nil/blind_nil: the first 4 tricks switch to a nil
-  policy network (55_2nil.pt) instead of the rule-based player.
+- When someone bids nil/blind_nil: the first 4 tricks switch to a rule-based
+  nil strategy (RuleExactFirst4NilPlayer → RuleBasedFirst4NilPlayer) instead
+  of the rule-based player.
 
 Bidding uses the GO-MCTS MLP bid model (bid_nsfp.pt) via the bridge, exactly
 like DDSPlayer / RLExactPlayer in evaluation.
@@ -48,13 +49,8 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
     ExactDoubleDummyCppFastestSolver,
 )
 
-from rl.policy_network import PolicyMLP  # noqa: E402
-from strategy.rule_exact_first4_player import RuleExactFirst4Player  # noqa: E402
+from strategy.rule_exact_first4_nil_player import RuleExactFirst4NilPlayer  # noqa: E402
 from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
-
-MODEL_INPUT_DIM = 264
-MODEL_HIDDEN_DIMS = [1024, 512, 512]
-MODEL_OUTPUT_DIM = 55
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -247,26 +243,6 @@ class AiChoice:
     detail: str = ""
 
 
-def _load_policy(path: str, device: str) -> PolicyMLP:
-    """Load a 55-dim policy net; fall back to random weights if missing."""
-    cp = Path(path)
-    net = PolicyMLP(MODEL_INPUT_DIM, list(MODEL_HIDDEN_DIMS), MODEL_OUTPUT_DIM).to(device)
-    net.eval()
-    if not cp.exists():
-        print(f"  [WARN] policy checkpoint not found: {cp} — using random weights",
-              flush=True)
-        return net
-    try:
-        net.load(str(cp.resolve()), device=device)
-        net.eval()
-        print(f"  [OK] loaded policy: {cp}", flush=True)
-        return net
-    except Exception as exc:  # pragma: no cover
-        print(f"  [WARN] failed to load policy {cp}: {exc} — using random weights",
-              flush=True)
-        return net
-
-
 def _load_bid_model(path: str, device: str):
     """Load the GO-MCTS MLP bid model; None → heuristic fallback."""
     cp = Path(path)
@@ -304,8 +280,6 @@ class RuleExactProvider:
         self.hyperparam_config = HyperparamConfig.from_yaml(args.config)
         print(f"  [OK] loaded config: {args.config}", flush=True)
 
-        # Only nil policy is needed (non-nil first 4 → rule-based)
-        self.policy_nil = _load_policy(args.checkpoint_nil, device)
         self.bid_model = _load_bid_model(args.bid_checkpoint, device)
 
         # The solver is safe to share read-only across seats.
@@ -313,14 +287,17 @@ class RuleExactProvider:
         self.rules = SpadesRules()
 
         # One player instance per seat (keeps position / trajectory isolated).
-        self.players: list[RuleExactFirst4Player] = [
-            RuleExactFirst4Player(
+        # RuleExactFirst4NilPlayer: rule-based nil strategy for first 4 tricks
+        # when someone bids nil; non-nil → parent's RuleBasedFirst4Player;
+        # remaining <= threshold → IS pool exact solver.
+        self.players: list[RuleExactFirst4NilPlayer] = [
+            RuleExactFirst4NilPlayer(
                 exact_solver=self.exact_solver,
                 exact_threshold=self.exact_threshold,
                 bid_model=self.bid_model,
                 bid_device=device,
-                policy_net_nil=self.policy_nil,
                 hyperparam_config=self.hyperparam_config,
+                num_workers=args.num_workers,
             )
             for _ in range(4)
         ]
@@ -345,7 +322,7 @@ class RuleExactProvider:
         original_hand = list(state.hands[seat]) + ai_played
 
         # Reset the player and replay the full public card-play history so the
-        # internal rule-based player (and optional nil player) have up-to-date
+        # internal rule-based player (and nil rule player) have up-to-date
         # tracked state (_history, _opp_led_suits, _our_first_led_suit, etc.).
         player.start_game(seat, original_hand, 4)
         player.set_teams(state.teams, state.max_bid)
@@ -365,7 +342,7 @@ class RuleExactProvider:
             return self._choose_play(player, state, seat, view)
         raise ValueError(f"AI invoked in invalid phase: {state.phase}")
 
-    def _choose_bid(self, player: RuleExactFirst4Player, view: dict[str, Any]) -> AiChoice:
+    def _choose_bid(self, player: RuleExactFirst4NilPlayer, view: dict[str, Any]) -> AiChoice:
         # Present a normal single-round bid menu (no blind_nil prompt — the GUI
         # has a flat one-shot bidding flow).  place_bid routes through the MLP
         # bid model via the bridge.
@@ -379,13 +356,13 @@ class RuleExactProvider:
         # Defensive fallback
         return AiChoice(kind="bid", value=1, bid_type="normal", detail="fallback")
 
-    def _choose_play(self, player: RuleExactFirst4Player, state: GameState, seat: int,
+    def _choose_play(self, player: RuleExactFirst4NilPlayer, state: GameState, seat: int,
                      view: dict[str, Any]) -> AiChoice:
-        # Nil detection and policy-net setup already done by set_teams() in
-        # choose_action().  RuleExactFirst4Player.play_card internally routes:
-        #   - nil game + first 4 tricks → nil policy net (55_2nil.pt)
-        #   - non-nil + first 4 tricks  → rule-based player
-        #   - remaining <= exact_threshold → exact solver
+        # Nil detection and rule-based nil setup already done by set_teams() in
+        # choose_action().  RuleExactFirst4NilPlayer.play_card internally routes:
+        #   - nil game + first 4 tricks → RuleBasedFirst4NilPlayer (rule-based)
+        #   - non-nil + first 4 tricks  → RuleBasedFirst4Player (rule-based)
+        #   - remaining <= exact_threshold → IS pool exact solver
 
         legal_cards = self.rules.playable(state, state.hands[seat], seat)
         if not legal_cards:
@@ -476,12 +453,15 @@ def parse_args() -> argparse.Namespace:
                              "52-threshold cards use rule-based / nil policy)")
     parser.add_argument("--config", type=str,
                         default=str(REPO_ROOT / "configs" / "8.yaml"),
-                        help="path to hyperparam YAML config for RuleExactFirst4Player")
+                        help="path to hyperparam YAML config for RuleExactFirst4NilPlayer")
     parser.add_argument("--checkpoint-nil", type=str,
                         default=str(REPO_ROOT / "55_2nil.pt"),
-                        help="policy for games where someone bids nil")
+                        help="[deprecated] nil strategy now uses RuleBasedFirst4NilPlayer; "
+                             "this arg is ignored")
     parser.add_argument("--bid-checkpoint", type=str,
                         default=str(REPO_ROOT / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt"))
+    parser.add_argument("--num-workers", type=int, default=0,
+                        help="number of parallel solver workers (0=auto, 1=sequential)")
     parser.add_argument("--seed", type=int, default=None,
                         help="random seed for reproducible dealing/determinization")
     return parser.parse_args()
@@ -513,6 +493,7 @@ def main() -> None:
     print(f"rule_exact backend listening on http://{args.host}:{args.port}", flush=True)
     print(f"  exact_threshold={provider.exact_threshold} "
           f"(first {52 - provider.exact_threshold} cards use rule-based / nil policy)", flush=True)
+    print(f"  solver_workers={provider.players[0]._num_workers}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

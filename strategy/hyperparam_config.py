@@ -95,6 +95,9 @@ class HyperparamConfig:
     multiplier_clip: float = 40.0
     multiplier_clip_factor: float = 1.0
 
+    # Parallelism
+    num_workers: int = 0  # 0 = auto (cpu_count - 1), >0 = fixed count
+
     @classmethod
     def default(cls) -> HyperparamConfig:
         return cls()
@@ -145,6 +148,7 @@ class HyperparamConfig:
             swap_is_fill=bool(raw.get("swap_is_fill", False)),
             multiplier_clip=float(raw.get("multiplier_clip", 40.0)),
             multiplier_clip_factor=float(raw.get("multiplier_clip_factor", 1.0)),
+            num_workers=int(raw.get("num_workers", 0)),
         )
 
     def to_yaml(self, path: str | Path) -> None:
@@ -177,6 +181,7 @@ class HyperparamConfig:
             "swap_is_fill": self.swap_is_fill,
             "multiplier_clip": self.multiplier_clip,
             "multiplier_clip_factor": self.multiplier_clip_factor,
+            "num_workers": self.num_workers,
         }
 
         path = Path(path)

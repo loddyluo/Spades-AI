@@ -39,6 +39,7 @@ class RuleExactFirst4NilPlayer(RuleExactFirst4Player):
         bid_model=None,
         bid_device: str = "cpu",
         hyperparam_config: Any | None = None,
+        num_workers: int = 0,
     ) -> None:
         # 不传 policy_net_nil / encoder:父类的 RL nil fallback 路径被禁用
         super().__init__(
@@ -49,6 +50,7 @@ class RuleExactFirst4NilPlayer(RuleExactFirst4Player):
             policy_net_nil=None,
             encoder=None,
             hyperparam_config=hyperparam_config,
+            num_workers=num_workers,
         )
         # 我们的规则 nil 策略(独立于父类的 `_rule_player`,后者是非 nil 版)
         self._nil_rule_player = RuleBasedFirst4NilPlayer()
