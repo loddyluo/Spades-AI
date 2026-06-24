@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# Spades 对战「公网部署」专用依赖（运行时最小集）。
+#
+# 只列出 gui/backend.py 实际加载链路用到的库：
+#   - torch  : 加载叫牌 MLP 模型 (bid_nsfp.pt)，CPU 推理足够
+#   - numpy  : determinization / 重要性采样
+#   - pyyaml : HyperparamConfig.from_yaml 读 configs/8.yaml
+#
+# 训练/评估用的 transformers、tensorboard、tqdm 不在对战链路，故不安装，
+# 可把镜像缩小约 1GB+。
+#
+# 用法：  pip install -r requirements-serve.txt
+# ---------------------------------------------------------------------------
+
+# 只拉 CPU 版 torch（默认源会拉带 CUDA 的 2GB+ 包）。
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch
+numpy
+pyyaml
