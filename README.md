@@ -62,12 +62,43 @@ Let $B$ be your team's total bid, and $T$ be the total tricks actually won.
 - **transformers** (for the collaborator GPT-2 policy/value model)
 - **TensorBoard** (`torch.utils.tensorboard`) for training logging
 - **Node.js** >= 20 (for the GUI frontend)
+- **A C++17 compiler** (`clang++` or `g++`) — required to build the native
+  double-dummy solver. macOS/Linux usually already ship one; **Windows does
+  not**, so install one explicitly (see below).
 
 A typical install:
 
 ```bash
 pip install torch numpy tqdm transformers tensorboard
 ```
+
+#### C++ compiler (native solver)
+
+The fastest exact solver is C++ compiled to a shared library and loaded via
+`ctypes`. The repo ships prebuilt binaries only for `darwin_arm64` and
+`linux_x86_64` (see `trick_taking/solvers/*.so`). On any **other** platform —
+notably Windows — the loader (`trick_taking/solvers/native_lib_loader.py`)
+falls back to compiling `exact_double_dummy_cpp_fastest_core.cpp` on first run.
+That fallback needs a compiler on `PATH`, otherwise you get:
+
+```
+RuntimeError: no loadable fastest solver binary for this platform
+```
+
+Install one for your platform:
+
+- **macOS:** `xcode-select --install` (provides `clang++`).
+- **Linux:** `sudo apt install build-essential` (provides `g++`).
+- **Windows:** install **MinGW-w64** (provides `g++`) and add its `bin/` to
+  `PATH`. Easiest routes:
+  - via [MSYS2](https://www.msys2.org/): `pacman -S mingw-w64-ucrt-x86_64-gcc`,
+    then add `C:\msys64\ucrt64\bin` to `PATH`; or
+  - via Chocolatey: `choco install mingw`; or
+  - via `winget install BrechtSanders.WinLibs.POSIX.UCRT`.
+
+  Verify with `g++ --version` in a fresh terminal. On first run the solver
+  compiles `_exact_double_dummy_cpp_fastest_core.windows_x86_64.so` into
+  `trick_taking/solvers/` and caches it for subsequent runs.
 
 Troubleshooting：
 

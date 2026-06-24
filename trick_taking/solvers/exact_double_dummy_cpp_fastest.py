@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from typing import Any, Dict
 
 from trick_taking.card import Card, Rank, Suit
