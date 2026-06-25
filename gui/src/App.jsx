@@ -715,12 +715,17 @@ export default function App() {
   const connectRemote = async (serverUrl, roomCode, seed, seat) => {
     setRemote((r) => ({ ...r, status: 'connecting', error: '', roomCode, seed: String(seed) }));
     try {
-      const hasProto = serverUrl.startsWith('ws://') || serverUrl.startsWith('wss://');
+      // Normalise user input into a WebSocket URL.
+      // Supported inputs: wss://host, ws://host, https://host, http://host, host:port
       let url;
-      if (hasProto) {
+      if (serverUrl.startsWith('wss://') || serverUrl.startsWith('ws://')) {
         url = serverUrl;
+      } else if (serverUrl.startsWith('https://')) {
+        url = serverUrl.replace(/^https/, 'wss');
+      } else if (serverUrl.startsWith('http://')) {
+        url = serverUrl.replace(/^http/, 'ws');
       } else {
-        // Auto-detect protocol: 443/8443 → wss (TLS), others → ws
+        // Heuristic: ports 443/8443 → wss, others → ws
         const securePort = /:(443|8443)$/.test(serverUrl);
         url = (securePort ? 'wss://' : 'ws://') + serverUrl;
       }

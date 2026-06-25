@@ -183,3 +183,19 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
             "current_player": int(out.current_player),
             "optimize_for_team": optimize_for_team,
         }
+
+    def solve_with_q_fast(self, state: GameState) -> Dict[int, float]:
+        """返回 {card_id: q_value} 的简化格式，供 rule_based 并行 solver 使用。"""
+        self._validate_state(state)
+        if not self.native_available:
+            raise RuntimeError("极速 C++ 求解器不可用")
+
+        native_state = self._to_native_state(state)
+        out = _RootQResult()
+        self._lib.solve_native_with_q(ctypes.byref(native_state), ctypes.byref(out))
+
+        result: Dict[int, float] = {}
+        for idx in range(int(out.count)):
+            card_id = int(out.actions[idx])
+            result[card_id] = float(out.q_values[idx])
+        return result
