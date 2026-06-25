@@ -573,7 +573,7 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlS
                 type="text"
                 value={remoteUrlInput}
                 onChange={(e) => { setRemoteUrlInput(e.target.value); setRemoteError(''); }}
-                placeholder="IP:端口"
+                placeholder="IP:端口 (云服务器请用 wss://域名:8443)"
               />
             </label>
             <label className="seed-form__field">
@@ -715,7 +715,15 @@ export default function App() {
   const connectRemote = async (serverUrl, roomCode, seed, seat) => {
     setRemote((r) => ({ ...r, status: 'connecting', error: '', roomCode, seed: String(seed) }));
     try {
-      const url = serverUrl.startsWith('ws') ? serverUrl : `ws://${serverUrl}`;
+      const hasProto = serverUrl.startsWith('ws://') || serverUrl.startsWith('wss://');
+      let url;
+      if (hasProto) {
+        url = serverUrl;
+      } else {
+        // Auto-detect protocol: 443/8443 → wss (TLS), others → ws
+        const securePort = /:(443|8443)$/.test(serverUrl);
+        url = (securePort ? 'wss://' : 'ws://') + serverUrl;
+      }
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
