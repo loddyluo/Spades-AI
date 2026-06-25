@@ -806,3 +806,34 @@ button { cursor: pointer; }
   .stage__left, .stage__right { display: none; } /* keep it readable: top + you */
   .size-lg { --card-w: 56px; --card-h: 80px; }
 }
+
+/* ── remote (networked) game ─────────────────────────────────────── */
+
+.mode-card--remote {
+  border-color: rgba(52, 211, 153, 0.35);
+}
+.mode-card--remote:hover {
+  border-color: rgba(52, 211, 153, 0.7);
+}
+
+.seed-form__hint {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin: 0;
+  text-align: left;
+  padding-left: 2px;
+}
+
+.ctl__disc {
+  padding: 4px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 150ms;
+}
+.ctl__disc:hover {
+  background: rgba(239, 68, 68, 0.25);
+}

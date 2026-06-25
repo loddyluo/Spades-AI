@@ -93,9 +93,7 @@ def _parallel_solve_worker(args: tuple) -> dict[int, float]:
 
         # ── solve ──
         solver = _WorkerSolver()
-        result = solver.solve_with_q(sim_state)
-        action_q = result.get("action_q_values", {})
-        return {c.card_id: float(q) for c, q in action_q.items()}
+        return solver.solve_with_q_fast(sim_state)
     except Exception:
         return {}
 
@@ -325,21 +323,20 @@ class RuleExactFirst4Player(AIPlayer):
             for _ in range(K):
                 sim_state = copy.deepcopy(state)
                 self._determinize_state(sim_state, state.turn, rng)
-                result = self.exact_solver.solve_with_q(sim_state)
+                result = self.exact_solver.solve_with_q_fast(sim_state)
                 counts += 1
-                action_qs = result.get("action_q_values", {})
                 if self._debug:
                     _debug_fallback_qs.append({
                         "norm_weight": 1.0 / K,
-                        "action_q_values": {str(c): float(q) for c, q in action_qs.items()} if action_qs else {},
+                        "action_q_values": {str(id_to_card.get(cid, Card(Suit.SPADES, Rank.TWO))): float(q)
+                                           for cid, q in result.items()} if result else {},
                         "all_hands": {
                             p: [str(c) for c in sim_state.hands[p]]
                             for p in range(4)
                         },
                     })
-                for action, q in action_qs.items():
-                    aid = action.card_id
-                    agg_q[aid] = agg_q.get(aid, 0.0) + float(q)
+                for cid, q in result.items():
+                    agg_q[cid] = agg_q.get(cid, 0.0) + float(q)
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
             n_samples_used = counts
@@ -1087,22 +1084,19 @@ class RuleExactFirst4Player(AIPlayer):
                 else:
                     sim_state.trick_leader = player
 
-                result = self.exact_solver.solve_with_q(sim_state)
-                action_q = result.get("action_q_values", {})
+                action_q = self.exact_solver.solve_with_q_fast(sim_state)  # {card_id: q_value}
 
                 if action_q:
                     max_q_val = max(action_q.values())
                     good_count = sum(1 for q in action_q.values() if q == max_q_val)
                     bad_count = len(action_q) - good_count
 
-                    # 按 card_id 匹配（避免 Card 对象不同引用）
-                    card_in_q = next(
-                        (c for c in action_q if c.card_id == card.card_id), None
-                    )
-                    if card_in_q is None:
+                    # 直接用 card_id 查找（避免 Card 对象创建和匹配）
+                    q_val = action_q.get(card.card_id)
+                    if q_val is None:
                         return 0.0  # 该动作在 proposal 下不合法
 
-                    if action_q[card_in_q] == max_q_val:
+                    if q_val == max_q_val:
                         weight *= 1.0  # 好动作
                     else:
                         total = good_count + bad_count

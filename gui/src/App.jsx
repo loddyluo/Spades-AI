@@ -17,6 +17,7 @@ import {
   createInitialGame,
   getHumanLegalCards,
   makeBid,
+  remoteStateFromServer,
   submitHumanBid,
   submitHumanCard,
   summarizeGame,
@@ -35,6 +36,7 @@ const MODE_LABELS = {
   match500: '500 分赛',
   fixedSeed: '给定种子',
   aiTest: '测试 AI',
+  remote: '远程对战',
 };
 
 const seedFromUrl = () => {
@@ -440,13 +442,18 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
 }
 
 /* ── Mode-select screen ─────────────────────────────────────────────── */
-function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, urlSeed }) {
+function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlSeed }) {
   const [seedInput, setSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
   const [testSeedInput, setTestSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
+  const [remoteSeedInput, setRemoteSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
+  const [remoteRoomInput, setRemoteRoomInput] = useState('');
+  const [remoteUrlInput, setRemoteUrlInput] = useState('localhost:8765');
   const [seat, setSeat] = useState(0);
   const [viewSeat, setViewSeat] = useState(0);
+  const [remoteSeat, setRemoteSeat] = useState(0);
   const [seedError, setSeedError] = useState('');
   const [testSeedError, setTestSeedError] = useState('');
+  const [remoteError, setRemoteError] = useState('');
 
   const handleFixedStart = () => {
     const seed = normalizeSeed(seedInput);
@@ -466,6 +473,26 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, urlSeed }) {
     }
     setTestSeedError('');
     onAiTestStart(seed, viewSeat);
+  };
+
+  const handleRemoteStart = () => {
+    const seed = normalizeSeed(remoteSeedInput);
+    if (seed == null) {
+      setRemoteError('请输入非负整数种子');
+      return;
+    }
+    const room = remoteRoomInput.trim();
+    if (!room) {
+      setRemoteError('请输入房间号');
+      return;
+    }
+    const url = remoteUrlInput.trim();
+    if (!url) {
+      setRemoteError('请输入服务器地址');
+      return;
+    }
+    setRemoteError('');
+    onRemoteStart(url, room.toUpperCase(), seed, remoteSeat);
   };
 
   return (
@@ -535,6 +562,52 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, urlSeed }) {
           </div>
           {testSeedError ? <p className="seed-form__error">{testSeedError}</p> : null}
         </div>
+        <div className="mode-card mode-card--remote">
+          <span className="mode-card__icon">🌐</span>
+          <strong>远程对战</strong>
+          <span className="mode-card__desc">两人各在一台电脑，通过网络对战两个 AI。</span>
+          <div className="seed-form">
+            <label className="seed-form__field">
+              <span>服务器</span>
+              <input
+                type="text"
+                value={remoteUrlInput}
+                onChange={(e) => { setRemoteUrlInput(e.target.value); setRemoteError(''); }}
+                placeholder="IP:端口"
+              />
+            </label>
+            <label className="seed-form__field">
+              <span>房间号</span>
+              <input
+                type="text"
+                value={remoteRoomInput}
+                onChange={(e) => { setRemoteRoomInput(e.target.value); setRemoteError(''); }}
+                placeholder="例如 ABCD"
+                style={{ textTransform: 'uppercase' }}
+              />
+            </label>
+            <label className="seed-form__field">
+              <span>种子</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={remoteSeedInput}
+                onChange={(e) => { setRemoteSeedInput(e.target.value); setRemoteError(''); }}
+                placeholder="例如 12345"
+              />
+            </label>
+            <label className="seed-form__field">
+              <span>座位</span>
+              <select value={remoteSeat} onChange={(e) => setRemoteSeat(Number(e.target.value))}>
+                {SEAT_NAMES.map((label, i) => <option key={label} value={i}>{i} · {label}</option>)}
+              </select>
+            </label>
+            <p className="seed-form__hint">搭档座位自动为对家 ({(remoteSeat + 2) % 4})</p>
+            <button type="button" className="btn-new seed-form__go" onClick={handleRemoteStart}>连接</button>
+          </div>
+          {remoteError ? <p className="seed-form__error">{remoteError}</p> : null}
+        </div>
       </div>
     </div>
   );
@@ -556,6 +629,20 @@ export default function App() {
   const [matchOver, setMatchOver] = useState(false);
   const [matchFirstSeat, setMatchFirstSeat] = useState(0); // rotates each hand in 500-match
   const settledSeedRef = useRef(null);   // guards against double-counting a hand
+
+  // Remote (networked) game state
+  const [remote, setRemote] = useState({
+    status: 'idle',     // 'connecting' | 'joined' | 'waiting' | 'your_turn' | 'finished'
+    error: '',
+    mySeat: -1,
+    opponentSeat: -1,
+    legalCards: null,   // Set of code strings
+    legalBids: null,    // [{value, type}, ...]
+    serverUrl: 'localhost:8765',
+    roomCode: '',
+    seed: '',
+  });
+  const wsRef = useRef(null);
 
   // Deal a hand. Random modes should omit `seed` or pass randomDealSeed().
   const dealHand = async (seat, seed = randomDealSeed(), firstSeat = 0) => {
@@ -623,7 +710,112 @@ export default function App() {
     await dealHand(humanSeat, randomDealSeed(), nextFirstSeat);
   };
 
+  // ── Remote (networked) game handlers ───────────────────────────
+
+  const connectRemote = async (serverUrl, roomCode, seed, seat) => {
+    setRemote((r) => ({ ...r, status: 'connecting', error: '', roomCode, seed: String(seed) }));
+    try {
+      const url = serverUrl.startsWith('ws') ? serverUrl : `ws://${serverUrl}`;
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'join', room: roomCode, seed, seat }));
+        setRemote((r) => ({ ...r, status: 'joined', mySeat: seat, roomCode, seed: String(seed) }));
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        switch (msg.type) {
+          case 'joined':
+            setRemote((r) => ({ ...r, status: 'waiting', error: '' }));
+            break;
+          case 'opponent_joined':
+            setRemote((r) => ({
+              ...r,
+              status: 'playing',
+              opponentSeat: msg.opponentSeat,
+              mySeat: msg.yourSeat,
+            }));
+            break;
+          case 'game_state': {
+            const mySeat = msg.seat;
+            const remoteGame = remoteStateFromServer(msg, mySeat);
+            setGame(remoteGame);
+            setHumanSeat(mySeat);
+            break;
+          }
+          case 'your_turn':
+            setRemote((r) => ({
+              ...r,
+              status: 'your_turn',
+              legalCards: msg.legalCards ? new Set(msg.legalCards) : null,
+              legalBids: msg.legalBids || null,
+            }));
+            break;
+          case 'waiting':
+            setRemote((r) => ({
+              ...r,
+              status: 'playing',
+              legalCards: null,
+              legalBids: null,
+            }));
+            break;
+          case 'hand_over': {
+            setRemote((r) => ({ ...r, status: 'finished', legalCards: null, legalBids: null }));
+            // Apply score to game state
+            setGame((g) => ({ ...g, phase: 'finished', score: msg.score,
+              tricksWon: msg.tricksWon || g.tricksWon }));
+            break;
+          }
+          case 'error':
+            setRemote((r) => ({ ...r, error: msg.message }));
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        setRemote((r) => ({ ...r, status: r.status === 'finished' ? 'finished' : 'idle',
+          error: r.status !== 'finished' ? '连接已断开' : '' }));
+        wsRef.current = null;
+      };
+
+      ws.onerror = () => {
+        setRemote((r) => ({ ...r, error: '无法连接到服务器' }));
+      };
+    } catch (err) {
+      setRemote((r) => ({ ...r, status: 'idle', error: String(err) }));
+    }
+  };
+
+  const disconnectRemote = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setRemote({
+      status: 'idle', error: '', mySeat: -1, opponentSeat: -1,
+      legalCards: null, legalBids: null, serverUrl: 'localhost:8765',
+      roomCode: '', seed: '',
+    });
+    setScreen('menu');
+    setMode('single');
+  };
+
   const handleBid = async (bid) => {
+    // Remote mode: send via WebSocket
+    if (mode === 'remote') {
+      if (busy || game.phase !== 'bidding' || remote.status !== 'your_turn') return;
+      setBusy(true);
+      try {
+        wsRef.current?.send(JSON.stringify({ type: 'bid', bid }));
+        setRemote((r) => ({ ...r, status: 'playing', legalBids: null }));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // Local mode
     if (busy || game.phase !== 'bidding' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
@@ -634,6 +826,19 @@ export default function App() {
   };
 
   const handlePlay = async (cardCode) => {
+    // Remote mode: send via WebSocket
+    if (mode === 'remote') {
+      if (busy || game.phase !== 'playing' || remote.status !== 'your_turn') return;
+      setBusy(true);
+      try {
+        wsRef.current?.send(JSON.stringify({ type: 'play', card: cardCode }));
+        setRemote((r) => ({ ...r, status: 'playing', legalCards: null }));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // Local mode
     if (busy || game.phase !== 'playing' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
@@ -675,16 +880,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished, game.seed, mode, screen]);
 
-  const legalCards = game.phase === 'playing' ? getHumanLegalCards(game) : [];
-  const legalSet = useMemo(() => new Set(legalCards.map((c) => c.code)), [legalCards]);
+  const isSpectator = mode === 'aiTest';
+  const isRemote = mode === 'remote';
+
+  const legalCards = isRemote
+    ? []
+    : (game.phase === 'playing' ? getHumanLegalCards(game) : []);
+  const localLegalSet = useMemo(() => new Set(legalCards.map((c) => c.code)), [legalCards]);
+  const legalSet = isRemote ? (remote.legalCards || new Set()) : localLegalSet;
 
   // seat → screen position (you are always at the bottom)
   const posOf = (seat) => ['bottom', 'left', 'top', 'right'][(seat - game.humanSeat + 4) % 4];
   const seatAt = (pos) => [0, 1, 2, 3].find((s) => posOf(s) === pos);
 
-  const humanHand = game.hands[game.humanSeat];
-  const isSpectator = mode === 'aiTest';
-  const myTurn = !isSpectator && game.currentPlayer === game.humanSeat;
+  const humanHand = (game.hands[game.humanSeat] || []).filter(Boolean);
+  const myTurn = isRemote
+    ? remote.status === 'your_turn'
+    : (!isSpectator && game.currentPlayer === game.humanSeat);
   const isBidding = game.phase === 'bidding';
   const isPlaying = game.phase === 'playing';
 
@@ -700,6 +912,14 @@ export default function App() {
   // status text in the center of the table
   let statusText = '';
   if (finished) statusText = '本局结束';
+  else if (isRemote && remote.status === 'connecting') statusText = '连接中…';
+  else if (isRemote && remote.status === 'joined') statusText = '已加入，等待对手…';
+  else if (isRemote && remote.status === 'waiting') statusText = '等待对手加入…';
+  else if (isRemote && remote.error) statusText = remote.error;
+  else if (isRemote && myTurn && isBidding) statusText = '请叫牌';
+  else if (isRemote && myTurn && isPlaying) statusText = '请出牌';
+  else if (isRemote && isBidding) statusText = `${SEAT_NAMES[game.currentPlayer]} 叫牌中…`;
+  else if (isRemote && isPlaying) statusText = `${SEAT_NAMES[game.currentPlayer]} 出牌中…`;
   else if (isSpectator && busy) statusText = 'AI 对局中…';
   else if (busy && !myTurn) statusText = '对手出牌中…';
   else if (isBidding && myTurn) statusText = '请叫牌';
@@ -709,6 +929,41 @@ export default function App() {
 
   const spread = Math.min(7, 56 / Math.max(1, humanHand.length)); // deg between cards
 
+  const startRemoteGame = (serverUrl, roomCode, seed, seat) => {
+    setMode('remote');
+    setMatchScore({ ns: 0, ew: 0 });
+    setHandNo(1);
+    setMatchOver(false);
+    settledSeedRef.current = null;
+    setHumanSeat(seat);
+    // Placeholder state — the server will send authoritative hands via
+    // game_state shortly. We must NOT use createInitialGame here because
+    // its JS PRNG produces different hands from Python's Mersenne Twister.
+    setGame({
+      seed,
+      humanSeat: seat,
+      firstSeat: 0,
+      phase: 'bidding',
+      currentPlayer: -1,
+      leader: -1,
+      trickNumber: 1,
+      spadesBroken: false,
+      hands: [[], [], [], []].map(() => new Array(13)),  // 13 back-cards each
+      bids: [null, null, null, null],
+      tricksWon: [0, 0, 0, 0],
+      currentTrick: [],
+      completedTricks: [],
+      trickComplete: false,
+      trickWinner: -1,
+      lastPlayedSeat: -1,
+      lastBidSeat: -1,
+      score: null,
+      log: [{ kind: 'system', text: '连接中…' }],
+    });
+    setScreen('game');
+    connectRemote(serverUrl, roomCode, seed, seat);
+  };
+
   // ── mode-select screen ──
   if (screen === 'menu') {
     return (
@@ -717,6 +972,9 @@ export default function App() {
           onPick={(m) => { void startMatch(m); }}
           onFixedSeedStart={(seed, seat) => { void startFixedSeedMatch(seed, seat); }}
           onAiTestStart={(seed, viewSeat) => { void startAiTest(seed, viewSeat); }}
+          onRemoteStart={(serverUrl, roomCode, seed, seat) => {
+            startRemoteGame(serverUrl, roomCode, seed, seat);
+          }}
           urlSeed={urlSeed}
         />
       </div>
@@ -746,7 +1004,7 @@ export default function App() {
       {/* ── top bar ── */}
       <header className="topbar">
         <div className="brand">
-          <button className="brand__back" onClick={() => setScreen('menu')} disabled={busy} title="返回模式选择">←</button>
+          <button className="brand__back" onClick={() => { if (isRemote) disconnectRemote(); else setScreen('menu'); }} disabled={busy && !isRemote} title={isRemote ? '断开连接' : '返回模式选择'}>←</button>
           <span className="brand__pip">♠</span> Spades
         </div>
         <div className="topbar__right">
@@ -758,18 +1016,30 @@ export default function App() {
             <span>模式</span>
             <strong>{MODE_LABELS[mode] ?? mode}</strong>
           </div>
-          {mode === 'match500' ? (
-            <div className="match-info"><span>局数</span><strong>第 {handNo} 局</strong></div>
-          ) : null}
-          <div className="match-info"><span>种子</span><strong>{game.seed}</strong></div>
-          {!isSpectator ? (
-            <label className="ctl">
-              <span>座位</span>
-              <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy || (screen === 'game' && !finished)}>
-                {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} · {label}</option>)}
-              </select>
-            </label>
-          ) : null}
+          {isRemote ? (
+            <>
+              <div className="match-info"><span>房间</span><strong>{remote.roomCode || '—'}</strong></div>
+              <div className="match-info"><span>种子</span><strong>{remote.seed || '—'}</strong></div>
+              <div className="match-info"><span>你的座位</span><strong>{remote.mySeat >= 0 ? `${remote.mySeat} · ${SEAT_NAMES[remote.mySeat]}` : '—'}</strong></div>
+              <div className="match-info"><span>搭档</span><strong>{remote.opponentSeat >= 0 ? `${remote.opponentSeat} · ${SEAT_NAMES[remote.opponentSeat]}` : (remote.status === 'waiting' || remote.status === 'joined' ? '等待加入…' : '—')}</strong></div>
+              <button className="ctl__disc" onClick={disconnectRemote} title="断开连接">断开</button>
+            </>
+          ) : (
+            <>
+              {mode === 'match500' ? (
+                <div className="match-info"><span>局数</span><strong>第 {handNo} 局</strong></div>
+              ) : null}
+              <div className="match-info"><span>种子</span><strong>{game.seed}</strong></div>
+              {!isSpectator ? (
+                <label className="ctl">
+                  <span>座位</span>
+                  <select value={humanSeat} onChange={(e) => setHumanSeat(Number(e.target.value))} disabled={busy || (screen === 'game' && !finished)}>
+                    {SEAT_NAMES.map((label, seat) => <option key={label} value={seat}>{seat} · {label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </>
+          )}
         </div>
       </header>
 
@@ -831,12 +1101,25 @@ export default function App() {
               </div>
 
               {isBidding && myTurn ? (
-                <div className="bidbar">
-                  <button className="chip chip--nil" disabled={busy} onClick={() => handleBid(makeBid(0, 'nil'))}>Nil</button>
-                  {Array.from({ length: 13 }, (_, i) => i + 1).map((b) => (
-                    <button key={b} className="chip" disabled={busy} onClick={() => handleBid(makeBid(b))}>{b}</button>
-                  ))}
-                </div>
+                isRemote && remote.legalBids ? (
+                  <div className="bidbar">
+                    {remote.legalBids.map((b) => (
+                      <button key={`${b.value}-${b.type}`}
+                        className={`chip${b.type === 'nil' ? ' chip--nil' : ''}`}
+                        disabled={busy}
+                        onClick={() => handleBid(makeBid(b.value, b.type))}>
+                        {b.type === 'nil' ? 'Nil' : b.value}
+                      </button>
+                    ))}
+                  </div>
+                ) : !isRemote ? (
+                  <div className="bidbar">
+                    <button className="chip chip--nil" disabled={busy} onClick={() => handleBid(makeBid(0, 'nil'))}>Nil</button>
+                    {Array.from({ length: 13 }, (_, i) => i + 1).map((b) => (
+                      <button key={b} className="chip" disabled={busy} onClick={() => handleBid(makeBid(b))}>{b}</button>
+                    ))}
+                  </div>
+                ) : null
               ) : null}
 
               <div className="fan" style={{ '--n': humanHand.length }} key={game.seed}>
@@ -872,7 +1155,18 @@ export default function App() {
 
       {/* ── result overlays ── */}
       {finished && summary.score ? (
-        mode === 'fixedSeed' ? (
+        isRemote ? (
+          <ResultOverlay
+            eyebrow="牌局结束"
+            subtitle={`房间 ${remote.roomCode} · 种子 ${remote.seed}`}
+            ns={summary.score.northSouth}
+            ew={summary.score.eastWest}
+            verdict={teamWon(summary.score.northSouth, summary.score.eastWest) ? '你的队伍获胜 🎉' : '你的队伍落败'}
+            buttonLabel="断开并返回"
+            onButton={disconnectRemote}
+            busy={busy}
+          />
+        ) : mode === 'fixedSeed' ? (
           <ResultOverlay
             eyebrow="牌局结束"
             subtitle={`种子 ${game.seed}`}

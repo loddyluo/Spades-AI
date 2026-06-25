@@ -664,3 +664,74 @@ export const REPLAY_PACE = {
   cardStep: 650,
   trickHold: 1200,
 };
+
+/* ───────────────────────────────────────────────────────────────────
+ * Remote (networked) game client — WebSocket to game_server.py
+ * ─────────────────────────────────────────────────────────────────── */
+
+/**
+ * Parse a card code string (e.g. "SA") into the frontend card object.
+ */
+function parseCardCode(code) {
+  if (!code || code.length < 2) return { code: '??', rank: '?', suit: '?' };
+  const rank = code.slice(0, -1);
+  const suit = code.slice(-1);
+  return { code, rank, suit };
+}
+
+/**
+ * Convert a server game_state message into the frontend game state format.
+ * This lets the existing rendering components work unchanged in remote mode.
+ *
+ * @param {object} msg — server game_state message
+ * @param {number} mySeat — this client's seat
+ * @returns {object} frontend-compatible game state
+ */
+export function remoteStateFromServer(msg, mySeat) {
+  const myCards = (msg.hand || []).map(parseCardCode);
+  const handSizes = msg.handSizes || [13, 13, 13, 13];
+
+  // Build hands array: only my seat has real cards; opponents are placeholder
+  // arrays sized correctly so CardBackFan shows the right count.
+  const hands = [null, null, null, null].map((_, seat) =>
+    seat === mySeat ? myCards : new Array(handSizes[seat])
+  );
+
+  // Convert currentTrick cards from string codes to card objects
+  const currentTrick = (msg.currentTrick || []).map((entry) => ({
+    seat: entry.seat,
+    card: parseCardCode(entry.card),
+  }));
+
+  // Convert completedTricks cards
+  const completedTricks = (msg.completedTricks || []).map((trick) => ({
+    trickNumber: trick.trickNumber,
+    winner: trick.winner,
+    cards: trick.cards.map((entry) => ({
+      seat: entry.seat,
+      card: parseCardCode(entry.card),
+    })),
+  }));
+
+  return {
+    seed: 0, // seed is not exposed per-state; client tracks separately
+    humanSeat: mySeat,
+    firstSeat: msg.leader,
+    phase: msg.phase,
+    currentPlayer: msg.currentPlayer,
+    leader: msg.leader,
+    trickNumber: msg.trickNumber,
+    spadesBroken: msg.spadesBroken,
+    hands,
+    bids: msg.bids || [null, null, null, null],
+    tricksWon: msg.tricksWon || [0, 0, 0, 0],
+    currentTrick,
+    completedTricks,
+    trickComplete: !!msg.trickComplete,
+    trickWinner: msg.trickWinner != null ? msg.trickWinner : -1,
+    lastPlayedSeat: msg.lastPlayedSeat != null ? msg.lastPlayedSeat : -1,
+    lastBidSeat: msg.lastBidSeat != null ? msg.lastBidSeat : -1,
+    score: null,
+    log: msg.log || [],
+  };
+}
