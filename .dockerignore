@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------------
+# 控制进入 Docker 构建上下文的内容。
+# 策略：默认拷整个仓库（保证后端所有间接 import 都在），但剔除大体积的
+# 训练/研究资产、前端依赖、本地缓存——它们与「对战」运行无关。
+# ---------------------------------------------------------------------------
+
+# --- 版本控制与缓存 ---
+.git
+.git/**
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.vscode/
+.claude/
+.DS_Store
+**/.DS_Store
+
+# --- 前端依赖与本地虚拟环境（镜像内会重新 npm install / pip install） ---
+gui/node_modules/
+gui/dist/
+gui/venv/
+**/.venv/
+**/venv/
+
+# --- 论文 / 海报 / 大体积研究产物 ---
+*.pdf
+*.pptx
+temp_pptx/
+report/
+logs/
+logs_old/
+logs_mid/
+runs/
+data/
+output/
+*.png
+
+# --- 训练统计与调试输出 ---
+is_proposal_stats*.txt
+debug_*.txt
+debug_*.py
+*.zip
+
+# --- 训练用 checkpoint（运行时只需 55_2nil.pt 与 bid_nsfp.pt，二者不在此排除） ---
+55_2.pt
+rl_checkpoints/
+rl/checkpoints/

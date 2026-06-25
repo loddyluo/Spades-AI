@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Caddy 配置：托管 Spades 对战前端 + 反代后端 AI。
+#
+# 这是「无密码保护」的默认配置。entrypoint.sh 会在你设置了环境变量
+# BASIC_AUTH_HASH 时，自动改写出一份带账号密码保护的版本覆盖它。
+#
+# SITE_ADDRESS 由环境变量传入：
+#   - 填域名(如 spades.example.com) → Caddy 自动申请并续期 HTTPS 证书
+#   - 本地测试填 :80               → 仅 HTTP
+# ---------------------------------------------------------------------------
+
+{$SITE_ADDRESS} {
+	# ---- AI 后端：反向代理到本机多个 Python 进程，轮询负载均衡 ----
+	# 固定列出 8001-8008 共 8 个上游；entrypoint.sh 实际只启动 WORKERS 个，
+	# 其余端口连接失败 → 健康检查标记为 down → Caddy 自动跳过，不影响服务。
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8001 127.0.0.1:8002 127.0.0.1:8003 127.0.0.1:8004 127.0.0.1:8005 127.0.0.1:8006 127.0.0.1:8007 127.0.0.1:8008 {
+			lb_policy round_robin
+			health_uri /api/health
+			health_interval 10s
+			health_timeout 3s
+		}
+	}
+
+	# ---- 前端静态文件：托管 gui 构建产物，SPA 回退到 index.html ----
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	encode gzip
+}

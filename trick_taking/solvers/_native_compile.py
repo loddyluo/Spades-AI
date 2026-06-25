@@ -31,6 +31,26 @@ def compile_fastest_solver(src: str, out: str) -> None:
     ]
     if sys.platform == "darwin":
         flags.append("-march=native")
+    elif sys.platform == "win32":
+        # MinGW-w64 g++: -fPIC is a no-op (warns), and the default dynamic link
+        # against libstdc++-6.dll / libgcc_s_seh-1.dll / libwinpthread-1.dll
+        # makes ctypes.CDLL fail unless those DLLs are on PATH. Statically embed
+        # the runtime so the produced .so is self-contained. -flto is dropped to
+        # avoid MinGW's flaky linker-plugin path.
+        flags = [
+            compiler,
+            "-O3",
+            "-std=c++17",
+            "-shared",
+            "-pthread",
+            "-DNDEBUG",
+            "-fomit-frame-pointer",
+            "-funroll-loops",
+            "-march=native",
+            "-static",
+            "-static-libgcc",
+            "-static-libstdc++",
+        ]
     else:
         flags.extend(["-march=native", "-flto"])
     flags.extend([src, "-o", out])
