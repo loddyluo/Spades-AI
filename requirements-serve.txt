@@ -5,8 +5,10 @@
 #   - torch  : 加载叫牌 MLP 模型 (bid_nsfp.pt)，CPU 推理足够
 #   - numpy  : determinization / 重要性采样
 #   - pyyaml : HyperparamConfig.from_yaml 读 configs/8.yaml
+#   - tqdm   : strategy/__init__.py 会连带导入 truncated_mcts_strategy，
+#              后者顶层 `from tqdm import tqdm`，故为硬依赖（体积极小）。
 #
-# 训练/评估用的 transformers、tensorboard、tqdm 不在对战链路，故不安装，
+# 训练/评估用的 transformers、tensorboard 不在对战链路，故不安装，
 # 可把镜像缩小约 1GB+。
 #
 # 用法：  pip install -r requirements-serve.txt
@@ -18,3 +20,4 @@
 torch
 numpy
 pyyaml
+tqdm

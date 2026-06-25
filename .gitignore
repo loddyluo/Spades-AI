@@ -34,3 +34,11 @@ trick_taking/solvers/_*_core.so
 
 # macOS Finder metadata
 .DS_Store
+
+# SSH private keys / secrets — NEVER commit these.
+*.pem
+*.key
+id_rsa
+id_ed25519
+*.p12
+.env
