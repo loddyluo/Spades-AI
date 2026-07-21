@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import residual_bidder.checkpoint as checkpoint_module
 from residual_bidder.checkpoint import (
     CHECKPOINT_SCHEMA,
     BidderCheckpointMeta,
@@ -72,6 +73,34 @@ def test_model_and_policy_ids_are_content_addressed() -> None:
     assert promoted.policy_id is not None and len(promoted.policy_id) == 64
     assert promote_meta(metadata, calibration).policy_id == promoted.policy_id
     assert promote_meta(metadata, replace(calibration, epsilon=0.1)).policy_id != promoted.policy_id
+
+
+def test_model_hash_has_a_versioned_framed_little_endian_contract() -> None:
+    assert checkpoint_module.MODEL_ID_HASH_FORMAT == "sha256-framed-little-endian-v1"
+    assert checkpoint_module._tensor_bytes_little_endian(
+        torch.tensor([1.0, -2.5], dtype=torch.float32)
+    ) == bytes.fromhex("0000803f000020c0")
+
+
+def test_promoted_round_trip_and_policy_id_tamper_detection(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    promoted = promote_meta(_candidate(ensemble), CalibrationTuple(0.25, 0.75, 0.05, 0.8))
+    path = tmp_path / "promoted.pt"
+    save_checkpoint_atomic(path, ensemble, promoted)
+
+    loaded, loaded_meta = load_checkpoint(
+        path, require_promoted=True, **_expected_hashes()
+    )
+
+    assert loaded_meta == promoted
+    for key, value in ensemble.state_dict().items():
+        assert torch.equal(loaded.state_dict()[key], value)
+
+    artifact = torch.load(path, map_location="cpu", weights_only=True)
+    artifact["metadata"]["policy_id"] = "a" * 64
+    torch.save(artifact, path)
+    with pytest.raises(ValueError, match="policy_id"):
+        load_checkpoint(path, require_promoted=True, **_expected_hashes())
 
 
 @pytest.mark.parametrize(
@@ -148,6 +177,63 @@ def test_load_rejects_nonfinite_parameters(tmp_path: Path) -> None:
         load_checkpoint(corrupt, **_expected_hashes())
 
 
+def test_load_rejects_raw_serialized_dtype_drift_before_cast(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    valid = tmp_path / "valid.pt"
+    save_checkpoint_atomic(valid, ensemble, _candidate(ensemble))
+    artifact = torch.load(valid, map_location="cpu", weights_only=True)
+    name = "members.0.input_layer.weight"
+    artifact["state_dict"][name] = artifact["state_dict"][name].to(torch.float64)
+    tampered = tmp_path / "dtype-drift.pt"
+    torch.save(artifact, tampered)
+
+    with pytest.raises(ValueError, match="dtype"):
+        load_checkpoint(tampered, **_expected_hashes())
+
+
+def test_load_rejects_raw_serialized_stride_drift_before_normalization(
+    tmp_path: Path,
+) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    valid = tmp_path / "valid.pt"
+    save_checkpoint_atomic(valid, ensemble, _candidate(ensemble))
+    artifact = torch.load(valid, map_location="cpu", weights_only=True)
+    name = "members.0.input_layer.weight"
+    original = artifact["state_dict"][name]
+    backing = torch.empty((original.shape[0], original.shape[1] * 2), dtype=original.dtype)
+    noncontiguous = backing[:, ::2]
+    noncontiguous.copy_(original)
+    assert noncontiguous.shape == original.shape
+    assert noncontiguous.stride() != original.stride()
+    artifact["state_dict"][name] = noncontiguous
+    tampered = tmp_path / "stride-drift.pt"
+    torch.save(artifact, tampered)
+
+    with pytest.raises(ValueError, match="stride"):
+        load_checkpoint(tampered, **_expected_hashes())
+
+
+def test_load_rejects_raw_serialized_storage_offset_drift(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    valid = tmp_path / "valid.pt"
+    save_checkpoint_atomic(valid, ensemble, _candidate(ensemble))
+    artifact = torch.load(valid, map_location="cpu", weights_only=True)
+    name = "members.0.input_layer.bias"
+    original = artifact["state_dict"][name]
+    backing = torch.empty(original.numel() + 1, dtype=original.dtype)
+    offset = backing[1:]
+    offset.copy_(original)
+    assert offset.shape == original.shape
+    assert offset.stride() == original.stride()
+    assert offset.storage_offset() != original.storage_offset()
+    artifact["state_dict"][name] = offset
+    tampered = tmp_path / "offset-drift.pt"
+    torch.save(artifact, tampered)
+
+    with pytest.raises(ValueError, match="storage offset"):
+        load_checkpoint(tampered, **_expected_hashes())
+
+
 def test_atomic_save_validates_temporary_artifact_before_replace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -164,6 +250,45 @@ def test_atomic_save_validates_temporary_artifact_before_replace(
         save_checkpoint_atomic(destination, ensemble, _candidate(ensemble))
 
     assert destination.read_bytes() == original
+    assert not list(tmp_path.glob(f".{destination.name}.*.tmp"))
+
+
+@pytest.mark.parametrize("destination_exists", [False, True])
+def test_atomic_save_rolls_back_post_replace_directory_fsync_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination_exists: bool,
+) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    destination = tmp_path / "checkpoint.pt"
+    old_bytes = b"exact prior checkpoint bytes"
+    if destination_exists:
+        destination.write_bytes(old_bytes)
+
+    calls = 0
+    fail_on_call = 2 if destination_exists else 1
+
+    def fail_once_after_replace(parent: Path) -> None:
+        nonlocal calls
+        assert parent == tmp_path
+        calls += 1
+        if calls == fail_on_call:
+            raise OSError("injected directory fsync failure")
+
+    monkeypatch.setattr(
+        checkpoint_module,
+        "_fsync_parent_directory",
+        fail_once_after_replace,
+        raising=False,
+    )
+
+    with pytest.raises(OSError, match="injected directory fsync failure"):
+        save_checkpoint_atomic(destination, ensemble, _candidate(ensemble))
+
+    assert destination.exists() is destination_exists
+    if destination_exists:
+        assert destination.read_bytes() == old_bytes
+    assert not (tmp_path / f".{destination.name}.rollback").exists()
     assert not list(tmp_path.glob(f".{destination.name}.*.tmp"))
 
 

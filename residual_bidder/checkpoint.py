@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import struct
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from residual_bidder.model import ENSEMBLE_MEMBERS, ResidualQEnsemble
 
 
 CHECKPOINT_SCHEMA = "residual-q-ensemble-v1"
+MODEL_ID_HASH_FORMAT = "sha256-framed-little-endian-v1"
 _META_FIELDS = {
     "schema",
     "status",
@@ -179,6 +181,25 @@ def _canonical_json(value: object) -> bytes:
     )
 
 
+def _hash_frame(digest: object, domain: bytes, payload: bytes) -> None:
+    """Add an explicitly separated and length-framed field to a content digest."""
+
+    if not isinstance(domain, bytes) or not isinstance(payload, bytes):
+        raise TypeError("hash frames require byte domains and payloads")
+    digest.update(struct.pack("<I", len(domain)))
+    digest.update(domain)
+    digest.update(struct.pack("<Q", len(payload)))
+    digest.update(payload)
+
+
+def _tensor_bytes_little_endian(tensor: torch.Tensor) -> bytes:
+    """Return canonical contiguous tensor bytes in documented little-endian order."""
+
+    array = tensor.detach().cpu().contiguous().numpy()
+    little_endian_dtype = array.dtype.newbyteorder("<")
+    return array.astype(little_endian_dtype, copy=False).tobytes(order="C")
+
+
 def _model_id(
     state_dict: Mapping[str, torch.Tensor], metadata: BidderCheckpointMeta
 ) -> str:
@@ -192,11 +213,17 @@ def _model_id(
         "dataset_manifest_sha256": metadata.dataset_manifest_sha256,
         "member_init_seeds": list(metadata.member_init_seeds),
     }
-    digest.update(_canonical_json(identity))
+    _hash_frame(digest, b"hash-format", MODEL_ID_HASH_FORMAT.encode("ascii"))
+    _hash_frame(digest, b"model-metadata", _canonical_json(identity))
     for name in sorted(state_dict):
-        tensor = state_dict[name].detach().cpu().contiguous()
-        digest.update(_canonical_json([name, str(tensor.dtype), list(tensor.shape)]))
-        digest.update(tensor.view(torch.uint8).numpy().tobytes())
+        tensor = state_dict[name]
+        shape = struct.pack("<Q", tensor.ndim) + b"".join(
+            struct.pack("<Q", dimension) for dimension in tensor.shape
+        )
+        _hash_frame(digest, b"tensor-name", name.encode("utf-8"))
+        _hash_frame(digest, b"tensor-dtype", f"{tensor.dtype}-little-endian".encode("ascii"))
+        _hash_frame(digest, b"tensor-shape", shape)
+        _hash_frame(digest, b"tensor-bytes", _tensor_bytes_little_endian(tensor))
     return digest.hexdigest()
 
 
@@ -298,15 +325,49 @@ def promote_meta(
 
 
 def _validate_identity(
-    ensemble: ResidualQEnsemble, metadata: BidderCheckpointMeta
+    state_dict: Mapping[str, torch.Tensor], metadata: BidderCheckpointMeta
 ) -> None:
-    state_dict = _state_dict_copy(ensemble)
     if metadata.model_id != _model_id(state_dict, metadata):
         raise ValueError("checkpoint model_id does not match its content")
     if metadata.status == "promoted":
         assert metadata.calibration is not None
         if metadata.policy_id != _policy_id(metadata, metadata.calibration):
             raise ValueError("checkpoint policy_id does not match its calibrated content")
+
+
+def _validate_raw_state_dict(
+    raw_state_dict: object, expected_state_dict: Mapping[str, torch.Tensor]
+) -> dict[str, torch.Tensor]:
+    """Validate serialized tensors exactly before any module load can normalize them."""
+
+    if not isinstance(raw_state_dict, dict) or any(
+        not isinstance(name, str) or not isinstance(tensor, torch.Tensor)
+        for name, tensor in raw_state_dict.items()
+    ):
+        raise ValueError("checkpoint state_dict must map strings only to tensors")
+    if set(raw_state_dict) != set(expected_state_dict):
+        raise ValueError("checkpoint state_dict member keys do not match the exact architecture")
+
+    validated: dict[str, torch.Tensor] = {}
+    for name in sorted(expected_state_dict):
+        tensor = raw_state_dict[name]
+        expected = expected_state_dict[name]
+        if tensor.shape != expected.shape:
+            raise ValueError(f"checkpoint tensor {name!r} has the wrong shape")
+        if tensor.dtype != expected.dtype:
+            raise ValueError(f"checkpoint tensor {name!r} has the wrong dtype")
+        if tensor.layout != torch.strided or tensor.layout != expected.layout:
+            raise ValueError(f"checkpoint tensor {name!r} has the wrong layout")
+        if tensor.device != expected.device or tensor.device.type != "cpu":
+            raise ValueError(f"checkpoint tensor {name!r} must be on CPU")
+        if tensor.stride() != expected.stride():
+            raise ValueError(f"checkpoint tensor {name!r} has the wrong stride")
+        if tensor.storage_offset() != expected.storage_offset():
+            raise ValueError(f"checkpoint tensor {name!r} has the wrong storage offset")
+        if not torch.is_floating_point(tensor) or not bool(torch.isfinite(tensor).all().item()):
+            raise ValueError(f"checkpoint tensor {name!r} must be finite floating point")
+        validated[name] = tensor
+    return validated
 
 
 def _load_and_validate_artifact(
@@ -339,25 +400,24 @@ def _load_and_validate_artifact(
     if require_promoted and metadata.status != "promoted":
         raise ValueError("a promoted checkpoint is required")
 
-    raw_state_dict = artifact["state_dict"]
-    if not isinstance(raw_state_dict, dict) or any(
-        not isinstance(name, str) or not isinstance(tensor, torch.Tensor)
-        for name, tensor in raw_state_dict.items()
-    ):
-        raise ValueError("checkpoint state_dict must map strings only to tensors")
-    if any(
-        not torch.is_floating_point(tensor) or not bool(torch.isfinite(tensor).all().item())
-        for tensor in raw_state_dict.values()
-    ):
-        raise ValueError("checkpoint parameters must be finite floating-point tensors")
-
     ensemble = ResidualQEnsemble(metadata.member_init_seeds)
+    raw_state_dict = _validate_raw_state_dict(
+        artifact["state_dict"], ensemble.state_dict()
+    )
+    _validate_identity(raw_state_dict, metadata)
     try:
         ensemble.load_state_dict(raw_state_dict, strict=True)
     except (RuntimeError, TypeError, ValueError) as error:
         raise ValueError(f"checkpoint model dimensions or member count are invalid: {error}") from error
-    _validate_identity(ensemble, metadata)
     return ensemble, metadata
+
+
+def _fsync_parent_directory(parent: Path) -> None:
+    directory_fd = os.open(parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def load_checkpoint(
@@ -390,13 +450,16 @@ def save_checkpoint_atomic(
     _validate_metadata_shape(metadata)
     if ensemble.member_init_seeds != metadata.member_init_seeds:
         raise ValueError("metadata member seeds do not match ensemble construction seeds")
-    _validate_identity(ensemble, metadata)
+    state_dict = _state_dict_copy(ensemble)
+    _validate_identity(state_dict, metadata)
     artifact = {
         "metadata": _metadata_dict(metadata),
-        "state_dict": _state_dict_copy(ensemble),
+        "state_dict": state_dict,
     }
 
     temporary_path: Path | None = None
+    rollback_path = path.with_name(f".{path.name}.rollback")
+    rollback_created = False
     try:
         with tempfile.NamedTemporaryFile(
             mode="w+b",
@@ -424,16 +487,42 @@ def save_checkpoint_atomic(
             if not torch.equal(validated_ensemble.state_dict()[name], tensor):
                 raise ValueError("temporary checkpoint tensor changed during validation")
 
-        os.replace(temporary_path, path)
-        temporary_path = None
-        directory_fd = os.open(path.parent, os.O_RDONLY)
+        destination_existed = path.exists()
+        if rollback_path.exists():
+            raise ValueError(f"checkpoint rollback path already exists: {rollback_path}")
+        if destination_existed:
+            os.link(path, rollback_path, follow_symlinks=False)
+            rollback_created = True
+            _fsync_parent_directory(path.parent)
+
         try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+            os.replace(temporary_path, path)
+            temporary_path = None
+            try:
+                _fsync_parent_directory(path.parent)
+            except BaseException:
+                if rollback_created:
+                    os.replace(rollback_path, path)
+                    rollback_created = False
+                else:
+                    path.unlink(missing_ok=True)
+                _fsync_parent_directory(path.parent)
+                raise
+        except BaseException:
+            if rollback_created:
+                rollback_path.unlink(missing_ok=True)
+                rollback_created = False
+            raise
+
+        # Successful directory fsync is the publication commit point.
+        if rollback_created:
+            rollback_path.unlink()
+            rollback_created = False
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+        if rollback_created:
+            rollback_path.unlink(missing_ok=True)
 
 
 # Concise aliases for callers that use generic checkpoint terminology.

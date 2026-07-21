@@ -189,9 +189,9 @@ def masked_mse_loss(
     if not isinstance(targets, torch.Tensor) or targets.shape != predictions.shape:
         raise ValueError("targets must be a tensor with the predictions shape")
     _validate_alternative_mask(predictions, alternative_mask)
-    selected = (predictions - targets).square().masked_select(
-        alternative_mask.to(dtype=torch.bool)
-    )
-    if selected.numel() == 0:
+    legal = alternative_mask.to(dtype=torch.bool)
+    selected_predictions = predictions.masked_select(legal)
+    selected_targets = targets.masked_select(legal)
+    if selected_predictions.numel() == 0:
         raise ValueError("at least one alternative must be legal")
-    return selected.mean()
+    return (selected_predictions - selected_targets).square().mean()

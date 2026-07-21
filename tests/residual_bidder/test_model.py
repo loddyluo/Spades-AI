@@ -198,3 +198,19 @@ def test_lower_and_upper_slots_are_masked_without_remapping() -> None:
     assert masked_mse_loss(values, torch.zeros_like(values), masks) == pytest.approx(
         (11.0**2 + 13.0**2) / 2
     )
+
+
+def test_masked_mse_never_evaluates_nonfinite_missing_elements() -> None:
+    predictions = torch.tensor(
+        [[2.0, float("nan")], [float("inf"), 3.0]], requires_grad=True
+    )
+    targets = torch.tensor([[1.0, float("inf")], [float("nan"), 1.0]])
+    masks = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+
+    loss = masked_mse_loss(predictions, targets, masks)
+    loss.backward()
+
+    assert loss.item() == pytest.approx(2.5)
+    assert predictions.grad is not None
+    assert torch.equal(predictions.grad, torch.tensor([[1.0, 0.0], [0.0, 2.0]]))
+    assert bool(torch.isfinite(predictions.grad).all().item())
