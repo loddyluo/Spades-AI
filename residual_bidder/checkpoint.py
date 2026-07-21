@@ -7,7 +7,6 @@ import json
 import math
 import os
 import struct
-import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +19,7 @@ from residual_bidder.model import ENSEMBLE_MEMBERS, ResidualQEnsemble
 
 CHECKPOINT_SCHEMA = "residual-q-ensemble-v1"
 MODEL_ID_HASH_FORMAT = "sha256-framed-little-endian-v1"
+TRANSACTION_SCHEMA = "residual-checkpoint-transaction-v1"
 _META_FIELDS = {
     "schema",
     "status",
@@ -39,6 +39,15 @@ _HASH_FIELDS = (
     "config_sha256",
     "dataset_manifest_sha256",
 )
+_TRANSACTION_FIELDS = {
+    "schema",
+    "destination_name",
+    "prior",
+    "checkpoint_sha256",
+    "model_id",
+    "status",
+    *_HASH_FIELDS,
+}
 
 
 @dataclass(frozen=True)
@@ -62,6 +71,33 @@ class BidderCheckpointMeta:
     dataset_manifest_sha256: str
     member_init_seeds: tuple[int, int, int, int, int]
     calibration: CalibrationTuple | None
+
+
+class CheckpointCommittedCleanupError(RuntimeError):
+    """The new checkpoint is committed, but transaction cleanup needs recovery."""
+
+
+@dataclass(frozen=True)
+class _TransactionPaths:
+    destination: Path
+    backup: Path
+    absent: Path
+    committing: Path
+    committed: Path
+    restore: Path
+    candidate: Path
+
+    @classmethod
+    def for_destination(cls, destination: Path) -> _TransactionPaths:
+        return cls(
+            destination=destination,
+            backup=destination.with_name(f".{destination.name}.rollback"),
+            absent=destination.with_name(f".{destination.name}.absent"),
+            committing=destination.with_name(f".{destination.name}.committing"),
+            committed=destination.with_name(f".{destination.name}.committed"),
+            restore=destination.with_name(f".{destination.name}.restore"),
+            candidate=destination.with_name(f".{destination.name}.candidate"),
+        )
 
 
 def _is_sha256(value: object) -> bool:
@@ -420,6 +456,217 @@ def _fsync_parent_directory(parent: Path) -> None:
         os.close(directory_fd)
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _transaction_payload(
+    destination: Path,
+    metadata: BidderCheckpointMeta,
+    checkpoint_sha256: str,
+    prior: Literal["existing", "absent"],
+) -> dict[str, object]:
+    return {
+        "schema": TRANSACTION_SCHEMA,
+        "destination_name": destination.name,
+        "prior": prior,
+        "checkpoint_sha256": checkpoint_sha256,
+        "model_id": metadata.model_id,
+        "status": metadata.status,
+        "nsfp_sha256": metadata.nsfp_sha256,
+        "play_pipeline_sha256": metadata.play_pipeline_sha256,
+        "config_sha256": metadata.config_sha256,
+        "dataset_manifest_sha256": metadata.dataset_manifest_sha256,
+    }
+
+
+def _write_fsynced_json(path: Path, payload: Mapping[str, object]) -> None:
+    encoded = _canonical_json(dict(payload)) + b"\n"
+    with path.open("xb") as handle:
+        handle.write(encoded)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _publish_transaction_marker(
+    paths: _TransactionPaths,
+    target: Path,
+    payload: Mapping[str, object],
+) -> None:
+    if paths.committing.exists() or target.exists():
+        raise ValueError("checkpoint transaction marker path already exists")
+    _write_fsynced_json(paths.committing, payload)
+    os.replace(paths.committing, target)
+    _fsync_parent_directory(paths.destination.parent)
+
+
+def _read_transaction_marker(path: Path, destination: Path) -> dict[str, object]:
+    try:
+        raw = json.loads(path.read_text(encoding="ascii"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"checkpoint transaction marker is corrupt: {path}") from error
+    if not isinstance(raw, dict) or set(raw) != _TRANSACTION_FIELDS:
+        raise ValueError("checkpoint transaction marker fields are contradictory")
+    if raw["schema"] != TRANSACTION_SCHEMA or raw["destination_name"] != destination.name:
+        raise ValueError("checkpoint transaction marker identity is contradictory")
+    if raw["prior"] not in ("existing", "absent"):
+        raise ValueError("checkpoint transaction prior state is contradictory")
+    if raw["status"] not in ("candidate", "promoted"):
+        raise ValueError("checkpoint transaction status is contradictory")
+    for field in ("checkpoint_sha256", "model_id", *_HASH_FIELDS):
+        if not _is_sha256(raw[field]):
+            raise ValueError(f"checkpoint transaction {field} is invalid")
+    return raw
+
+
+def _validate_committed_destination(
+    paths: _TransactionPaths, marker: Mapping[str, object]
+) -> None:
+    if not paths.destination.is_file():
+        raise ValueError("checkpoint transaction committed destination is missing")
+    if _sha256_file(paths.destination) != marker["checkpoint_sha256"]:
+        raise ValueError("checkpoint transaction committed destination hash changed")
+    try:
+        _, metadata = _load_and_validate_artifact(
+            paths.destination,
+            expected_nsfp_sha256=marker["nsfp_sha256"],
+            expected_play_pipeline_sha256=marker["play_pipeline_sha256"],
+            expected_config_sha256=marker["config_sha256"],
+            expected_dataset_manifest_sha256=marker["dataset_manifest_sha256"],
+            require_promoted=marker["status"] == "promoted",
+        )
+    except (OSError, ValueError) as error:
+        raise ValueError("checkpoint transaction committed destination is invalid") from error
+    if metadata.model_id != marker["model_id"] or metadata.status != marker["status"]:
+        raise ValueError("checkpoint transaction committed metadata changed")
+
+
+def _finish_committed_transaction(
+    paths: _TransactionPaths, marker: Mapping[str, object]
+) -> None:
+    """Validate a durable commit and idempotently remove its exact debris."""
+
+    _validate_committed_destination(paths, marker)
+    prior = marker["prior"]
+    if paths.backup.exists() and paths.absent.exists():
+        raise ValueError("checkpoint transaction has contradictory prior evidence")
+    if prior == "existing" and paths.absent.exists():
+        raise ValueError("checkpoint transaction committed prior evidence is contradictory")
+    if prior == "absent" and paths.backup.exists():
+        raise ValueError("checkpoint transaction committed prior evidence is contradictory")
+    if prior == "absent" and paths.absent.exists():
+        absence_marker = _read_transaction_marker(paths.absent, paths.destination)
+        if absence_marker != dict(marker):
+            raise ValueError("checkpoint transaction committed markers do not match")
+    if paths.restore.exists() or paths.committing.exists() or paths.candidate.exists():
+        raise ValueError("checkpoint transaction has contradictory committed debris")
+
+    try:
+        evidence = paths.backup if prior == "existing" else paths.absent
+        evidence.unlink(missing_ok=True)
+        _fsync_parent_directory(paths.destination.parent)
+        paths.committed.unlink(missing_ok=True)
+        _fsync_parent_directory(paths.destination.parent)
+    except OSError as error:
+        raise CheckpointCommittedCleanupError(
+            "checkpoint is durably committed; transaction cleanup remains recoverable"
+        ) from error
+
+
+def _restore_existing_destination(paths: _TransactionPaths) -> None:
+    """Restore through a second link, retaining the only old backup until fsync."""
+
+    if paths.restore.exists():
+        try:
+            same_backup = os.path.samefile(paths.backup, paths.restore)
+        except OSError as error:
+            raise ValueError("checkpoint transaction restore evidence is invalid") from error
+        if not same_backup:
+            raise ValueError("checkpoint transaction restore link contradicts its backup")
+    else:
+        os.link(paths.backup, paths.restore, follow_symlinks=False)
+    os.replace(paths.restore, paths.destination)
+    _fsync_parent_directory(paths.destination.parent)
+
+    for debris in (paths.restore, paths.candidate, paths.committing):
+        debris.unlink(missing_ok=True)
+    _fsync_parent_directory(paths.destination.parent)
+    paths.backup.unlink()
+    _fsync_parent_directory(paths.destination.parent)
+
+
+def _restore_absent_destination(paths: _TransactionPaths) -> None:
+    paths.destination.unlink(missing_ok=True)
+    _fsync_parent_directory(paths.destination.parent)
+
+    for debris in (paths.candidate, paths.committing):
+        debris.unlink(missing_ok=True)
+    _fsync_parent_directory(paths.destination.parent)
+    paths.absent.unlink()
+    _fsync_parent_directory(paths.destination.parent)
+
+
+def _recover_checkpoint_transaction(destination: Path) -> None:
+    """Recover one exact checkpoint transaction state, or fail closed unchanged."""
+
+    paths = _TransactionPaths.for_destination(Path(destination))
+    backup_exists = paths.backup.exists()
+    absent_exists = paths.absent.exists()
+    committed_exists = paths.committed.exists()
+    committing_exists = paths.committing.exists()
+    restore_exists = paths.restore.exists()
+
+    if backup_exists and absent_exists:
+        raise ValueError("checkpoint transaction has contradictory prior markers")
+    if restore_exists and not backup_exists:
+        raise ValueError("checkpoint transaction restore exists without its old backup")
+    if committed_exists and committing_exists:
+        raise ValueError("checkpoint transaction has contradictory commit markers")
+
+    committing_marker: dict[str, object] | None = None
+    if committing_exists:
+        committing_marker = _read_transaction_marker(paths.committing, paths.destination)
+        if backup_exists and committing_marker["prior"] != "existing":
+            raise ValueError("checkpoint transaction committing prior is contradictory")
+        if absent_exists:
+            absence_marker = _read_transaction_marker(paths.absent, paths.destination)
+            if committing_marker["prior"] != "absent" or committing_marker != absence_marker:
+                raise ValueError("checkpoint transaction in-progress markers do not match")
+
+    if committed_exists:
+        marker = _read_transaction_marker(paths.committed, paths.destination)
+        _finish_committed_transaction(paths, marker)
+        return
+
+    if backup_exists:
+        _restore_existing_destination(paths)
+        return
+
+    if absent_exists:
+        marker = _read_transaction_marker(paths.absent, paths.destination)
+        if marker["prior"] != "absent":
+            raise ValueError("checkpoint transaction absence marker is contradictory")
+        _restore_absent_destination(paths)
+        return
+
+    if restore_exists:
+        raise ValueError("checkpoint transaction has orphaned restore evidence")
+    if committing_exists:
+        if paths.destination.exists():
+            raise ValueError("checkpoint transaction has orphaned committing marker")
+        paths.committing.unlink()
+        paths.candidate.unlink(missing_ok=True)
+        _fsync_parent_directory(paths.destination.parent)
+        return
+    if paths.candidate.exists():
+        paths.candidate.unlink()
+        _fsync_parent_directory(paths.destination.parent)
+
+
 def load_checkpoint(
     path: Path,
     *,
@@ -447,6 +694,8 @@ def save_checkpoint_atomic(
     """Write, fsync, safely reopen, validate, and atomically publish a checkpoint."""
 
     path = Path(path)
+    paths = _TransactionPaths.for_destination(path)
+    _recover_checkpoint_transaction(path)
     _validate_metadata_shape(metadata)
     if ensemble.member_init_seeds != metadata.member_init_seeds:
         raise ValueError("metadata member seeds do not match ensemble construction seeds")
@@ -457,24 +706,29 @@ def save_checkpoint_atomic(
         "state_dict": state_dict,
     }
 
-    temporary_path: Path | None = None
-    rollback_path = path.with_name(f".{path.name}.rollback")
-    rollback_created = False
+    if any(
+        artifact_path.exists()
+        for artifact_path in (
+            paths.backup,
+            paths.absent,
+            paths.committing,
+            paths.committed,
+            paths.restore,
+            paths.candidate,
+        )
+    ):
+        raise ValueError("checkpoint transaction recovery left unresolved evidence")
+
+    publication_started = False
+    committed_marker_visible = False
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w+b",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temporary_path = Path(handle.name)
+        with paths.candidate.open("xb") as handle:
             torch.save(artifact, handle)
             handle.flush()
             os.fsync(handle.fileno())
 
         validated_ensemble, validated_metadata = _load_and_validate_artifact(
-            temporary_path,
+            paths.candidate,
             expected_nsfp_sha256=metadata.nsfp_sha256,
             expected_play_pipeline_sha256=metadata.play_pipeline_sha256,
             expected_config_sha256=metadata.config_sha256,
@@ -488,41 +742,40 @@ def save_checkpoint_atomic(
                 raise ValueError("temporary checkpoint tensor changed during validation")
 
         destination_existed = path.exists()
-        if rollback_path.exists():
-            raise ValueError(f"checkpoint rollback path already exists: {rollback_path}")
+        checkpoint_sha256 = _sha256_file(paths.candidate)
+        payload = _transaction_payload(
+            path,
+            metadata,
+            checkpoint_sha256,
+            "existing" if destination_existed else "absent",
+        )
         if destination_existed:
-            os.link(path, rollback_path, follow_symlinks=False)
-            rollback_created = True
+            os.link(path, paths.backup, follow_symlinks=False)
             _fsync_parent_directory(path.parent)
+        else:
+            _publish_transaction_marker(paths, paths.absent, payload)
+        publication_started = True
 
-        try:
-            os.replace(temporary_path, path)
-            temporary_path = None
-            try:
-                _fsync_parent_directory(path.parent)
-            except BaseException:
-                if rollback_created:
-                    os.replace(rollback_path, path)
-                    rollback_created = False
-                else:
-                    path.unlink(missing_ok=True)
-                _fsync_parent_directory(path.parent)
+        os.replace(paths.candidate, path)
+        _fsync_parent_directory(path.parent)
+        _publish_transaction_marker(paths, paths.committed, payload)
+        committed_marker_visible = True
+        _finish_committed_transaction(paths, payload)
+    except BaseException as error:
+        if committed_marker_visible or paths.committed.exists():
+            if isinstance(error, CheckpointCommittedCleanupError):
                 raise
-        except BaseException:
-            if rollback_created:
-                rollback_path.unlink(missing_ok=True)
-                rollback_created = False
-            raise
-
-        # Successful directory fsync is the publication commit point.
-        if rollback_created:
-            rollback_path.unlink()
-            rollback_created = False
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-        if rollback_created:
-            rollback_path.unlink(missing_ok=True)
+            raise CheckpointCommittedCleanupError(
+                "checkpoint commit is visible; cleanup must resume on the next save"
+            ) from error
+        if publication_started:
+            try:
+                _recover_checkpoint_transaction(path)
+            except BaseException as recovery_error:
+                raise recovery_error from error
+        elif paths.candidate.exists():
+            paths.candidate.unlink()
+        raise
 
 
 # Concise aliases for callers that use generic checkpoint terminology.

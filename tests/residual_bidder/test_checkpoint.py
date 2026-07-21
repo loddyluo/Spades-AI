@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -34,6 +36,41 @@ def _candidate(ensemble: ResidualQEnsemble) -> BidderCheckpointMeta:
 
 def _expected_hashes() -> dict[str, str]:
     return {f"expected_{name}": value for name, value in HASHES.items()}
+
+
+def _transaction_paths(destination: Path) -> dict[str, Path]:
+    return {
+        "backup": destination.with_name(f".{destination.name}.rollback"),
+        "absent": destination.with_name(f".{destination.name}.absent"),
+        "committing": destination.with_name(f".{destination.name}.committing"),
+        "committed": destination.with_name(f".{destination.name}.committed"),
+        "restore": destination.with_name(f".{destination.name}.restore"),
+        "candidate": destination.with_name(f".{destination.name}.candidate"),
+    }
+
+
+def _transaction_payload(
+    destination: Path,
+    metadata: BidderCheckpointMeta,
+    *,
+    prior: str,
+) -> dict[str, object]:
+    return {
+        "schema": "residual-checkpoint-transaction-v1",
+        "destination_name": destination.name,
+        "prior": prior,
+        "checkpoint_sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
+        "model_id": metadata.model_id,
+        "status": metadata.status,
+        **HASHES,
+    }
+
+
+def _write_marker(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="ascii",
+    )
 
 
 def test_candidate_round_trip_preserves_all_members_and_metadata(tmp_path: Path) -> None:
@@ -266,7 +303,8 @@ def test_atomic_save_rolls_back_post_replace_directory_fsync_failure(
         destination.write_bytes(old_bytes)
 
     calls = 0
-    fail_on_call = 2 if destination_exists else 1
+    # Both protocols durably record prior state first, then fsync the replacement.
+    fail_on_call = 2
 
     def fail_once_after_replace(parent: Path) -> None:
         nonlocal calls
@@ -290,6 +328,234 @@ def test_atomic_save_rolls_back_post_replace_directory_fsync_failure(
         assert destination.read_bytes() == old_bytes
     assert not (tmp_path / f".{destination.name}.rollback").exists()
     assert not list(tmp_path.glob(f".{destination.name}.*.tmp"))
+
+
+def test_stale_uncommitted_backup_restores_exact_old_destination(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    destination = tmp_path / "checkpoint.pt"
+    save_checkpoint_atomic(destination, ensemble, _candidate(ensemble))
+    paths = _transaction_paths(destination)
+    old_bytes = b"exact old checkpoint bytes"
+    paths["backup"].write_bytes(old_bytes)
+
+    checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert destination.read_bytes() == old_bytes
+    assert not any(path.exists() for path in paths.values())
+
+
+def test_stale_uncommitted_absence_marker_restores_absence(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    destination = tmp_path / "checkpoint.pt"
+    metadata = _candidate(ensemble)
+    save_checkpoint_atomic(destination, ensemble, metadata)
+    paths = _transaction_paths(destination)
+    _write_marker(paths["absent"], _transaction_payload(destination, metadata, prior="absent"))
+
+    checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert not destination.exists()
+    assert not any(path.exists() for path in paths.values())
+
+
+@pytest.mark.parametrize("prior", ["existing", "absent"])
+def test_stale_committed_transaction_keeps_valid_new_destination(
+    tmp_path: Path, prior: str
+) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    destination = tmp_path / "checkpoint.pt"
+    metadata = _candidate(ensemble)
+    save_checkpoint_atomic(destination, ensemble, metadata)
+    expected_new = destination.read_bytes()
+    paths = _transaction_paths(destination)
+    payload = _transaction_payload(destination, metadata, prior=prior)
+    if prior == "existing":
+        paths["backup"].write_bytes(b"old checkpoint")
+    else:
+        _write_marker(paths["absent"], payload)
+    _write_marker(paths["committed"], payload)
+
+    checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert destination.read_bytes() == expected_new
+    assert not any(path.exists() for path in paths.values())
+
+
+@pytest.mark.parametrize("failure", ["link", "replace"])
+def test_restore_link_or_replace_failure_never_consumes_only_old_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    destination = tmp_path / "checkpoint.pt"
+    destination.write_bytes(b"new checkpoint")
+    paths = _transaction_paths(destination)
+    old_bytes = b"only durable old checkpoint"
+    paths["backup"].write_bytes(old_bytes)
+    original_link = checkpoint_module.os.link
+    original_replace = checkpoint_module.os.replace
+
+    def maybe_fail_link(source: Path, target: Path, **kwargs: object) -> None:
+        if failure == "link" and Path(source) == paths["backup"]:
+            raise OSError("injected restore link failure")
+        original_link(source, target, **kwargs)
+
+    def maybe_fail_replace(source: Path, target: Path) -> None:
+        if failure == "replace" and Path(source) == paths["restore"]:
+            raise OSError("injected restore replace failure")
+        original_replace(source, target)
+
+    monkeypatch.setattr(checkpoint_module.os, "link", maybe_fail_link)
+    monkeypatch.setattr(checkpoint_module.os, "replace", maybe_fail_replace)
+
+    with pytest.raises(OSError, match=f"restore {failure} failure"):
+        checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert paths["backup"].read_bytes() == old_bytes
+    if paths["restore"].exists():
+        assert paths["restore"].read_bytes() == old_bytes
+
+
+@pytest.mark.parametrize("prior", ["existing", "absent"])
+def test_recovery_fsync_failure_leaves_idempotent_prior_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prior: str,
+) -> None:
+    destination = tmp_path / "checkpoint.pt"
+    destination.write_bytes(b"new checkpoint")
+    paths = _transaction_paths(destination)
+    old_bytes = b"old checkpoint"
+    if prior == "existing":
+        paths["backup"].write_bytes(old_bytes)
+    else:
+        _write_marker(
+            paths["absent"],
+            {
+                "schema": "residual-checkpoint-transaction-v1",
+                "destination_name": destination.name,
+                "prior": "absent",
+                "checkpoint_sha256": "0" * 64,
+                "model_id": "0" * 64,
+                "status": "candidate",
+                **HASHES,
+            },
+        )
+    original_fsync = checkpoint_module._fsync_parent_directory
+    calls = 0
+
+    def fail_once(parent: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("injected recovery fsync failure")
+        original_fsync(parent)
+
+    monkeypatch.setattr(checkpoint_module, "_fsync_parent_directory", fail_once)
+    with pytest.raises(OSError, match="recovery fsync failure"):
+        checkpoint_module._recover_checkpoint_transaction(destination)
+
+    evidence = paths["backup"] if prior == "existing" else paths["absent"]
+    assert evidence.exists()
+
+    monkeypatch.setattr(checkpoint_module, "_fsync_parent_directory", original_fsync)
+    checkpoint_module._recover_checkpoint_transaction(destination)
+    assert destination.exists() is (prior == "existing")
+    if prior == "existing":
+        assert destination.read_bytes() == old_bytes
+    assert not any(path.exists() for path in paths.values())
+
+
+def test_committed_cleanup_is_directory_fsynced_and_resumable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    destination = tmp_path / "checkpoint.pt"
+    metadata = _candidate(ensemble)
+    save_checkpoint_atomic(destination, ensemble, metadata)
+    paths = _transaction_paths(destination)
+    payload = _transaction_payload(destination, metadata, prior="existing")
+    paths["backup"].write_bytes(b"old checkpoint")
+    _write_marker(paths["committed"], payload)
+    original_fsync = checkpoint_module._fsync_parent_directory
+    calls = 0
+
+    def fail_second_cleanup_fsync(parent: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected final cleanup fsync failure")
+        original_fsync(parent)
+
+    monkeypatch.setattr(
+        checkpoint_module, "_fsync_parent_directory", fail_second_cleanup_fsync
+    )
+    with pytest.raises(
+        checkpoint_module.CheckpointCommittedCleanupError,
+        match="committed",
+    ):
+        checkpoint_module._recover_checkpoint_transaction(destination)
+    assert calls == 2
+
+    monkeypatch.setattr(checkpoint_module, "_fsync_parent_directory", original_fsync)
+    checkpoint_module._recover_checkpoint_transaction(destination)
+    assert destination.exists()
+    assert not any(path.exists() for path in paths.values())
+
+
+@pytest.mark.parametrize("corruption", ["both-priors", "corrupt-commit"])
+def test_contradictory_or_corrupt_transaction_markers_fail_closed(
+    tmp_path: Path, corruption: str
+) -> None:
+    destination = tmp_path / "checkpoint.pt"
+    destination.write_bytes(b"new checkpoint")
+    paths = _transaction_paths(destination)
+    paths["backup"].write_bytes(b"old checkpoint")
+    if corruption == "both-priors":
+        paths["absent"].write_text("{}\n", encoding="ascii")
+    else:
+        paths["committed"].write_text("not-json\n", encoding="ascii")
+    before = {name: path.read_bytes() for name, path in paths.items() if path.exists()}
+
+    with pytest.raises(ValueError, match="transaction"):
+        checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert destination.read_bytes() == b"new checkpoint"
+    assert {name: path.read_bytes() for name, path in paths.items() if path.exists()} == before
+
+
+def test_mismatched_absence_and_committed_markers_fail_closed(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    destination = tmp_path / "checkpoint.pt"
+    metadata = _candidate(ensemble)
+    save_checkpoint_atomic(destination, ensemble, metadata)
+    paths = _transaction_paths(destination)
+    committed = _transaction_payload(destination, metadata, prior="absent")
+    absence = dict(committed)
+    absence["model_id"] = "f" * 64
+    _write_marker(paths["absent"], absence)
+    _write_marker(paths["committed"], committed)
+    before = {name: path.read_bytes() for name, path in paths.items() if path.exists()}
+
+    with pytest.raises(ValueError, match="transaction"):
+        checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert {name: path.read_bytes() for name, path in paths.items() if path.exists()} == before
+
+
+def test_corrupt_in_progress_commit_marker_fails_closed(tmp_path: Path) -> None:
+    destination = tmp_path / "checkpoint.pt"
+    destination.write_bytes(b"new checkpoint")
+    paths = _transaction_paths(destination)
+    paths["backup"].write_bytes(b"old checkpoint")
+    paths["committing"].write_text("partial-json", encoding="ascii")
+    before = {name: path.read_bytes() for name, path in paths.items() if path.exists()}
+
+    with pytest.raises(ValueError, match="transaction"):
+        checkpoint_module._recover_checkpoint_transaction(destination)
+
+    assert destination.read_bytes() == b"new checkpoint"
+    assert {name: path.read_bytes() for name, path in paths.items() if path.exists()} == before
 
 
 def test_checkpoint_artifact_contains_only_safe_primitive_metadata_and_tensors(tmp_path: Path) -> None:
