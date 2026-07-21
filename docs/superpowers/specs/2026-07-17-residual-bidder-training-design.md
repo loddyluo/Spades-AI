@@ -1,5 +1,9 @@
 # Residual Bidder Training Design
 
+> Superseded on 2026-07-21 by
+> [Stochastic Hybrid Residual Bidder Training Design](2026-07-21-stochastic-hybrid-residual-bidder-design.md).
+> Do not use this document as the current specification.
+
 Date: 2026-07-17
 
 ## 1. Objective

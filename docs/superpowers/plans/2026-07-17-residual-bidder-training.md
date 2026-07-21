@@ -1,5 +1,10 @@
 # Residual Bidder Training Implementation Plan
 
+> Superseded before implementation by
+> [Stochastic Hybrid Residual Bidder Training Design](../specs/2026-07-21-stochastic-hybrid-residual-bidder-design.md).
+> Do not execute this plan. A replacement implementation plan will be written
+> after the new specification is reviewed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在完全冻结当前出牌流程与残局 belief bidder 的前提下，实现并训练一个由 `bid_nsfp.pt` 定位、最多修正 ±1、以 duplicate/team-match 分差为目标的五成员 residual-Q acting bidder。
