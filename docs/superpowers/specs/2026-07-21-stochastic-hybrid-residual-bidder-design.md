@@ -1,5 +1,12 @@
 # Stochastic Hybrid Residual Bidder Training Design
 
+> **Superseded for implementation.** This production-scale design is retained
+> only as historical context. It must not drive further work. The active scope
+> is the minimal experimental loop in
+> `docs/superpowers/plans/2026-07-21-stochastic-hybrid-residual-bidder-minimal.md`.
+> In particular, the old belief bidder remains frozen; Sections 12--21 are not
+> authorized for the first experiment.
+
 Date: 2026-07-21
 
 Status: approved in the design discussion and awaiting written-spec review.

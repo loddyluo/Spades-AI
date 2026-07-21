@@ -1,5 +1,11 @@
 # Stochastic Hybrid Residual Bidder Implementation Plan
 
+> **SUPERSEDED. DO NOT EXECUTE TASKS 5--15.** This plan over-scoped a research
+> experiment into production infrastructure and, in Task 5, contradicted the
+> approved boundary that the legacy endgame belief bidder stays frozen. The
+> active replacement is
+> `docs/superpowers/plans/2026-07-21-stochastic-hybrid-residual-bidder-minimal.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build, train, evaluate, and optionally deploy one reproducibly stochastic bidder whose local Q values are learned from four-trick-plus-DDS counterfactuals and whose final quality is decided by duplicate matches using the unchanged deployed card-play pipeline.
