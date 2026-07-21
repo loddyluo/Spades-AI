@@ -42,3 +42,6 @@ id_rsa
 id_ed25519
 *.p12
 .env
+
+# Local isolated Git worktrees used for development tasks.
+.worktrees/
