@@ -56,9 +56,10 @@ def test_local_bid_conversion_round_trips_canonical_actions(action: BidAction) -
     assert from_local_bid(expected) is action
 
 
-def test_local_bid_aliases_collapse_to_their_canonical_actions() -> None:
-    assert from_local_bid("blind_nil") is BidAction.NIL
-    assert from_local_bid("bid_0") is BidAction.BID_1
+@pytest.mark.parametrize("raw_alias", ["blind_nil", "bid_0"])
+def test_raw_output_aliases_are_not_deployable_action_strings(raw_alias: str) -> None:
+    with pytest.raises(ValueError):
+        from_local_bid(raw_alias)
 
 
 @pytest.mark.parametrize(

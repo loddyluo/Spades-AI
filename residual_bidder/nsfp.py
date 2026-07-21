@@ -110,8 +110,7 @@ class FrozenNSFP:
         _validate_float_tensor(encoded, (149,), "encoded_149")
         return encoded.cpu()
 
-    def observe(self, state: GameState) -> NSFPObservation:
-        encoded = self._encode(state)
+    def _observe_encoded(self, encoded: torch.Tensor) -> NSFPObservation:
         with torch.inference_mode():
             raw = self.model(encoded.unsqueeze(0).to(self.device))
         _validate_float_tensor(raw, (1, 16), "model output")
@@ -124,27 +123,10 @@ class FrozenNSFP:
             center=choose_center(scores),
         )
 
+    def observe(self, state: GameState) -> NSFPObservation:
+        return self._observe_encoded(self._encode(state))
+
     def observe_batch(self, states: Sequence[GameState]) -> list[NSFPObservation]:
         if not isinstance(states, Sequence):
             raise TypeError("states must be a sequence")
-        if not states:
-            return []
-        encoded_rows = [self._encode(state) for state in states]
-        encoded_batch = torch.stack(encoded_rows, dim=0)
-        with torch.inference_mode():
-            raw_batch = self.model(encoded_batch.to(self.device))
-        _validate_float_tensor(raw_batch, (len(states), 16), "model batch output")
-        raw_cpu = raw_batch.cpu()
-
-        observations: list[NSFPObservation] = []
-        for encoded, raw_logits in zip(encoded_rows, raw_cpu, strict=True):
-            scores = legal_scores_14(raw_logits)
-            observations.append(
-                NSFPObservation(
-                    encoded_149=encoded,
-                    raw_logits_16=raw_logits,
-                    legal_scores_14=scores,
-                    center=choose_center(scores),
-                )
-            )
-        return observations
+        return [self._observe_encoded(self._encode(state)) for state in states]

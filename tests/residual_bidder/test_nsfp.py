@@ -108,8 +108,8 @@ def test_observe_batch_matches_individual_observations(frozen: FrozenNSFP) -> No
     assert len(batched) == len(states)
     for actual, expected in zip(batched, individual, strict=True):
         assert torch.equal(actual.encoded_149, expected.encoded_149)
-        torch.testing.assert_close(actual.raw_logits_16, expected.raw_logits_16)
-        torch.testing.assert_close(actual.legal_scores_14, expected.legal_scores_14)
+        assert torch.equal(actual.raw_logits_16, expected.raw_logits_16)
+        assert torch.equal(actual.legal_scores_14, expected.legal_scores_14)
         assert actual.center is expected.center
     assert frozen.observe_batch([]) == []
 

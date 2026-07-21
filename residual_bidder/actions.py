@@ -87,14 +87,12 @@ def to_local_bid(action: BidAction) -> str:
 
 
 def from_local_bid(value: str) -> BidAction:
-    """Normalize local Nil, Blind Nil, normal-zero, and bid spellings."""
+    """Convert a formal deployable local bid string to a canonical action."""
 
     if not isinstance(value, str):
         raise TypeError("value must be a string")
-    if value in {"nil", "blind_nil"}:
+    if value == "nil":
         return BidAction.NIL
-    if value == "bid_0":
-        return BidAction.BID_1
     canonical_bids = {f"bid_{int(action)}": action for action in list(BidAction)[1:]}
     if value in canonical_bids:
         return canonical_bids[value]
