@@ -10,8 +10,13 @@ from typing import Protocol, runtime_checkable
 import torch
 
 from residual_bidder.actions import BidAction, neighborhood, to_local_bid
-from residual_bidder.checkpoint import CalibrationTuple
-from residual_bidder.model import ENSEMBLE_MEMBERS, build_residual_input
+from residual_bidder.checkpoint import (
+    BidderCheckpointMeta,
+    CalibrationTuple,
+    build_candidate_meta,
+    promote_meta,
+)
+from residual_bidder.model import ENSEMBLE_MEMBERS, ResidualQEnsemble, build_residual_input
 from residual_bidder.nsfp import FrozenNSFP, NSFPObservation
 from residual_bidder.random_tape import BidSamplingKey, policy_uniform
 from trick_taking.game_state import GameState
@@ -86,8 +91,15 @@ def geometric_tail(center: BidAction, rho: float) -> torch.Tensor:
         raise TypeError("center must be a BidAction")
     if type(rho) not in (int, float) or not math.isfinite(float(rho)) or not 0 < rho <= 1:
         raise ValueError("rho must be finite and in (0, 1]")
-    indices = torch.arange(ACTION_COUNT, dtype=torch.float64)
-    weights = torch.pow(float(rho), torch.abs(indices - int(center)))
+    distances = torch.abs(
+        torch.arange(ACTION_COUNT, dtype=torch.float64) - int(center)
+    )
+    weights = torch.pow(float(rho), distances)
+    min_positive = torch.nextafter(
+        torch.tensor(0.0, dtype=torch.float64),
+        torch.tensor(1.0, dtype=torch.float64),
+    )
+    weights = torch.where(weights == 0.0, min_positive, weights)
     return weights / weights.sum(dtype=torch.float64)
 
 
@@ -103,17 +115,24 @@ def stable_inverse_cdf(probabilities: Sequence[float], u: float) -> BidAction:
     values = tuple(float(value) for value in probabilities)
     if any(not math.isfinite(value) or value < 0.0 for value in values):
         raise ValueError("probabilities must be finite and nonnegative")
-    if not math.isclose(math.fsum(values), 1.0, rel_tol=0.0, abs_tol=1e-12):
+    total = math.fsum(values)
+    if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=1e-12):
         raise ValueError("probabilities must sum to one")
     if type(u) not in (int, float) or not math.isfinite(float(u)) or not 0.0 < u < 1.0:
         raise ValueError("u must be finite and strictly between zero and one")
 
-    cumulative = 0.0
+    target = float(u) * total
+    last_positive: BidAction | None = None
+    prefix: list[float] = []
     for action, probability in zip(BidAction, values, strict=True):
-        cumulative += probability
-        if u <= cumulative:
+        prefix.append(probability)
+        if probability <= 0.0:
+            continue
+        last_positive = action
+        if target <= math.fsum(prefix):
             return action
-    return BidAction.BID_13
+    assert last_positive is not None
+    return last_positive
 
 
 def _one_hot_distribution(
@@ -183,19 +202,64 @@ class StochasticResidualPolicy:
     def __init__(
         self,
         nsfp: FrozenNSFP,
-        ensemble: torch.nn.Module,
-        calibration: CalibrationTuple,
-        policy_id: str,
-        *,
-        expected_nsfp_sha256: str,
-        checkpoint_nsfp_sha256: str,
+        ensemble: ResidualQEnsemble,
+        metadata: BidderCheckpointMeta,
     ) -> None:
-        self.nsfp = nsfp
-        self.ensemble = ensemble
-        self.calibration = calibration
-        self.policy_id = policy_id
-        self.expected_nsfp_sha256 = expected_nsfp_sha256
-        self.checkpoint_nsfp_sha256 = checkpoint_nsfp_sha256
+        if not isinstance(nsfp, FrozenNSFP):
+            raise TypeError("nsfp must be a FrozenNSFP")
+        if not isinstance(ensemble, ResidualQEnsemble):
+            raise TypeError("ensemble must be a ResidualQEnsemble")
+        if not isinstance(metadata, BidderCheckpointMeta):
+            raise TypeError("metadata must be a BidderCheckpointMeta")
+        if metadata.status != "promoted" or metadata.calibration is None:
+            raise ValueError("stochastic policy requires promoted checkpoint metadata")
+        if nsfp.checkpoint_sha256 != metadata.nsfp_sha256:
+            raise ValueError(
+                "loaded NSFP checkpoint hash does not match promoted metadata"
+            )
+
+        candidate = build_candidate_meta(
+            ensemble,
+            iteration=metadata.iteration,
+            nsfp_sha256=metadata.nsfp_sha256,
+            play_pipeline_sha256=metadata.play_pipeline_sha256,
+            config_sha256=metadata.config_sha256,
+            dataset_manifest_sha256=metadata.dataset_manifest_sha256,
+            member_init_seeds=metadata.member_init_seeds,
+        )
+        reconstructed = promote_meta(candidate, metadata.calibration)
+        if reconstructed != metadata:
+            raise ValueError(
+                "promoted metadata does not match the supplied ensemble and provenance"
+            )
+
+        ensemble.requires_grad_(False)
+        ensemble.eval()
+        self._nsfp = nsfp
+        self._ensemble = ensemble
+        self._metadata = metadata
+
+    @property
+    def nsfp(self) -> FrozenNSFP:
+        return self._nsfp
+
+    @property
+    def ensemble(self) -> ResidualQEnsemble:
+        return self._ensemble
+
+    @property
+    def metadata(self) -> BidderCheckpointMeta:
+        return self._metadata
+
+    @property
+    def calibration(self) -> CalibrationTuple:
+        assert self._metadata.calibration is not None
+        return self._metadata.calibration
+
+    @property
+    def policy_id(self) -> str:
+        assert self._metadata.policy_id is not None
+        return self._metadata.policy_id
 
     def _validate_configuration(self) -> None:
         calibration = self.calibration
@@ -213,20 +277,6 @@ class StochasticResidualPolicy:
             raise ValueError("calibration lambda and temperature must be nonnegative")
         if not 0 <= calibration.epsilon <= 1 or not 0 < calibration.rho <= 1:
             raise ValueError("calibration epsilon or rho is outside its allowed range")
-        if not isinstance(self.policy_id, str) or not self.policy_id:
-            raise ValueError("policy_id must be a nonempty string")
-        for name, digest in (
-            ("expected NSFP hash", self.expected_nsfp_sha256),
-            ("checkpoint NSFP hash", self.checkpoint_nsfp_sha256),
-        ):
-            if (
-                not isinstance(digest, str)
-                or len(digest) != 64
-                or any(character not in "0123456789abcdef" for character in digest)
-            ):
-                raise ValueError(f"{name} must be a lowercase SHA-256 digest")
-        if self.checkpoint_nsfp_sha256 != self.expected_nsfp_sha256:
-            raise ValueError("checkpoint NSFP hash does not match the frozen expected hash")
 
     def _distribution_from_observation(
         self, observation: NSFPObservation
@@ -275,8 +325,9 @@ class StochasticResidualPolicy:
             if upper_value is not None:
                 ordered_candidates.append((local.upper, upper_value))
             candidate_values = torch.stack([value for _, value in ordered_candidates])
+            shifted_values = candidate_values - candidate_values.max()
             masses = torch.softmax(
-                candidate_values / float(self.calibration.temperature), dim=0
+                shifted_values / float(self.calibration.temperature), dim=0
             )
             for (action, _), mass in zip(ordered_candidates, masses, strict=True):
                 local_core[int(action)] = mass
@@ -286,6 +337,12 @@ class StochasticResidualPolicy:
             (1.0 - float(self.calibration.epsilon)) * local_core
             + float(self.calibration.epsilon) * tail
         )
+        if self.calibration.epsilon > 0:
+            min_positive = torch.nextafter(
+                torch.tensor(0.0, dtype=torch.float64, device=outputs.device),
+                torch.tensor(1.0, dtype=torch.float64, device=outputs.device),
+            )
+            final = torch.where(final == 0.0, min_positive, final)
         final /= final.sum(dtype=torch.float64)
         if not bool(torch.isfinite(final).all().item()) or bool((final < 0).any().item()):
             raise ValueError("final policy probabilities must be finite and nonnegative")

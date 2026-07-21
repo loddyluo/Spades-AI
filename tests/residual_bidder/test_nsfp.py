@@ -135,6 +135,14 @@ def test_loaded_model_is_frozen_and_in_evaluation_mode(frozen: FrozenNSFP) -> No
     assert all(parameter.requires_grad is False for parameter in frozen.model.parameters())
 
 
+def test_loaded_model_retains_verified_checkpoint_hash_read_only(
+    frozen: FrozenNSFP,
+) -> None:
+    assert frozen.checkpoint_sha256 == CHECKPOINT_SHA256
+    with pytest.raises(AttributeError):
+        frozen.checkpoint_sha256 = "0" * 64  # type: ignore[misc]
+
+
 class _BadOutputModel(nn.Module):
     def __init__(self, output: torch.Tensor) -> None:
         super().__init__()

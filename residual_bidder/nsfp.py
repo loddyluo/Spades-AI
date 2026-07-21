@@ -65,10 +65,19 @@ def _validate_float_tensor(
 class FrozenNSFP:
     """A hash-pinned, inference-only wrapper around the existing NSFP bridge."""
 
-    def __init__(self, model: BidMLP, device: torch.device) -> None:
+    def __init__(
+        self, model: BidMLP, device: torch.device, checkpoint_sha256: str
+    ) -> None:
         self.model = model
         self.device = device
+        self._checkpoint_sha256 = checkpoint_sha256
         self._encoder = BidEncoder()
+
+    @property
+    def checkpoint_sha256(self) -> str:
+        """The lowercase SHA-256 verified before this model was deserialized."""
+
+        return self._checkpoint_sha256
 
     @classmethod
     def load(
@@ -98,7 +107,11 @@ class FrozenNSFP:
         model.to(device)
         model.requires_grad_(False)
         model.eval()
-        return cls(model=model, device=device)
+        return cls(
+            model=model,
+            device=device,
+            checkpoint_sha256=actual_sha256,
+        )
 
     def _encode(self, state: GameState) -> torch.Tensor:
         go_state = _REFERENCE_BRIDGE.to_go_state(state)
