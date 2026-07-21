@@ -48,7 +48,7 @@ class GameState:
     tricks_won:
         Per-player cumulative tricks taken (4-tuple).
     spades_broken:
-        True once a spade has been played as a ruff (not when leading).
+        True once any spade has been played.
     phase:
         Current phase of the hand.
     void_shown:
@@ -123,7 +123,7 @@ class GameState:
         """Remove *card* from current player's hand and advance game state.
 
         * Updates void tracking when a player follows off-suit.
-        * Updates spades_broken when a spade is used as a ruff.
+        * Updates spades_broken when any spade is played.
         * On the 4th card of a trick, resolves the trick and either:
           - advances to the next trick (trick_number + 1), or
           - transitions to FINISHED if it was trick 13.
@@ -157,10 +157,7 @@ class GameState:
             )
 
         # --- spades broken flag --------------------------------------------
-        # Only set when spades used as ruff (not when spades are the led suit)
-        new_spades_broken: bool = self.spades_broken or (
-            card.suit == Suit.SPADES and led_suit != Suit.SPADES
-        )
+        new_spades_broken: bool = self.spades_broken or card.suit == Suit.SPADES
 
         # --- accumulate trick card -----------------------------------------
         tc = TrickCard(player=player, card=card)

@@ -19,9 +19,18 @@ from typing import Any, Dict
 
 from trick_taking.card import Card, Rank, Suit
 from trick_taking.game_state import GameState
-from trick_taking.solvers._native_compile import compile_opt1_solver
+from trick_taking.solvers._native_compile import (
+    OPT1_BUILD_RECIPE,
+    compile_opt1_solver,
+)
 from trick_taking.solvers.exact_double_dummy import ExactDoubleDummySolver
-from trick_taking.solvers.native_lib_loader import ensure_native_library
+from trick_taking.solvers.native_lib_loader import (
+    NATIVE_LIBRARY_ABI_VERSION,
+    ensure_native_library,
+)
+
+
+_OPT1_REQUIRED_SYMBOLS = ("solve_native", "solve_native_with_q")
 
 
 class _NativeState(ctypes.Structure):
@@ -72,9 +81,10 @@ class ExactDoubleDummyCppOpt1Solver(ExactDoubleDummySolver):
                 "_exact_double_dummy_cpp_opt1_core",
                 "exact_double_dummy_cpp_opt1_core.cpp",
                 compile_opt1_solver,
+                required_symbols=_OPT1_REQUIRED_SYMBOLS,
+                abi_version=NATIVE_LIBRARY_ABI_VERSION,
+                build_recipe=OPT1_BUILD_RECIPE,
             )
-            if lib_path is None:
-                raise RuntimeError("no loadable opt1 solver binary for this platform")
 
             self._lib = ctypes.CDLL(lib_path)
             self._lib.solve_native.argtypes = [ctypes.POINTER(_NativeState)]

@@ -35,7 +35,9 @@ Before any cards are played, each player evaluates their hand and bids the numbe
 
 ### 3. The Playing Phase
 The game is played in 13 rounds, called "tricks." In each trick, all four players play exactly one card.
-- The player to the dealer's left starts by leading any card.
+- The player to the dealer's left leads first. A Spade cannot be led until
+  Spades have been broken, unless the leader holds only Spades. Playing any
+  Spade, including such a forced lead, breaks Spades for the rest of the hand.
 - **Following Suit:** You **must** follow the suit that was led if you hold a card of that suit. (e.g., if Hearts are led, you must play a Heart if you have one).
 - **Trumping:** If you don't have a card of the led suit, you can play a Spade (trump) to win the trick, or discard any other suit to lose it.
 - **Winning the Trick:** The highest Spade played wins. If no Spades are played, the highest card of the led suit wins. The winner of the trick leads the first card for the next trick.
@@ -62,9 +64,10 @@ Let $B$ be your team's total bid, and $T$ be the total tricks actually won.
 - **transformers** (for the collaborator GPT-2 policy/value model)
 - **TensorBoard** (`torch.utils.tensorboard`) for training logging
 - **Node.js** >= 20 (for the GUI frontend)
-- **A C++17 compiler** (`clang++` or `g++`) — required to build the native
-  double-dummy solver. macOS/Linux usually already ship one; **Windows does
-  not**, so install one explicitly (see below).
+- **A C++17 compiler** (`clang++` or `g++`) — required when a verified native
+  double-dummy binary for the current source and platform is unavailable.
+  macOS/Linux usually already ship one; **Windows does not**, so install one
+  explicitly (see below).
 
 A typical install:
 
@@ -75,14 +78,22 @@ pip install torch numpy tqdm transformers tensorboard
 #### C++ compiler (native solver)
 
 The fastest exact solver is C++ compiled to a shared library and loaded via
-`ctypes`. The repo ships prebuilt binaries only for `darwin_arm64` and
-`linux_x86_64` (see `trick_taking/solvers/*.so`). On any **other** platform —
-notably Windows — the loader (`trick_taking/solvers/native_lib_loader.py`)
-falls back to compiling `exact_double_dummy_cpp_fastest_core.cpp` on first run.
-That fallback needs a compiler on `PATH`, otherwise you get:
+`ctypes`. The repo ships prebuilt binaries for `darwin_arm64` and
+`linux_x86_64` (see `trick_taking/solvers/*.so`). Before the main process loads
+one, the loader (`trick_taking/solvers/native_lib_loader.py`) checks it in an
+isolated child process for the exact source/recipe Build ID, ABI version, and
+required symbols. A verified prebuilt is copied to the ignored,
+content-addressed `trick_taking/solvers/__pycache__/native/` cache and loaded
+from that version-unique path.
+
+An old, incomplete, corrupt, or wrong-platform binary is never used. The
+loader instead compiles `exact_double_dummy_cpp_fastest_core.cpp` and validates
+the result before atomically installing it in the versioned cache. This also
+happens on platforms without a repository prebuilt, notably Windows. That
+fallback needs a compiler on `PATH`; otherwise the diagnostic begins with:
 
 ```
-RuntimeError: no loadable fastest solver binary for this platform
+failed to build verified native library ...
 ```
 
 Install one for your platform:
@@ -97,8 +108,9 @@ Install one for your platform:
   - via `winget install BrechtSanders.WinLibs.POSIX.UCRT`.
 
   Verify with `g++ --version` in a fresh terminal. On first run the solver
-  compiles `_exact_double_dummy_cpp_fastest_core.windows_x86_64.so` into
-  `trick_taking/solvers/` and caches it for subsequent runs.
+  compiles a Build-ID-qualified Windows binary under
+  `trick_taking/solvers/__pycache__/native/` and reuses it while its source,
+  ABI, required symbols, platform, and compile recipe remain unchanged.
 
 Troubleshooting：
 

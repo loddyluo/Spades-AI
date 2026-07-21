@@ -14,14 +14,17 @@ import {
   advanceUntilHuman,
   bidLabel,
   buildReplaySnapshot,
+  confirmLocalShowdown,
   createInitialGame,
   getHumanLegalCards,
   makeBid,
   remoteStateFromServer,
+  showdownWaitingForPartner,
   submitHumanBid,
   submitHumanCard,
   summarizeGame,
 } from './game';
+import { ShowdownPanel, showdownHandsForDisplay } from './showdown';
 
 const SEAT_NAMES = ['North', 'East', 'South', 'West'];
 const SUIT_SYMBOL = { S: '♠', H: '♥', D: '♦', C: '♣' };
@@ -129,7 +132,7 @@ function TallyBadges({ bid, won, hideBid, justBid }) {
 }
 
 /* ── One AI seat badge (top / left / right) ─────────────────────────── */
-function AiSeat({ pos, seat, summary, game, active }) {
+function AiSeat({ pos, seat, summary, game, active, revealedCards = null }) {
   const hasBid = !!game.bids[seat];
   const justBid = game.phase === 'bidding' && game.lastBidSeat === seat && hasBid;
   return (
@@ -142,7 +145,11 @@ function AiSeat({ pos, seat, summary, game, active }) {
                        hideBid={game.phase === 'bidding' && !hasBid} justBid={justBid} />
         </div>
       </div>
-      <CardBackFan count={game.hands[seat].length} />
+      {revealedCards ? (
+        <ReplayHandSpread cards={revealedCards} pos={pos} size="sm" />
+      ) : (
+        <CardBackFan count={game.hands[seat].length} />
+      )}
     </div>
   );
 }
@@ -643,6 +650,7 @@ export default function App() {
     seed: '',
   });
   const wsRef = useRef(null);
+  const sentShowdownRef = useRef(null);
 
   // Deal a hand. Random modes should omit `seed` or pass randomDealSeed().
   const dealHand = async (seat, seed = randomDealSeed(), firstSeat = 0) => {
@@ -695,8 +703,10 @@ export default function App() {
       setGame(fresh);
       const finalState = await advanceUntilFinished(fresh, setGame);
       setGame(finalState);
-      setReplaySnapshot(buildReplaySnapshot(finalState));
-      setScreen('replay');
+      if (finalState.phase === 'finished') {
+        setReplaySnapshot(buildReplaySnapshot(finalState));
+        setScreen('replay');
+      }
     } finally {
       setBusy(false);
     }
@@ -756,6 +766,15 @@ export default function App() {
             const remoteGame = remoteStateFromServer(msg, mySeat);
             setGame(remoteGame);
             setHumanSeat(mySeat);
+            if (!remoteGame.showdown) sentShowdownRef.current = null;
+            if (remoteGame.showdown) {
+              setRemote((r) => ({
+                ...r,
+                status: 'playing',
+                legalCards: null,
+                legalBids: null,
+              }));
+            }
             break;
           }
           case 'your_turn':
@@ -775,10 +794,11 @@ export default function App() {
             }));
             break;
           case 'hand_over': {
+            sentShowdownRef.current = null;
             setRemote((r) => ({ ...r, status: 'finished', legalCards: null, legalBids: null }));
             // Apply score to game state
             setGame((g) => ({ ...g, phase: 'finished', score: msg.score,
-              tricksWon: msg.tricksWon || g.tricksWon }));
+              tricksWon: msg.tricksWon || g.tricksWon, showdown: null }));
             break;
           }
           case 'error':
@@ -806,6 +826,7 @@ export default function App() {
       wsRef.current.close();
       wsRef.current = null;
     }
+    sentShowdownRef.current = null;
     setRemote({
       status: 'idle', error: '', mySeat: -1, opponentSeat: -1,
       legalCards: null, legalBids: null, serverUrl: 'localhost:8765',
@@ -818,7 +839,7 @@ export default function App() {
   const handleBid = async (bid) => {
     // Remote mode: send via WebSocket
     if (mode === 'remote') {
-      if (busy || game.phase !== 'bidding' || remote.status !== 'your_turn') return;
+      if (busy || game.showdown || game.phase !== 'bidding' || remote.status !== 'your_turn') return;
       setBusy(true);
       try {
         wsRef.current?.send(JSON.stringify({ type: 'bid', bid }));
@@ -829,7 +850,7 @@ export default function App() {
       return;
     }
     // Local mode
-    if (busy || game.phase !== 'bidding' || game.currentPlayer !== game.humanSeat) return;
+    if (busy || game.showdown || game.phase !== 'bidding' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
       setGame(await submitHumanBid(game, bid, setGame));
@@ -841,7 +862,7 @@ export default function App() {
   const handlePlay = async (cardCode) => {
     // Remote mode: send via WebSocket
     if (mode === 'remote') {
-      if (busy || game.phase !== 'playing' || remote.status !== 'your_turn') return;
+      if (busy || game.showdown || game.phase !== 'playing' || remote.status !== 'your_turn') return;
       setBusy(true);
       try {
         wsRef.current?.send(JSON.stringify({ type: 'play', card: cardCode }));
@@ -852,10 +873,48 @@ export default function App() {
       return;
     }
     // Local mode
-    if (busy || game.phase !== 'playing' || game.currentPlayer !== game.humanSeat) return;
+    if (busy || game.showdown || game.phase !== 'playing' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
       setGame(await submitHumanCard(game, cardCode, setGame));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleShowdownConfirm = () => {
+    if (busy || !game.showdown || game.showdown.status !== 'pending') return;
+    if (mode === 'remote') {
+      const showdownId = game.showdown.id;
+      if (
+        sentShowdownRef.current === showdownId
+        || showdownWaitingForPartner(game.showdown, game.humanSeat)
+      ) return;
+      sentShowdownRef.current = showdownId;
+      wsRef.current?.send(JSON.stringify({ type: 'showdown_confirm', showdownId }));
+      setGame((current) => {
+        if (current.showdown?.id !== showdownId) return current;
+        const confirmedSeats = new Set(current.showdown.confirmedSeats || []);
+        confirmedSeats.add(current.humanSeat);
+        return {
+          ...current,
+          showdown: {
+            ...current.showdown,
+            locallyConfirmed: true,
+            confirmedSeats: [...confirmedSeats],
+          },
+        };
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      const settled = confirmLocalShowdown(game);
+      setGame(settled);
+      if (mode === 'aiTest') {
+        setReplaySnapshot(buildReplaySnapshot(settled));
+        setScreen('replay');
+      }
     } finally {
       setBusy(false);
     }
@@ -895,6 +954,13 @@ export default function App() {
 
   const isSpectator = mode === 'aiTest';
   const isRemote = mode === 'remote';
+  const showdownPending = game.showdown?.status === 'pending';
+  const revealedHands = showdownHandsForDisplay(game);
+  const waitingForPartner = isRemote
+    && (
+      sentShowdownRef.current === game.showdown?.id
+      || showdownWaitingForPartner(game.showdown, game.humanSeat)
+    );
 
   const legalCards = isRemote
     ? []
@@ -908,8 +974,8 @@ export default function App() {
 
   const humanHand = (game.hands[game.humanSeat] || []).filter(Boolean);
   const myTurn = isRemote
-    ? remote.status === 'your_turn'
-    : (!isSpectator && game.currentPlayer === game.humanSeat);
+    ? (!showdownPending && remote.status === 'your_turn')
+    : (!showdownPending && !isSpectator && game.currentPlayer === game.humanSeat);
   const isBidding = game.phase === 'bidding';
   const isPlaying = game.phase === 'playing';
 
@@ -925,6 +991,7 @@ export default function App() {
   // status text in the center of the table
   let statusText = '';
   if (finished) statusText = '本局结束';
+  else if (showdownPending) statusText = '结果已固定，等待确认结算';
   else if (isRemote && remote.status === 'connecting') statusText = '连接中…';
   else if (isRemote && remote.status === 'joined') statusText = '已加入，等待对手…';
   else if (isRemote && remote.status === 'waiting') statusText = '等待对手加入…';
@@ -971,6 +1038,7 @@ export default function App() {
       lastPlayedSeat: -1,
       lastBidSeat: -1,
       score: null,
+      showdown: null,
       log: [{ kind: 'system', text: '连接中…' }],
     });
     setScreen('game');
@@ -1060,11 +1128,13 @@ export default function App() {
       <main className="stage">
         <div className="stage__top">
           <AiSeat pos="top" seat={seatAt('top')} summary={summary} game={game}
-                  active={game.currentPlayer === seatAt('top')} />
+                  active={!showdownPending && game.currentPlayer === seatAt('top')}
+                  revealedCards={revealedHands?.[seatAt('top')] ?? null} />
         </div>
         <div className="stage__left">
           <AiSeat pos="left" seat={seatAt('left')} summary={summary} game={game}
-                  active={game.currentPlayer === seatAt('left')} />
+                  active={!showdownPending && game.currentPlayer === seatAt('left')}
+                  revealedCards={revealedHands?.[seatAt('left')] ?? null} />
         </div>
 
         <div className="table">
@@ -1089,7 +1159,8 @@ export default function App() {
 
         <div className="stage__right">
           <AiSeat pos="right" seat={seatAt('right')} summary={summary} game={game}
-                  active={game.currentPlayer === seatAt('right')} />
+                  active={!showdownPending && game.currentPlayer === seatAt('right')}
+                  revealedCards={revealedHands?.[seatAt('right')] ?? null} />
         </div>
 
         {/* ── human area ── */}
@@ -1100,7 +1171,8 @@ export default function App() {
               seat={game.humanSeat}
               summary={summary}
               game={game}
-              active={game.currentPlayer === game.humanSeat}
+              active={!showdownPending && game.currentPlayer === game.humanSeat}
+              revealedCards={revealedHands?.[game.humanSeat] ?? null}
             />
           ) : (
             <>
@@ -1135,25 +1207,29 @@ export default function App() {
                 ) : null
               ) : null}
 
-              <div className="fan" style={{ '--n': humanHand.length }} key={game.seed}>
-                {humanHand.map((card, i) => {
-                  const center = (humanHand.length - 1) / 2;
-                  const legal = isPlaying && myTurn && legalSet.has(card.code);
-                  const playable = isPlaying && myTurn;
-                  return (
-                    <PlayingCard
-                      key={card.code}
-                      card={card}
-                      size="lg"
-                      legal={legal}
-                      disabled={!playable || (playable && !legal)}
-                      onPlay={handlePlay}
-                      className={`fan__card ${playable && !legal ? 'is-muted' : ''}`}
-                      style={{ '--rot': `${(i - center) * spread}deg`, '--idx': i }}
-                    />
-                  );
-                })}
-              </div>
+              {showdownPending ? (
+                <ReplayHandSpread cards={humanHand} pos="bottom" size="lg" />
+              ) : (
+                <div className="fan" style={{ '--n': humanHand.length }} key={game.seed}>
+                  {humanHand.map((card, i) => {
+                    const center = (humanHand.length - 1) / 2;
+                    const legal = isPlaying && myTurn && legalSet.has(card.code);
+                    const playable = isPlaying && myTurn;
+                    return (
+                      <PlayingCard
+                        key={card.code}
+                        card={card}
+                        size="lg"
+                        legal={legal}
+                        disabled={!playable || (playable && !legal)}
+                        onPlay={handlePlay}
+                        className={`fan__card ${playable && !legal ? 'is-muted' : ''}`}
+                        style={{ '--rot': `${(i - center) * spread}deg`, '--idx': i }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1165,6 +1241,15 @@ export default function App() {
           <div key={`${entry.kind}-${i}`} className={`mini-log__row log-${entry.kind}`}>{entry.text}</div>
         ))}
       </aside>
+
+      {showdownPending ? (
+        <ShowdownPanel
+          showdown={game.showdown}
+          bids={game.bids}
+          waitingForPartner={waitingForPartner}
+          onConfirm={handleShowdownConfirm}
+        />
+      ) : null}
 
       {/* ── result overlays ── */}
       {finished && summary.score ? (

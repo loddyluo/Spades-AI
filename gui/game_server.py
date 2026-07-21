@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
+import functools
 import json
 import random
 import sys
@@ -36,6 +38,11 @@ for _p in (str(REPO_ROOT), str(GO_MCTS_DIR)):
 
 from trick_taking.card import Card, Suit, Rank, _STANDARD_CARDS, cards_to_bitset  # noqa: E402
 from trick_taking.game_state import GameState, Phase, Bid, TrickRecord  # noqa: E402
+from trick_taking.forced_outcome import (  # noqa: E402
+    ShowdownResolution,
+    apply_showdown_continuation,
+    check_for_showdown,
+)
 from trick_taking.games.spades import SpadesRules  # noqa: E402
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
     ExactDoubleDummyCppFastestSolver,
@@ -170,6 +177,7 @@ def _build_client_state(
     last_played_seat: int = -1,
     last_bid_seat: int = -1,
     log: list[dict[str, Any]] | None = None,
+    showdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a JSON-safe game state dict for a specific human seat.
 
@@ -200,7 +208,7 @@ def _build_client_state(
             bids_arr[b.player_id] = _bid_to_frontend(b.value)
 
     is_bidding = gs.phase == Phase.BIDDING
-    return {
+    payload = {
         "type": "game_state",
         "seat": for_seat,
         "phase": "bidding" if is_bidding else
@@ -221,6 +229,9 @@ def _build_client_state(
         "lastBidSeat": last_bid_seat,
         "log": list(log) if log else [],
     }
+    if showdown is not None:
+        payload["showdown"] = showdown
+    return payload
 
 
 # ── Game Room ────────────────────────────────────────────────────────────
@@ -231,7 +242,8 @@ class GameRoom:
     def __init__(self, room_code: str, seed: int,
                  bid_model=None, bid_device: str = "cpu",
                  hyperparam_config=None, exact_solver=None,
-                 exact_threshold: int = 36, num_workers: int = 0) -> None:
+                 exact_threshold: int = 36, num_workers: int = 0,
+                 showdown_checker=None) -> None:
         self.room_code = room_code
         self.seed = seed
         self.connections: dict[int, Any] = {}   # {seat: websocket}
@@ -248,7 +260,18 @@ class GameRoom:
         # Human action handling
         self._action: dict[str, Any] | None = None
         self._action_event: asyncio.Event = asyncio.Event()
+        self._expected_action_seat: int | None = None
+        self._expected_action_type: str | None = None
         self._game_started = False
+        # A separate confirmation barrier prevents a bid/play message from
+        # ever being interpreted as consent to settle a revealed hand.
+        self._showdown_checker = showdown_checker or check_for_showdown
+        self.showdown_id = 0
+        self.showdown_resolution: ShowdownResolution | None = None
+        self.showdown_confirmations: set[int] = set()
+        self.showdown_pending = False
+        self._showdown_human_seats: frozenset[int] = frozenset()
+        self._showdown_event: asyncio.Event = asyncio.Event()
         # Animation tracking (for frontend UI hints)
         self._last_trick_winner: int = -1
         self._last_played_seat: int = -1
@@ -280,6 +303,10 @@ class GameRoom:
 
     def remove_connection(self, seat: int) -> None:
         self.connections.pop(seat, None)
+        if self.showdown_pending:
+            self._showdown_event.set()
+        if self._expected_action_seat == seat:
+            self._action_event.set()
 
     def all_connected(self) -> bool:
         return len(self.connections) == 2 and not self._game_started
@@ -423,6 +450,7 @@ class GameRoom:
             if fb:
                 legal_frontend.append(fb)
 
+        self._prepare_action_wait(seat, "bid")
         await self._safe_send(ws, {
             "type": "your_turn",
             "phase": "bidding",
@@ -521,6 +549,9 @@ class GameRoom:
             # Broadcast cleared table, then brief pause for animation
             await self._broadcast_state()
             if not self.rules.end_trickgame(self.state):
+                if await self._maybe_offer_showdown():
+                    self._log.append({"kind": "system", "text": "牌局结束"})
+                    return
                 await asyncio.sleep(TRICK_HOLD_SECONDS)
 
         self.state.phase = Phase.SCORING
@@ -534,6 +565,7 @@ class GameRoom:
         partner = self.partner_of(seat)
 
         legal_codes = [_card_to_str(c) for c in legal_cards]
+        self._prepare_action_wait(seat, "play")
         await self._safe_send(ws, {
             "type": "your_turn",
             "phase": "playing",
@@ -577,6 +609,9 @@ class GameRoom:
 
     async def _broadcast_state(self) -> None:
         """Send current game state to both human clients."""
+        # Snapshot once so both clients receive identical confirmation data
+        # even if the second confirmation arrives between socket writes.
+        showdown = self._showdown_payload()
         for seat, ws in list(self.connections.items()):
             state_msg = _build_client_state(
                 self.state, seat,
@@ -584,8 +619,102 @@ class GameRoom:
                 last_played_seat=self._last_played_seat,
                 last_bid_seat=self._last_bid_seat,
                 log=self._log,
+                showdown=showdown,
             )
             await self._safe_send(ws, state_msg)
+
+    def _showdown_payload(self) -> dict[str, Any] | None:
+        if not self.showdown_pending or self.showdown_resolution is None:
+            return None
+        return {
+            "id": self.showdown_id,
+            "revealedHands": [
+                [_card_to_str(card) for card in _sort_hand_for_display(hand)]
+                for hand in self.state.hands
+            ],
+            "teamTricks": list(self.showdown_resolution.team_tricks),
+            "nilOutcomes": list(self.showdown_resolution.nil_outcomes),
+            "confirmedSeats": sorted(self.showdown_confirmations),
+        }
+
+    async def _maybe_offer_showdown(self) -> bool:
+        """Run the exact check and pause the room if it proves a fixed result."""
+        if self.showdown_pending or self.state is None:
+            return False
+        if self.state.phase != Phase.PLAYING or self.state.table_cards:
+            return False
+        sizes = [len(hand) for hand in self.state.hands]
+        if len(sizes) != 4 or len(set(sizes)) != 1 or not 1 <= sizes[0] <= 5:
+            return False
+
+        call = functools.partial(
+            self._showdown_checker,
+            copy.deepcopy(self.state),
+            self._exact_solver,
+            time_budget_seconds=1.0,
+        )
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(None, call)
+        except Exception:
+            # An operational failure must never reveal cards or stop play.
+            traceback.print_exc()
+            return False
+        if result.status != "fixed" or result.resolution is None:
+            return False
+        await self._offer_showdown(result.resolution)
+        return True
+
+    async def _offer_showdown(self, resolution: ShowdownResolution) -> None:
+        """Reveal, collect two distinct confirmations, and then settle."""
+        human_seats = frozenset(self.connections)
+        if len(human_seats) != 2:
+            raise RuntimeError("a human disconnected before showdown confirmation")
+
+        self.showdown_id += 1
+        self.showdown_resolution = resolution
+        self.showdown_confirmations.clear()
+        self._showdown_human_seats = human_seats
+        self.showdown_pending = True
+        self._showdown_event.clear()
+        self._expected_action_seat = None
+        self._expected_action_type = None
+        self._action = None
+        self._action_event.clear()
+        await self._broadcast_state()
+
+        try:
+            broadcasted_confirmations: frozenset[int] = frozenset()
+            while True:
+                if frozenset(self.connections) != human_seats:
+                    raise RuntimeError("a human disconnected during showdown confirmation")
+                current_confirmations = frozenset(self.showdown_confirmations)
+                if current_confirmations != broadcasted_confirmations:
+                    await self._broadcast_state()
+                    broadcasted_confirmations = current_confirmations
+                    continue
+                if human_seats.issubset(current_confirmations):
+                    break
+                self._showdown_event.clear()
+                # No await occurred since clear; recheck before sleeping so a
+                # confirmation already recorded in the set cannot be lost.
+                if frozenset(self.showdown_confirmations) != broadcasted_confirmations:
+                    continue
+                await self._showdown_event.wait()
+
+            self.state = apply_showdown_continuation(
+                self.state,
+                resolution.continuation,
+            )
+            self.state.phase = Phase.SCORING
+            self._log.append({
+                "kind": "system",
+                "text": "双方已确认自动摊牌，按固定结果结算",
+            })
+            self.showdown_pending = False
+            await self._broadcast_state()
+        except Exception:
+            self.showdown_pending = False
+            raise
 
     async def _broadcast_game_over(self) -> None:
         """Send final scores to both humans."""
@@ -611,18 +740,52 @@ class GameRoom:
 
     # ── Human action wait ───────────────────────────────────────────
 
-    async def _wait_for_action(self) -> dict[str, Any]:
-        """Wait for the current human to send a bid/play action."""
+    def _prepare_action_wait(self, seat: int, action_type: str) -> None:
         self._action_event.clear()
         self._action = None
-        await self._action_event.wait()
-        assert self._action is not None
-        return self._action
+        self._expected_action_seat = seat
+        self._expected_action_type = action_type
 
-    def receive_action(self, action: dict[str, Any]) -> None:
+    async def _wait_for_action(self) -> dict[str, Any]:
+        """Wait for the current human to send a bid/play action."""
+        try:
+            await self._action_event.wait()
+            if self._action is None:
+                raise RuntimeError("the expected human disconnected")
+            return self._action
+        finally:
+            self._expected_action_seat = None
+            self._expected_action_type = None
+
+    def receive_action(self, sender_seat: int, action: dict[str, Any]) -> bool:
         """Called from the WebSocket handler when a human sends an action."""
+        action_type = str(action.get("type", ""))
+        if self.showdown_pending:
+            if action_type != "showdown_confirm":
+                return False
+            if sender_seat not in self._showdown_human_seats:
+                return False
+            if sender_seat not in self.connections:
+                return False
+            if action.get("showdownId") != self.showdown_id:
+                return False
+            if sender_seat in self.showdown_confirmations:
+                return False
+            self.showdown_confirmations.add(sender_seat)
+            self._showdown_event.set()
+            return True
+
+        if action_type == "showdown_confirm":
+            return False
+        if sender_seat != self._expected_action_seat:
+            return False
+        if action_type != self._expected_action_type:
+            return False
+        if self._action is not None:
+            return False
         self._action = action
         self._action_event.set()
+        return True
 
     # ── Safe send ───────────────────────────────────────────────────
 
@@ -754,14 +917,14 @@ async def handler(ws) -> None:
                 if room.is_ready():
                     asyncio.create_task(room.start_game())
 
-            elif msg_type in ("bid", "play"):
+            elif msg_type in ("bid", "play", "showdown_confirm"):
                 # ── Human action ─────────────────────────────────
                 if my_room is None:
                     await GameRoom._safe_send(ws, {
                         "type": "error", "message": "请先加入房间"
                     })
                     continue
-                my_room.receive_action(msg)
+                my_room.receive_action(my_seat, msg)
 
             else:
                 await GameRoom._safe_send(ws, {

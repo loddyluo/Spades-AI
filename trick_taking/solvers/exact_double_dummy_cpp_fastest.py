@@ -20,13 +20,32 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+import threading
+import time
 from typing import Any, Dict
 
 from trick_taking.card import Card, Rank, Suit
 from trick_taking.game_state import GameState
-from trick_taking.solvers._native_compile import compile_fastest_solver
+from trick_taking.solvers._native_compile import (
+    FASTEST_BUILD_RECIPE,
+    compile_fastest_solver,
+)
 from trick_taking.solvers.exact_double_dummy import ExactDoubleDummySolver
-from trick_taking.solvers.native_lib_loader import ensure_native_library
+from trick_taking.solvers.native_lib_loader import (
+    NATIVE_LIBRARY_ABI_VERSION,
+    ensure_native_library,
+)
+
+
+# The fastest C++ library keeps process-wide mutable transposition tables and
+# generation counters.  CDLL calls release the GIL, so every wrapper instance
+# in this process must share one lock around native entry points.
+_NATIVE_SOLVER_LOCK = threading.RLock()
+_FASTEST_REQUIRED_SYMBOLS = (
+    "solve_native",
+    "solve_native_with_q",
+    "analyze_forced_outcome_native",
+)
 
 
 class _NativeState(ctypes.Structure):
@@ -60,6 +79,16 @@ class _RootQResult(ctypes.Structure):
     ]
 
 
+class _ForcedOutcomeResult(ctypes.Structure):
+    _fields_ = [
+        ("status", ctypes.c_int32),
+        ("team0_final_tricks", ctypes.c_int32),
+        ("nil_broken_mask", ctypes.c_uint32),
+        ("nodes_searched", ctypes.c_uint64),
+        ("elapsed_ms", ctypes.c_double),
+    ]
+
+
 class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
     """极速 C++ 精确双明手求解器。"""
 
@@ -77,9 +106,10 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
                 "_exact_double_dummy_cpp_fastest_core",
                 "exact_double_dummy_cpp_fastest_core.cpp",
                 compile_fastest_solver,
+                required_symbols=_FASTEST_REQUIRED_SYMBOLS,
+                abi_version=NATIVE_LIBRARY_ABI_VERSION,
+                build_recipe=FASTEST_BUILD_RECIPE,
             )
-            if lib_path is None:
-                raise RuntimeError("no loadable fastest solver binary for this platform")
 
             self._lib = ctypes.CDLL(lib_path)
             self._lib.solve_native.argtypes = [ctypes.POINTER(_NativeState)]
@@ -89,6 +119,12 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
                 ctypes.POINTER(_RootQResult),
             ]
             self._lib.solve_native_with_q.restype = None
+            self._lib.analyze_forced_outcome_native.argtypes = [
+                ctypes.POINTER(_NativeState),
+                ctypes.c_int64,
+                ctypes.POINTER(_ForcedOutcomeResult),
+            ]
+            self._lib.analyze_forced_outcome_native.restype = None
         except Exception as e:
             print(f"Warning: Failed to build/load fastest solver: {e}", file=sys.stderr)
             self._lib = None
@@ -149,7 +185,8 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
             raise RuntimeError("极速 C++ 求解器不可用")
 
         native_state = self._to_native_state(state)
-        return float(self._lib.solve_native(ctypes.byref(native_state)))
+        with _NATIVE_SOLVER_LOCK:
+            return float(self._lib.solve_native(ctypes.byref(native_state)))
 
     def solve_with_q(self, state: GameState) -> Dict[str, Any]:
         self._validate_state(state)
@@ -158,7 +195,8 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
 
         native_state = self._to_native_state(state)
         out = _RootQResult()
-        self._lib.solve_native_with_q(ctypes.byref(native_state), ctypes.byref(out))
+        with _NATIVE_SOLVER_LOCK:
+            self._lib.solve_native_with_q(ctypes.byref(native_state), ctypes.byref(out))
 
         action_q_values: Dict[Card, float] = {}
         action_values = []
@@ -192,10 +230,67 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
 
         native_state = self._to_native_state(state)
         out = _RootQResult()
-        self._lib.solve_native_with_q(ctypes.byref(native_state), ctypes.byref(out))
+        with _NATIVE_SOLVER_LOCK:
+            self._lib.solve_native_with_q(ctypes.byref(native_state), ctypes.byref(out))
 
         result: Dict[int, float] = {}
         for idx in range(int(out.count)):
             card_id = int(out.actions[idx])
             result[card_id] = float(out.q_values[idx])
         return result
+
+    @staticmethod
+    def _forced_timeout_result(started: float) -> Dict[str, object]:
+        return {
+            "status": "timeout",
+            "team0_final_tricks": -1,
+            "nil_broken_mask": 0,
+            "nodes_searched": 0,
+            "elapsed_ms": (time.monotonic() - started) * 1000.0,
+        }
+
+    def analyze_forced_outcome(
+        self,
+        state: GameState,
+        time_budget_seconds: float = 1.0,
+    ) -> Dict[str, object]:
+        """Prove whether every legal continuation has one terminal signature.
+
+        The wall-clock budget includes waiting for the native solver lock.  A
+        timeout is inconclusive and is never interpreted as permission to
+        reveal hidden cards.
+        """
+        self._validate_state(state)
+        started = time.monotonic()
+        budget = max(0.0, float(time_budget_seconds))
+        if budget == 0.0 or not self.native_available:
+            return self._forced_timeout_result(started)
+
+        acquired = _NATIVE_SOLVER_LOCK.acquire(timeout=budget)
+        if not acquired:
+            return self._forced_timeout_result(started)
+
+        try:
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0.0:
+                return self._forced_timeout_result(started)
+
+            native_state = self._to_native_state(state)
+            out = _ForcedOutcomeResult()
+            self._lib.analyze_forced_outcome_native(
+                ctypes.byref(native_state),
+                max(1, int(remaining * 1_000_000)),
+                ctypes.byref(out),
+            )
+        finally:
+            _NATIVE_SOLVER_LOCK.release()
+
+        labels = {1: "fixed", 2: "variable", 3: "timeout"}
+        status = labels.get(int(out.status), "timeout")
+        return {
+            "status": status,
+            "team0_final_tricks": int(out.team0_final_tricks),
+            "nil_broken_mask": int(out.nil_broken_mask),
+            "nodes_searched": int(out.nodes_searched),
+            "elapsed_ms": (time.monotonic() - started) * 1000.0,
+        }

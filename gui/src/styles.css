@@ -517,6 +517,39 @@ button { cursor: pointer; }
   z-index: 10;
   animation: fade 220ms ease;
 }
+.overlay--showdown {
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: none;
+}
+.showdown__card {
+  width: min(460px, 90vw);
+  background: linear-gradient(180deg, rgba(20, 80, 46, 0.96), rgba(12, 58, 32, 0.98));
+}
+.showdown__explanation {
+  margin: -6px 0 16px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.showdown__scores strong { font-size: 1.55rem; }
+.showdown__nil-list {
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  list-style: none;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.24);
+  display: grid;
+  gap: 7px;
+  font-weight: 700;
+}
+.showdown__nil-success { color: #a7f3c4; }
+.showdown__nil-failure { color: #ffaaaa; }
+.showdown__confirm { min-width: 150px; }
+.seat > .replay-hand { margin-top: 2px; }
+.seat > .replay-hand--top { width: min(300px, 45vw); height: 58px; }
+.seat > .replay-hand--left,
+.seat > .replay-hand--right { height: min(260px, 36vh); }
+.stage__hand > .replay-hand--bottom { height: 92px; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 .overlay__card {
   width: min(420px, 90vw);

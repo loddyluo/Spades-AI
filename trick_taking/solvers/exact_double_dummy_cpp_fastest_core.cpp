@@ -21,12 +21,28 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <thread>
 #include <random>
 #include <vector>
 
+#ifndef SPADES_NATIVE_BUILD_ID
+#define SPADES_NATIVE_BUILD_ID "unversioned"
+#endif
+#ifndef SPADES_NATIVE_ABI_VERSION
+#define SPADES_NATIVE_ABI_VERSION 0
+#endif
+
 extern "C" {
+
+const char* spades_native_build_id() {
+    return SPADES_NATIVE_BUILD_ID;
+}
+
+uint32_t spades_native_abi_version() {
+    return SPADES_NATIVE_ABI_VERSION;
+}
 
 // ============================================================
 // Data Structures
@@ -57,6 +73,20 @@ struct RootQResult {
     double value;
     int32_t actions[13];
     double q_values[13];
+};
+
+enum ForcedOutcomeStatus : int32_t {
+    FORCED_FIXED = 1,
+    FORCED_VARIABLE = 2,
+    FORCED_TIMEOUT = 3,
+};
+
+struct ForcedOutcomeResult {
+    int32_t status;
+    int32_t team0_final_tricks;
+    uint32_t nil_broken_mask;
+    uint64_t nodes_searched;
+    double elapsed_ms;
 };
 
 // Fixed-size action list (max 13 cards in a suit, max 13 in hand)
@@ -772,61 +802,41 @@ static void filter_equivalent(const NativeState* s, int32_t player_id, ActionLis
 // Legal Action Generation
 // ============================================================
 
-static void legal_actions(const NativeState* s, int32_t player_id, ActionList& actions) {
+static void legal_actions_impl(const NativeState* s, int32_t player_id,
+                               ActionList& actions, bool remove_equivalent) {
     actions.clear();
-    const uint64_t hand = s->hand_bits[player_id];
-    if (hand == 0) return;
+    uint64_t allowed = s->hand_bits[player_id];
+    if (allowed == 0) return;
 
     if (s->table_count == 0) {
-        // Leading
+        // Leading: before Spades are broken, use a non-Spade when possible.
         if (!s->spades_broken) {
-            bool has_non_spade = false;
-            for (int suit = 1; suit < 4; suit++) {
-                if (hand_has_suit(hand, suit)) { has_non_spade = true; break; }
-            }
-            if (has_non_spade) {
-                uint64_t bits = hand;
-                while (bits) {
-                    int cid = ctz64(bits);
-                    if (card_suit(cid) != 0) actions.push(cid);
-                    bits &= bits - 1;
-                }
-                filter_equivalent(s, player_id, actions);
-                return;
-            }
+            const uint64_t non_spades = allowed & ~0x1FFFULL;
+            if (non_spades != 0) allowed = non_spades;
         }
-        uint64_t bits = hand;
-        while (bits) {
-            int cid = ctz64(bits);
-            actions.push(cid);
-            bits &= bits - 1;
-        }
-        filter_equivalent(s, player_id, actions);
-        return;
-    }
-
-    // Following
-    const int32_t lead_suit = s->table_suits[0];
-    if (hand_has_suit(hand, lead_suit)) {
+    } else {
+        // Following: follow the led suit whenever possible.
+        const int32_t lead_suit = s->table_suits[0];
         uint64_t mask = 0x1FFFULL << (lead_suit * 13);
-        uint64_t bits = hand & mask;
-        while (bits) {
-            int cid = ctz64(bits);
-            actions.push(cid);
-            bits &= bits - 1;
-        }
-        filter_equivalent(s, player_id, actions);
-        return;
+        if ((allowed & mask) != 0) allowed &= mask;
     }
 
-    // Can't follow suit - play anything
-    uint64_t bits = hand;
-    while (bits) {
-        int cid = ctz64(bits);
+    while (allowed) {
+        int cid = ctz64(allowed);
         actions.push(cid);
-        bits &= bits - 1;
+        allowed &= allowed - 1;
     }
-    filter_equivalent(s, player_id, actions);
+    if (remove_equivalent) filter_equivalent(s, player_id, actions);
+}
+
+static void legal_actions(const NativeState* s, int32_t player_id,
+                          ActionList& actions) {
+    legal_actions_impl(s, player_id, actions, true);
+}
+
+static void legal_actions_all(const NativeState* s, int32_t player_id,
+                              ActionList& actions) {
+    legal_actions_impl(s, player_id, actions, false);
 }
 
 // ============================================================
@@ -1018,6 +1028,168 @@ static inline void unmake_move(NativeState* s, const UndoInfo& u) {
     s->turn = u.old_turn;
     s->spades_broken = u.old_spades_broken;
     s->hand_bits[u.player_id] |= u.hand_bit;
+}
+
+// ============================================================
+// Forced-Outcome Search
+//
+// This search answers a different question from minimax: whether EVERY legal
+// continuation has the same team trick total and Nil outcomes.  It therefore
+// uses all legal cards and only exact signature-union pruning.
+// ============================================================
+
+struct ForcedValue {
+    int32_t status;
+    int32_t team0_final_tricks;
+    uint32_t nil_broken_mask;
+};
+
+static constexpr int FORCED_TT_SIZE_BITS = 20;
+static constexpr int FORCED_TT_SIZE = 1 << FORCED_TT_SIZE_BITS;
+static constexpr int FORCED_TT_MASK = FORCED_TT_SIZE - 1;
+
+struct ForcedTTEntry {
+    uint64_t key;
+    uint64_t verify;
+    int32_t status;
+    int32_t team0_final_tricks;
+    uint32_t nil_broken_mask;
+    uint32_t generation;
+};
+
+struct ForcedContext {
+    ForcedTTEntry* tt;
+    uint32_t generation;
+    uint64_t nodes_searched;
+    std::chrono::steady_clock::time_point deadline;
+
+    inline ForcedTTEntry& slot(uint64_t key) {
+        return tt[key & FORCED_TT_MASK];
+    }
+};
+
+static ForcedTTEntry* g_forced_tt_buffer = nullptr;
+static uint32_t g_forced_generation = 0;
+
+static void ensure_forced_tt_buffer() {
+    if (!g_forced_tt_buffer) {
+        g_forced_tt_buffer = new ForcedTTEntry[FORCED_TT_SIZE]();
+    }
+}
+
+static uint64_t forced_verify(const NativeState* s) {
+    uint64_t value = 0xD6E8FEB86659FD93ULL;
+    auto mix = [&value](uint64_t part) {
+        value ^= part + 0x9E3779B97F4A7C15ULL + (value << 6) + (value >> 2);
+        value ^= value >> 30;
+        value *= 0xBF58476D1CE4E5B9ULL;
+        value ^= value >> 27;
+    };
+
+    for (int32_t p = 0; p < 4; p++) {
+        mix(s->hand_bits[p]);
+        mix(static_cast<uint64_t>(s->tricks_won[p]) | (static_cast<uint64_t>(p) << 8));
+    }
+    for (int32_t i = 0; i < s->table_count; i++) {
+        const uint64_t cid = static_cast<uint64_t>(
+            s->table_suits[i] * 13 + (s->table_ranks[i] - 2)
+        );
+        mix(cid | (static_cast<uint64_t>(s->table_pids[i]) << 8) |
+            (static_cast<uint64_t>(i) << 16));
+    }
+    mix(static_cast<uint64_t>(s->table_count));
+    mix(static_cast<uint64_t>(s->turn) | (static_cast<uint64_t>(s->trick_leader) << 8));
+    mix(static_cast<uint64_t>(s->spades_broken) |
+        (static_cast<uint64_t>(s->tricks_played) << 8));
+    return value;
+}
+
+static ForcedValue terminal_forced_value(const NativeState* s) {
+    int32_t team0_tricks = 0;
+    uint32_t nil_mask = 0;
+    for (int32_t p = 0; p < 4; p++) {
+        if (s->teams[p] == 0) team0_tricks += s->tricks_won[p];
+        if ((s->max_bid[p] == 0 || s->max_bid[p] == 14) && s->tricks_won[p] > 0) {
+            nil_mask |= (1u << p);
+        }
+    }
+    return {FORCED_FIXED, team0_tricks, nil_mask};
+}
+
+static bool forced_tt_lookup(const NativeState* s, ForcedContext& ctx,
+                             ForcedValue* output) {
+    const uint64_t key = compute_full_hash(s);
+    ForcedTTEntry& entry = ctx.slot(key);
+    if (entry.generation != ctx.generation || entry.key != key ||
+        entry.verify != forced_verify(s)) {
+        return false;
+    }
+    *output = {
+        entry.status,
+        entry.team0_final_tricks,
+        entry.nil_broken_mask,
+    };
+    return true;
+}
+
+static void forced_tt_store(const NativeState* s, ForcedContext& ctx,
+                            const ForcedValue& value) {
+    if (value.status == FORCED_TIMEOUT) return;
+    const uint64_t key = compute_full_hash(s);
+    ForcedTTEntry& entry = ctx.slot(key);
+    entry.key = key;
+    entry.verify = forced_verify(s);
+    entry.status = value.status;
+    entry.team0_final_tricks = value.team0_final_tricks;
+    entry.nil_broken_mask = value.nil_broken_mask;
+    entry.generation = ctx.generation;
+}
+
+static ForcedValue forced_search(NativeState* s, ForcedContext& ctx) {
+    ctx.nodes_searched++;
+    if (std::chrono::steady_clock::now() >= ctx.deadline) {
+        return {FORCED_TIMEOUT, -1, 0};
+    }
+    if (s->tricks_played >= 13) {
+        return terminal_forced_value(s);
+    }
+
+    ForcedValue cached;
+    if (forced_tt_lookup(s, ctx, &cached)) return cached;
+
+    ActionList actions;
+    legal_actions_all(s, s->turn, actions);
+    if (actions.count == 0) {
+        return {FORCED_TIMEOUT, -1, 0};
+    }
+
+    bool have_signature = false;
+    ForcedValue first{FORCED_FIXED, -1, 0};
+
+    for (int32_t i = 0; i < actions.count; i++) {
+        const UndoInfo undo = make_move(s, s->turn, actions.cards[i]);
+        const ForcedValue child = forced_search(s, ctx);
+        unmake_move(s, undo);
+
+        if (child.status == FORCED_TIMEOUT) return child;
+        if (child.status == FORCED_VARIABLE) {
+            const ForcedValue variable{FORCED_VARIABLE, -1, 0};
+            forced_tt_store(s, ctx, variable);
+            return variable;
+        }
+        if (!have_signature) {
+            first = child;
+            have_signature = true;
+        } else if (first.team0_final_tricks != child.team0_final_tricks ||
+                   first.nil_broken_mask != child.nil_broken_mask) {
+            const ForcedValue variable{FORCED_VARIABLE, -1, 0};
+            forced_tt_store(s, ctx, variable);
+            return variable;
+        }
+    }
+
+    forced_tt_store(s, ctx, first);
+    return first;
 }
 
 // ============================================================
@@ -1408,6 +1580,43 @@ static void ensure_tt_buffer() {
     if (!g_tt_buffer) {
         g_tt_buffer = new TTEntry[TT_SIZE]();
     }
+}
+
+void analyze_forced_outcome_native(const NativeState* input,
+                                   int64_t budget_microseconds,
+                                   ForcedOutcomeResult* output) {
+    if (!output) return;
+
+    const auto started = std::chrono::steady_clock::now();
+    output->status = FORCED_TIMEOUT;
+    output->team0_final_tricks = -1;
+    output->nil_broken_mask = 0;
+    output->nodes_searched = 0;
+    output->elapsed_ms = 0.0;
+
+    if (!input || budget_microseconds <= 0) return;
+
+    init_zobrist();
+    ensure_forced_tt_buffer();
+    g_forced_generation++;
+    if (g_forced_generation == 0) g_forced_generation = 1;
+
+    ForcedContext ctx;
+    ctx.tt = g_forced_tt_buffer;
+    ctx.generation = g_forced_generation;
+    ctx.nodes_searched = 0;
+    ctx.deadline = started + std::chrono::microseconds(budget_microseconds);
+
+    NativeState state = *input;
+    const ForcedValue value = forced_search(&state, ctx);
+
+    output->status = value.status;
+    output->team0_final_tricks = value.team0_final_tricks;
+    output->nil_broken_mask = value.nil_broken_mask;
+    output->nodes_searched = ctx.nodes_searched;
+    output->elapsed_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started
+    ).count();
 }
 
 double solve_native(const NativeState* input) {

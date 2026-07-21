@@ -82,6 +82,10 @@ class RuleExactFirst4NilPlayer(RuleExactFirst4Player):
             self.last_play_info = {"mode": "no_state_fallback"}
             return legal_cards[0]
 
+        if len(legal_cards) == 1:
+            self.last_play_info = {"mode": "single_action_direct"}
+            return legal_cards[0]
+
         # 后 36 张:完全继承父类的 IS pool _exact_play
         remaining = sum(len(h) for h in state.hands)
         if remaining <= self.exact_threshold:

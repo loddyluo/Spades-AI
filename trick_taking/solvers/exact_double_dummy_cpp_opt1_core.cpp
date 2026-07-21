@@ -5,7 +5,22 @@
 #include <thread>
 #include <cstring>
 
+#ifndef SPADES_NATIVE_BUILD_ID
+#define SPADES_NATIVE_BUILD_ID "unversioned"
+#endif
+#ifndef SPADES_NATIVE_ABI_VERSION
+#define SPADES_NATIVE_ABI_VERSION 0
+#endif
+
 extern "C" {
+
+const char* spades_native_build_id() {
+    return SPADES_NATIVE_BUILD_ID;
+}
+
+uint32_t spades_native_abi_version() {
+    return SPADES_NATIVE_ABI_VERSION;
+}
 
 struct NativeState {
     int32_t num_players;

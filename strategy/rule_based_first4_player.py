@@ -565,12 +565,10 @@ class RuleBasedFirst4Player(AIPlayer):
         # 否则: 队友没赢 -> 我尽量赢
         same_suit = legal_by_suit[lead_suit]
         if same_suit:
-            bigger = [c for c in same_suit if c.rank.value > cur_winner_card.rank.value
-                      and cur_winner_card.suit != self.TRUMP_SUIT]
-            # 注意: 当前最大如果是黑桃, 用同花色赢不了 (除非 lead suit==SPADES)
             if cur_winner_card.suit == self.TRUMP_SUIT and lead_suit != self.TRUMP_SUIT:
                 # 用同花色注定赢不了 -> 出最小
                 return min(same_suit, key=lambda c: c.rank.value)
+            bigger = [c for c in same_suit if c.rank.value > cur_winner_card.rank.value]
             if bigger:
                 # 用户规则(第四家): "出这些牌中的最小张"
                 return min(bigger, key=lambda c: c.rank.value)

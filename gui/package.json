@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Minimal React/Vite table UI for manual Spades play.",
   "scripts": {
+    "test": "node --test src/game.test.js src/showdown.test.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

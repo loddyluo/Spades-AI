@@ -30,6 +30,7 @@ import argparse
 import json
 import random
 import sys
+import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,6 +45,11 @@ for _p in (str(REPO_ROOT), str(GO_MCTS_DIR)):
 
 from trick_taking.card import Card, Rank, Suit, _STANDARD_CARDS, cards_to_bitset  # noqa: E402
 from trick_taking.game_state import GameState, Phase, TrickRecord  # noqa: E402
+from trick_taking.forced_outcome import (  # noqa: E402
+    ShowdownStateError,
+    check_for_showdown,
+    validate_showdown_state,
+)
 from trick_taking.games.spades import SpadesRules  # noqa: E402
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
     ExactDoubleDummyCppFastestSolver,
@@ -156,6 +162,7 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
 
     # completed tricks → trick_history + played_bitset + tricks_won
     played_bitset = 0
+    public_spade_seen = False
     tricks_won = [0, 0, 0, 0]
     cards_played_by_seat = [0, 0, 0, 0]  # how many cards each seat has shown
     trick_history: list[TrickRecord] = []
@@ -166,6 +173,7 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
             card = parse_card_code(str(c["card"]))
             entry_cards.append((cseat, card))
             played_bitset |= card.bit
+            public_spade_seen = public_spade_seen or card.suit == Suit.SPADES
             cards_played_by_seat[cseat] += 1
         if not entry_cards:
             continue
@@ -183,6 +191,7 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
         card = parse_card_code(str(c["card"]))
         table_cards.append((cseat, card))
         played_bitset |= card.bit
+        public_spade_seen = public_spade_seen or card.suit == Suit.SPADES
         cards_played_by_seat[cseat] += 1
 
     # ── Fill opponents with placeholder cards from the unseen pool ──────────
@@ -205,7 +214,7 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
         hands[pid] = unseen_pool[pool_idx: pool_idx + remaining_count]
         pool_idx += remaining_count
 
-    spades_broken = bool(payload.get("spadesBroken", False))
+    spades_broken = bool(payload.get("spadesBroken", False)) or public_spade_seen
     leader = int(payload.get("leader", seat))
 
     state = GameState()
@@ -229,6 +238,106 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
     state.played_bitset = played_bitset
     state.tricks_played = len(trick_history)
     return state, seat
+
+
+def build_full_showdown_state(payload: dict[str, Any]) -> GameState:
+    """Build and validate the full-information state used only for showdown.
+
+    Unlike :func:`build_local_state`, this function deliberately consumes all
+    four real remaining hands.  Its result must only be passed to the exact
+    forced-outcome checker, never to an acting bidder or card player.
+    """
+    raw_hands = payload.get("remainingHands")
+    if not isinstance(raw_hands, list) or len(raw_hands) != 4:
+        raise ShowdownStateError("remainingHands must contain four hands")
+    try:
+        hands = [
+            [parse_card_code(str(code)) for code in hand]
+            for hand in raw_hands
+        ]
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        raise ShowdownStateError("remainingHands contains an invalid card") from exc
+
+    raw_bids = payload.get("bids", []) or []
+    max_bid = [
+        frontend_bid_to_local(raw_bids[seat] if seat < len(raw_bids) else None)
+        for seat in range(4)
+    ]
+
+    played_bitset = 0
+    public_spade_seen = False
+    tricks_won = [0, 0, 0, 0]
+    cards_won: list[list[Card]] = [[] for _ in range(4)]
+    trick_history: list[TrickRecord] = []
+    for raw_trick in payload.get("completedTricks", []) or []:
+        entry_cards: list[tuple[int, Card]] = []
+        for entry in raw_trick.get("cards", []) or []:
+            seat = int(entry["seat"])
+            card = parse_card_code(str(entry["card"]))
+            entry_cards.append((seat, card))
+            played_bitset |= card.bit
+            public_spade_seen = public_spade_seen or card.suit == Suit.SPADES
+        if not entry_cards:
+            raise ShowdownStateError("completed trick cannot be empty")
+        leader = entry_cards[0][0]
+        winner = _spades_trick_winner(entry_cards, leader)
+        tricks_won[winner] += 1
+        cards_won[winner].extend(card for _, card in entry_cards)
+        trick_history.append(
+            TrickRecord(cards=entry_cards, winner=winner, leader=leader)
+        )
+
+    table_cards: list[tuple[int, Card]] = []
+    for entry in payload.get("currentTrick", []) or []:
+        seat = int(entry["seat"])
+        card = parse_card_code(str(entry["card"]))
+        table_cards.append((seat, card))
+        played_bitset |= card.bit
+        public_spade_seen = public_spade_seen or card.suit == Suit.SPADES
+
+    claimed_tricks = payload.get("tricksWon")
+    if (
+        not isinstance(claimed_tricks, list)
+        or len(claimed_tricks) != 4
+        or [int(value) for value in claimed_tricks] != tricks_won
+    ):
+        raise ShowdownStateError("payload tricksWon does not match completed history")
+
+    leader = int(payload.get("leader", payload.get("currentPlayer", 0)))
+    turn = int(payload.get("currentPlayer", leader))
+    phase_name = str(payload.get("phase", "playing"))
+    phase = {
+        "bidding": Phase.BIDDING,
+        "playing": Phase.PLAYING,
+        "finished": Phase.SCORING,
+    }.get(phase_name)
+    if phase is None:
+        raise ShowdownStateError(f"unknown game phase: {phase_name}")
+    spades_broken = bool(payload.get("spadesBroken", False)) or public_spade_seen
+
+    state = GameState()
+    state.num_players = 4
+    state.phase = phase
+    state.hands = hands
+    state.hand_bitsets = [cards_to_bitset(hand) for hand in hands]
+    state.all_cards = list(_STANDARD_CARDS)
+    state.max_bid = max_bid
+    state.bids = []
+    state.teams = [0, 1, 0, 1]
+    state.turn = turn
+    state.current_bidder = turn
+    state.trick_leader = leader
+    state.table_cards = table_cards
+    state.trump_suit = Suit.SPADES
+    state.trump_broken = spades_broken
+    state.spades_broken = spades_broken
+    state.tricks_won = tricks_won
+    state.cards_won = cards_won
+    state.trick_history = trick_history
+    state.played_bitset = played_bitset
+    state.tricks_played = len(trick_history)
+    validate_showdown_state(state)
+    return state
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -282,9 +391,13 @@ class RuleExactProvider:
 
         self.bid_model = _load_bid_model(args.bid_checkpoint, device)
 
-        # The solver is safe to share read-only across seats.
+        # The wrapper serializes entry to the native process-global caches, so
+        # this instance can be shared safely across seats.
         self.exact_solver = ExactDoubleDummyCppFastestSolver()
         self.rules = SpadesRules()
+        # RuleExact players keep mutable replay history.  The HTTP server is
+        # threaded, so reset/replay/action selection must be one transaction.
+        self._decision_lock = threading.Lock()
 
         # One player instance per seat (keeps position / trajectory isolated).
         # RuleExactFirst4NilPlayer: rule-based nil strategy for first 4 tricks
@@ -305,6 +418,19 @@ class RuleExactProvider:
 
     # ── core dispatch ────────────────────────────────────────────────
     def choose_action(self, payload: dict[str, Any]) -> AiChoice:
+        with self._decision_lock:
+            return self._choose_action_serialized(payload)
+
+    def check_showdown(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Check a complete authoritative state without touching AI players."""
+        state = build_full_showdown_state(payload)
+        return check_for_showdown(
+            state,
+            self.exact_solver,
+            time_budget_seconds=1.0,
+        ).to_payload()
+
+    def _choose_action_serialized(self, payload: dict[str, Any]) -> AiChoice:
         state, seat = build_local_state(payload)
         player = self.players[seat]
 
@@ -421,15 +547,37 @@ def build_response_handler(provider: RuleExactProvider):
             self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
 
         def do_POST(self) -> None:  # noqa: N802
-            if self.path not in {"/api/choose-action", "/choose-action"}:
+            action_paths = {"/api/choose-action", "/choose-action"}
+            showdown_paths = {"/api/check-showdown", "/check-showdown"}
+            if self.path not in action_paths | showdown_paths:
                 self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
                 return
             content_length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(content_length) if content_length else b""
             try:
                 payload = json.loads(raw.decode("utf-8")) if raw else {}
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self._send_json(400, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path in showdown_paths:
+                try:
+                    result = provider.check_showdown(payload)
+                    self._send_json(200, {"ok": True, **result})
+                except (ShowdownStateError, KeyError, TypeError, ValueError) as exc:
+                    self._send_json(400, {"ok": False, "error": str(exc)})
+                except Exception as exc:  # pragma: no cover - surfaced to browser
+                    import traceback
+                    traceback.print_exc()
+                    self._send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            try:
                 choice = provider.choose_action(payload)
-                self._send_json(200, {"ok": True, **choice_to_payload(choice, provider.ai_name)})
+                self._send_json(
+                    200,
+                    {"ok": True, **choice_to_payload(choice, provider.ai_name)},
+                )
             except Exception as exc:  # pragma: no cover - surfaced to browser
                 import traceback
                 traceback.print_exc()

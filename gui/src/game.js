@@ -107,6 +107,16 @@ function cloneState(state) {
       ...trick,
       cards: trick.cards.map((entry) => ({ ...entry, card: { ...entry.card } })),
     })),
+    showdown: state.showdown ? {
+      ...state.showdown,
+      resolution: state.showdown.resolution ? {
+        ...state.showdown.resolution,
+        teamTricks: [...(state.showdown.resolution.teamTricks || [])],
+        nilOutcomes: [...(state.showdown.resolution.nilOutcomes || [])],
+        finalTricksWon: [...(state.showdown.resolution.finalTricksWon || [])],
+        continuation: (state.showdown.resolution.continuation || []).map((play) => ({ ...play })),
+      } : null,
+    } : null,
     log: state.log.map((entry) => ({ ...entry })),
   };
 }
@@ -206,6 +216,98 @@ function buildAiPayload(state) {
     currentTrick: serializeTrickCards(state.currentTrick),
     tricksWon: [...state.tricksWon],
   };
+}
+
+/**
+ * Return whether a state is an eligible complete-trick showdown boundary.
+ * Detection is intentionally limited to the final one through five tricks.
+ */
+export function shouldCheckShowdown(state) {
+  if (state.phase !== 'playing' || state.trickComplete || state.currentTrick.length !== 0) {
+    return false;
+  }
+  if (state.showdown) return false;
+  if (!Array.isArray(state.hands) || state.hands.length !== 4) return false;
+  const sizes = state.hands.map((hand) => hand.length);
+  return sizes.every((size) => size === sizes[0]) && sizes[0] >= 1 && sizes[0] <= 5;
+}
+
+/** Build the full-information payload used only by /api/check-showdown. */
+export function buildShowdownPayload(state) {
+  return {
+    phase: state.phase,
+    currentPlayer: state.currentPlayer,
+    leader: state.leader,
+    trickNumber: state.trickNumber,
+    spadesBroken: state.spadesBroken,
+    remainingHands: state.hands.map((hand) => hand.map((card) => card.code)),
+    bids: state.bids.map((bid) => serializeBid(bid)),
+    completedTricks: state.completedTricks.map((trick) => ({
+      cards: serializeTrickCards(trick.cards),
+    })),
+    currentTrick: serializeTrickCards(state.currentTrick),
+    tricksWon: [...state.tricksWon],
+  };
+}
+
+async function requestShowdownCheck(state) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1100);
+  try {
+    const response = await fetch('/api/check-showdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildShowdownPayload(state)),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Showdown check failed (${response.status}): ${text}`);
+    }
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || 'Showdown backend returned an error');
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Store a fixed offer without playing cards or computing the score. */
+export function applyShowdownOffer(state, response) {
+  if (!response?.ok || response.status !== 'fixed' || !response.resolution) {
+    return state;
+  }
+  const resolution = response.resolution;
+  if (
+    !Array.isArray(resolution.teamTricks)
+    || !Array.isArray(resolution.nilOutcomes)
+    || !Array.isArray(resolution.finalTricksWon)
+    || !Array.isArray(resolution.continuation)
+  ) {
+    return state;
+  }
+  const next = cloneState(state);
+  next.showdown = {
+    status: 'pending',
+    resolution: {
+      teamTricks: [...resolution.teamTricks],
+      nilOutcomes: [...resolution.nilOutcomes],
+      finalTricksWon: [...resolution.finalTricksWon],
+      continuation: resolution.continuation.map((play) => ({ ...play })),
+    },
+  };
+  return next;
+}
+
+async function checkShowdownAfterTrick(state) {
+  if (!shouldCheckShowdown(state)) return state;
+  try {
+    const response = await requestShowdownCheck(state);
+    return applyShowdownOffer(state, response);
+  } catch (err) {
+    console.warn('Automatic showdown check failed; continuing play:', err);
+    return state;
+  }
 }
 
 async function requestAiAction(state) {
@@ -359,10 +461,9 @@ export function applyCard(state, seat, cardCode, source = null) {
   }
 
   hand.splice(cardIndex, 1);
-  const ledSuit = next.currentTrick.length > 0 ? next.currentTrick[0].card.suit : card.suit;
   next.currentTrick.push({ seat, card });
   next.lastPlayedSeat = seat; // drives the slide-in-from-seat animation
-  next.spadesBroken = next.spadesBroken || (card.suit === 'S' && ledSuit !== 'S');
+  next.spadesBroken = next.spadesBroken || card.suit === 'S';
   next.log.push({ kind: 'play', seat, text: `${PLAYER_NAMES[seat]} 出牌 ${cardLabel(card)}${source ? ` [${source}]` : ''}` });
 
   if (next.currentTrick.length < 4) {
@@ -441,8 +542,50 @@ export function createInitialGame(seed, humanSeat, firstSeat = 0) {
     lastPlayedSeat: -1,
     lastBidSeat: -1,
     score: null,
+    showdown: null,
     log: [{ kind: 'system', text: '新牌局已开始' }],
   };
+}
+
+/** Apply a proven continuation and settle only after the local confirmation. */
+export function confirmLocalShowdown(state) {
+  if (!state.showdown || state.showdown.status !== 'pending') return state;
+  const resolution = state.showdown.resolution;
+  let next = cloneState(state);
+  next.showdown = null;
+
+  for (const play of resolution.continuation) {
+    if (next.currentPlayer !== play.seat) {
+      throw new Error(`Showdown continuation seat mismatch: expected ${next.currentPlayer}, got ${play.seat}`);
+    }
+    next = applyCard(next, play.seat, play.card, 'showdown');
+    if (next.trickComplete) next = finalizeTrick(next);
+  }
+
+  if (next.phase !== 'finished' || next.completedTricks.length !== 13) {
+    throw new Error('Showdown continuation did not produce a complete hand');
+  }
+  if (
+    next.tricksWon.length !== resolution.finalTricksWon.length
+    || next.tricksWon.some((value, seat) => value !== resolution.finalTricksWon[seat])
+  ) {
+    throw new Error('Showdown continuation disagrees with projected trick totals');
+  }
+  const actualTeams = [
+    next.tricksWon[0] + next.tricksWon[2],
+    next.tricksWon[1] + next.tricksWon[3],
+  ];
+  if (actualTeams.some((value, team) => value !== resolution.teamTricks[team])) {
+    throw new Error('Showdown continuation disagrees with projected team totals');
+  }
+  for (let seat = 0; seat < 4; seat += 1) {
+    if (resolution.nilOutcomes[seat] == null) continue;
+    const actualSuccess = next.tricksWon[seat] === 0;
+    if (actualSuccess !== resolution.nilOutcomes[seat]) {
+      throw new Error('Showdown continuation disagrees with projected Nil outcome');
+    }
+  }
+  return next;
 }
 
 /** Sleep helper for pacing AI turns into visible animation steps. */
@@ -476,12 +619,15 @@ export async function advanceUntilHuman(state, onStep = null) {
     if (next.trickComplete) {
       await sleep(PACE.trickHold);
       emit(finalizeTrick(next));
+      const checked = await checkShowdownAfterTrick(next);
+      if (checked !== next) emit(checked);
     }
+    return !!next.showdown;
   };
 
-  await collectIfNeeded();
+  if (await collectIfNeeded()) return next;
 
-  while (next.phase !== 'finished' && next.currentPlayer !== next.humanSeat) {
+  while (next.phase !== 'finished' && !next.showdown && next.currentPlayer !== next.humanSeat) {
     if (next.phase === 'bidding') {
       let bidState;
       try {
@@ -509,7 +655,7 @@ export async function advanceUntilHuman(state, onStep = null) {
       }
       emit(playState);
       await sleep(PACE.aiStep);
-      await collectIfNeeded();
+      if (await collectIfNeeded()) break;
       continue;
     }
 
@@ -532,12 +678,15 @@ export async function advanceUntilFinished(state, onStep = null) {
     if (next.trickComplete) {
       await sleep(PACE.trickHold);
       emit(finalizeTrick(next));
+      const checked = await checkShowdownAfterTrick(next);
+      if (checked !== next) emit(checked);
     }
+    return !!next.showdown;
   };
 
-  await collectIfNeeded();
+  if (await collectIfNeeded()) return next;
 
-  while (next.phase !== 'finished') {
+  while (next.phase !== 'finished' && !next.showdown) {
     if (next.phase === 'bidding') {
       let bidState;
       try {
@@ -565,7 +714,7 @@ export async function advanceUntilFinished(state, onStep = null) {
       }
       emit(playState);
       await sleep(PACE.aiStep);
-      await collectIfNeeded();
+      if (await collectIfNeeded()) break;
       continue;
     }
 
@@ -690,12 +839,16 @@ function parseCardCode(code) {
 export function remoteStateFromServer(msg, mySeat) {
   const myCards = (msg.hand || []).map(parseCardCode);
   const handSizes = msg.handSizes || [13, 13, 13, 13];
+  const remoteShowdown = msg.showdown && Array.isArray(msg.showdown.revealedHands)
+    ? msg.showdown
+    : null;
 
-  // Build hands array: only my seat has real cards; opponents are placeholder
-  // arrays sized correctly so CardBackFan shows the right count.
-  const hands = [null, null, null, null].map((_, seat) =>
-    seat === mySeat ? myCards : new Array(handSizes[seat])
-  );
+  // A proved showdown is the sole exception to ordinary hidden-card privacy.
+  const hands = remoteShowdown
+    ? remoteShowdown.revealedHands.map((hand) => hand.map(parseCardCode))
+    : [null, null, null, null].map((_, seat) =>
+      seat === mySeat ? myCards : new Array(handSizes[seat])
+    );
 
   // Convert currentTrick cards from string codes to card objects
   const currentTrick = (msg.currentTrick || []).map((entry) => ({
@@ -712,6 +865,20 @@ export function remoteStateFromServer(msg, mySeat) {
       card: parseCardCode(entry.card),
     })),
   }));
+
+  const confirmedSeats = remoteShowdown?.confirmedSeats || [];
+  const showdown = remoteShowdown ? {
+    status: 'pending',
+    id: remoteShowdown.id,
+    confirmedSeats: [...confirmedSeats],
+    locallyConfirmed: confirmedSeats.includes(mySeat),
+    resolution: {
+      teamTricks: [...(remoteShowdown.teamTricks || [])],
+      nilOutcomes: [...(remoteShowdown.nilOutcomes || [])],
+      finalTricksWon: [],
+      continuation: [],
+    },
+  } : null;
 
   return {
     seed: 0, // seed is not exposed per-state; client tracks separately
@@ -732,6 +899,14 @@ export function remoteStateFromServer(msg, mySeat) {
     lastPlayedSeat: msg.lastPlayedSeat != null ? msg.lastPlayedSeat : -1,
     lastBidSeat: msg.lastBidSeat != null ? msg.lastBidSeat : -1,
     score: null,
+    showdown,
     log: msg.log || [],
   };
+}
+
+
+/** Whether this remote client has confirmed and is waiting for its partner. */
+export function showdownWaitingForPartner(showdown, mySeat) {
+  if (!showdown || showdown.status !== 'pending') return false;
+  return (showdown.confirmedSeats || []).includes(mySeat);
 }

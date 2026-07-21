@@ -25,6 +25,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import math
 import random
 import sys
@@ -40,7 +42,10 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
     ExactDoubleDummyCppFastestSolver,
 )
 from strategy.hyperparam_config import HyperparamConfig
-from strategy.rule_based_first4_player import RuleBasedFirst4Player
+from strategy.rule_based_first4_player import (
+    RuleBasedFirst4Player,
+    _trick_current_winner,
+)
 
 
 # ── parallel solver worker (module-level for multiprocessing picklability) ──
@@ -48,9 +53,9 @@ from strategy.rule_based_first4_player import RuleBasedFirst4Player
 def _parallel_solve_worker(args: tuple) -> dict[int, float]:
     """Solve one proposal in a worker process. Returns {card_id: q_value}.
 
-    This function runs in a forked child process (Linux) or spawned process.
-    It creates its own solver instance and deep-copies the state, so the
-    global TT buffer is isolated per worker.
+    This function runs in a spawned child process.  It creates its own solver
+    instance and deep-copies the state, so the process-global TT buffer is
+    isolated per worker.
 
     Args:
         args: (state, observer_id, hand_proposal) where
@@ -101,6 +106,11 @@ def _parallel_solve_worker(args: tuple) -> dict[int, float]:
 # ── minimum batch size to trigger parallel solving ──
 _MIN_PARALLEL_BATCH = 8
 
+# ``fork`` from the threaded HTTP/WebSocket servers can inherit a locked
+# Python mutex or partially initialized torch/native runtime.  ``spawn``
+# starts each solver worker from a clean interpreter instead.
+_SOLVER_MP_START_METHOD = "spawn"
+
 
 class RuleExactFirst4Player(AIPlayer):
     """前 4 墩 rule-based + 后 36 张 exact solver 的混合玩家。
@@ -110,6 +120,8 @@ class RuleExactFirst4Player(AIPlayer):
     当有人叫 nil 时，前 4 墩自动切换为使用 nil 策略网络 (55_2nil.pt) 出牌，
     与 RLExactPlayer 的行为保持一致。
     """
+
+    _DECISION_SEED_VERSION = "rule-exact-visible-v1"
 
     def __init__(
         self,
@@ -253,10 +265,11 @@ class RuleExactFirst4Player(AIPlayer):
             self.last_play_info = {"mode": "no_state_fallback"}
             return legal_cards[0]
 
-        # 最后一墩，手里只剩 1 张牌 → 直接打出，不做 solver / rule 计算
+        # 唯一合法动作无需决策；最后一张保留原有诊断标记。
         my_remaining = len(state.hands[self.position])
-        if my_remaining <= 1 and legal_cards:
-            self.last_play_info = {"mode": "last_card_direct"}
+        if len(legal_cards) == 1:
+            mode = "last_card_direct" if my_remaining <= 1 else "single_action_direct"
+            self.last_play_info = {"mode": mode}
             return legal_cards[0]
 
         # 与 RLExactPlayer 完全相同的切换条件
@@ -278,13 +291,90 @@ class RuleExactFirst4Player(AIPlayer):
         self.last_play_info = {"mode": "rule_first4"}
         return card
 
+    @staticmethod
+    def _canonical_card_choice(cards: list[Card]) -> Card:
+        """Choose a stable fallback independent of the caller's list order."""
+        return min(cards, key=lambda card: card.card_id)
+
+    @staticmethod
+    def _stable_bid_value(value: Any) -> str | int | None:
+        """Return the stable primitive forms used by Spades max_bid."""
+        if value is None or isinstance(value, (str, int)):
+            return value
+        enum_value = getattr(value, "value", None)
+        if isinstance(enum_value, (str, int)):
+            return enum_value
+        return type(value).__qualname__
+
+    @classmethod
+    def _decision_seed(
+        cls,
+        state: GameState,
+        observer_id: int,
+        legal_cards: list[Card],
+    ) -> int:
+        """Hash only the observer-visible decision state into a stable seed."""
+        completed_tricks = []
+        for record in getattr(state, "trick_history", []):
+            cards = [
+                [int(player_id), int(card.card_id)]
+                for player_id, card in getattr(record, "cards", [])
+            ]
+            completed_tricks.append(
+                {
+                    "cards": cards,
+                    "leader": int(getattr(record, "leader", cards[0][0] if cards else -1)),
+                    "winner": int(getattr(record, "winner", -1)),
+                }
+            )
+
+        phase = getattr(state, "phase", None)
+        phase_name = getattr(phase, "name", str(phase))
+        hands = getattr(state, "hands", [])
+        own_hand = hands[observer_id] if observer_id < len(hands) else []
+        snapshot = {
+            "version": cls._DECISION_SEED_VERSION,
+            "phase": phase_name,
+            "observer": int(observer_id),
+            "num_players": int(getattr(state, "num_players", len(hands))),
+            "own_hand": sorted(int(card.card_id) for card in own_hand),
+            "legal_cards": sorted(int(card.card_id) for card in legal_cards),
+            "hand_sizes": [len(hand) for hand in hands],
+            "max_bid": [
+                cls._stable_bid_value(value)
+                for value in getattr(state, "max_bid", [])
+            ],
+            "teams": [int(team) for team in getattr(state, "teams", [])],
+            "turn": int(getattr(state, "turn", observer_id)),
+            "trick_leader": int(getattr(state, "trick_leader", observer_id)),
+            "tricks_played": int(getattr(state, "tricks_played", 0)),
+            "tricks_won": [int(value) for value in getattr(state, "tricks_won", [])],
+            "spades_broken": bool(
+                getattr(state, "spades_broken", False)
+                or getattr(state, "trump_broken", False)
+            ),
+            "completed_tricks": completed_tricks,
+            "table_cards": [
+                [int(player_id), int(card.card_id)]
+                for player_id, card in getattr(state, "table_cards", [])
+            ],
+        }
+        encoded = json.dumps(
+            snapshot,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        digest = hashlib.blake2b(encoded, digest_size=16).digest()
+        return int.from_bytes(digest, byteorder="big", signed=False)
+
     def _exact_play(self, state: GameState, legal_cards: list[Card]) -> Card:
         """使用精确求解器：IS proposal + top-K 加权平均（与 RLExactPlayer 一致）。"""
         if self.exact_solver is None:
             self.last_play_info = {"mode": "no_exact_solver_fallback"}
-            return legal_cards[0]
+            return self._canonical_card_choice(legal_cards)
 
-        rng = random.Random()
+        rng = random.Random(self._decision_seed(state, state.turn, legal_cards))
         # 计算剩余牌数，决定采样预算：越往后预算越大
         remaining_in = sum(len(h) for h in state.hands)
         top_k, max_samples = self.config.budget.lookup(remaining_in)
@@ -526,7 +616,7 @@ class RuleExactFirst4Player(AIPlayer):
                 n_workers = min(self._num_workers, n_proposals)
                 try:
                     import multiprocessing as _mp
-                    _ctx = _mp.get_context("fork")
+                    _ctx = _mp.get_context(_SOLVER_MP_START_METHOD)
                     with _ctx.Pool(n_workers) as pool:
                         q_results: list[dict[int, float]] = pool.map(
                             _parallel_solve_worker, work_items
@@ -650,7 +740,7 @@ class RuleExactFirst4Player(AIPlayer):
             return best_action
 
         self.last_play_info = {"mode": "exact_no_match_fallback"}
-        return legal_cards[0]
+        return self._canonical_card_choice(legal_cards)
 
     def _determinize_state(
         self, state: GameState, observer_id: int,
@@ -688,7 +778,7 @@ class RuleExactFirst4Player(AIPlayer):
             n = counts[pid]
             assigned = pool[pos: pos + n]
             pos += n
-            state.hands[pid] = list(assigned)
+            state.hands[pid] = sorted(assigned, key=lambda card: card.card_id)
 
         if hasattr(state, "hand_bitsets"):
             for pid in range(state.num_players):
@@ -894,10 +984,14 @@ class RuleExactFirst4Player(AIPlayer):
         void_suits: dict[p] = set of suits player p has shown void in
                     (cards of those suits are excluded from their random fill).
         """
+        all_cards = sorted(all_cards, key=lambda card: card.card_id)
         obs_set: set[int] = set(c.card_id for c in observer_current_hand)
         obs_set.update(c.card_id for c in played_by_player[observer_id])
         id_to_card = {c.card_id: c for c in all_cards}
-        observer_initial = [id_to_card[cid] for cid in obs_set]
+        observer_initial = [id_to_card[cid] for cid in sorted(obs_set)]
+
+        def canonicalize(hands: list[list[Card]]) -> list[list[Card]]:
+            return [sorted(hand, key=lambda card: card.card_id) for hand in hands]
 
         used_ids: set[int] = set(obs_set)
         for p in range(4):
@@ -924,7 +1018,7 @@ class RuleExactFirst4Player(AIPlayer):
                 n = needs[p]
                 initial_hands[p] = list(played_by_player[p]) + pool[pos:pos + n]
                 pos += n
-            return initial_hands
+            return canonicalize(initial_hands)
 
         # ── 拒绝采样：生成无约束均匀发牌，拒绝违反断门约束的样本 ──
         # 无约束均匀发牌 = shuffle(pool) → 按 needs 顺序切分
@@ -952,7 +1046,7 @@ class RuleExactFirst4Player(AIPlayer):
                 initial_hands[p] = list(played_by_player[p]) + new_cards
 
             if valid:
-                return initial_hands
+                return canonicalize(initial_hands)
 
         # 极罕见的情况：拒绝了 10000 次仍未找到可行解
         # （可能由于约束不可行，回退到带过滤的贪心分配）
@@ -974,7 +1068,7 @@ class RuleExactFirst4Player(AIPlayer):
                 initial_hands[p].extend(pool[:n])
                 pool = pool[n:]
 
-        return initial_hands
+        return canonicalize(initial_hands)
 
     @staticmethod
     def _compute_void_suits(
@@ -1019,9 +1113,10 @@ class RuleExactFirst4Player(AIPlayer):
         """Replay play_sequence against initial_hands; compute p = ∏(p_step).
 
         p = P_bid * ∏_{step} (w_step).
-        对于第 9~13 墩（step_idx // 4 >= 8），w_step 由精确求解器的 Q 值决定：
-          - 若动作是好动作（Q == max Q），w = 1
-          - 若动作是坏动作（Q < max Q），w = B / (B + A)
+        对于第 9~13 墩（step_idx // 4 >= 8），w_step 由精确求解器的 Q 值决定。
+        Q 始终是 team 0 - team 1，因此 team 0 取 max，team 1 取 min：
+          - 若动作是当前行动队伍的最优 Q，w = 1
+          - 否则 w = B / (B + A)
             （A = 好动作数，B = 坏动作数）
         其余墩的 w = 1。
 
@@ -1042,6 +1137,8 @@ class RuleExactFirst4Player(AIPlayer):
 
         # Track current incomplete trick's cards (for solver state construction)
         solver_table: list[tuple[int, Card]] = []
+        replay_tricks_played = 0
+        replay_tricks_won = [0, 0, 0, 0]
 
         # Pre-copy original state once for solver-based weighting (tricks 9-13)
         sim_state = None
@@ -1077,6 +1174,8 @@ class RuleExactFirst4Player(AIPlayer):
                     sim_state.hand_bitsets[p] = bit
                 sim_state.turn = player
                 sim_state.table_cards = list(solver_table)
+                sim_state.tricks_played = replay_tricks_played
+                sim_state.tricks_won = list(replay_tricks_won)
                 sim_state.spades_broken = spades_broken
                 sim_state.trump_broken = spades_broken
                 if solver_table:
@@ -1087,8 +1186,13 @@ class RuleExactFirst4Player(AIPlayer):
                 action_q = self.exact_solver.solve_with_q_fast(sim_state)  # {card_id: q_value}
 
                 if action_q:
-                    max_q_val = max(action_q.values())
-                    good_count = sum(1 for q in action_q.values() if q == max_q_val)
+                    acting_team = sim_state.teams[player]
+                    best_q_val = (
+                        max(action_q.values())
+                        if acting_team == 0
+                        else min(action_q.values())
+                    )
+                    good_count = sum(1 for q in action_q.values() if q == best_q_val)
                     bad_count = len(action_q) - good_count
 
                     # 直接用 card_id 查找（避免 Card 对象创建和匹配）
@@ -1096,7 +1200,7 @@ class RuleExactFirst4Player(AIPlayer):
                     if q_val is None:
                         return 0.0  # 该动作在 proposal 下不合法
 
-                    if q_val == max_q_val:
+                    if q_val == best_q_val:
                         weight *= 1.0  # 好动作
                     else:
                         total = good_count + bad_count
@@ -1120,6 +1224,9 @@ class RuleExactFirst4Player(AIPlayer):
                 spades_broken = True
             pos_in_trick = (pos_in_trick + 1) % 4
             if pos_in_trick == 0:
+                winner, _ = _trick_current_winner(solver_table, Suit.SPADES)
+                replay_tricks_won[winner] += 1
+                replay_tricks_played += 1
                 solver_table.clear()
                 led_suit = None
 
