@@ -192,7 +192,9 @@ class GeneralCardGame:
         self.state.teams = self.rules.set_team(self.state)
         self.state.points = self.rules.initial_points(self.state)
 
-        bid_values = [b.value for b in self.state.bids]
+        # The player contract requires the highest bid indexed by physical
+        # seat, not the dealer-relative chronological auction records.
+        bid_values = list(self.state.max_bid)
         for player in self.players:
             player.set_teams(list(self.state.teams), bid_values)
 

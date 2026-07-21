@@ -163,7 +163,10 @@ class SpadesMatchRunner:
         """叫牌结束后设置队伍并通知所有玩家。"""
         self.state.teams = self.rules.set_team(self.state)
         self.state.points = self.rules.initial_points(self.state)
-        bid_values = [bid.value for bid in self.state.bids]
+        # ``set_teams`` receives one highest bid per physical seat.  Auction
+        # records are in dealer-relative turn order and cannot be indexed by
+        # seat when the opener is not seat zero.
+        bid_values = list(self.state.max_bid)
         for player in self.players:
             player.set_teams(list(self.state.teams), bid_values)
 
