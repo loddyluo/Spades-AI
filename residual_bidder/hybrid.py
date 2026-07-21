@@ -380,3 +380,25 @@ def load_hybrid_npz(source: Path) -> HybridArrays:
     if any(getattr(arrays, name).dtype == object for name in _ARRAY_NAMES):
         raise ValueError("hybrid dataset must not contain object arrays")
     return arrays
+
+
+def concatenate_hybrid_arrays(parts: Sequence[HybridArrays]) -> HybridArrays:
+    """Concatenate complete NPZ shards while preserving deal grouping."""
+
+    if not isinstance(parts, Sequence) or not parts:
+        raise ValueError("parts must be a nonempty sequence")
+    if any(not isinstance(part, HybridArrays) for part in parts):
+        raise TypeError("every part must be HybridArrays")
+    combined = HybridArrays(
+        **{
+            name: np.concatenate([getattr(part, name) for part in parts], axis=0)
+            for name in _ARRAY_NAMES
+        }
+    )
+    rows = combined.features.shape[0]
+    if rows <= 0 or rows % 4 != 0:
+        raise ValueError("combined hybrid rows must contain complete four-row deals")
+    unique_ids, counts = np.unique(combined.deal_ids.astype(str), return_counts=True)
+    if len(unique_ids) * 4 != rows or not np.all(counts == 4):
+        raise ValueError("combined hybrid shards contain duplicate or incomplete deals")
+    return combined

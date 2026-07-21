@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from residual_bidder.hybrid import HybridArrays
+from residual_bidder.hybrid import HybridArrays, concatenate_hybrid_arrays
 from residual_bidder.training import bootstrap_multiplicities, fit_residual_ensemble
 
 
@@ -42,6 +42,36 @@ def test_bootstrap_multiplicities_are_deal_grouped_and_reproducible() -> None:
         for start in (0, 4, 8):
             assert torch.unique(first[member, start : start + 4]).numel() == 1
         assert int(first[member, ::4].sum().item()) == 3
+
+
+def test_concatenate_hybrid_arrays_preserves_complete_deal_order() -> None:
+    first = _arrays([1, 2])
+    second = _arrays([3])
+
+    combined = concatenate_hybrid_arrays([first, second])
+
+    assert combined.features.shape == (12, 167)
+    assert combined.deal_ids.tolist() == [
+        "deal-1",
+        "deal-1",
+        "deal-1",
+        "deal-1",
+        "deal-2",
+        "deal-2",
+        "deal-2",
+        "deal-2",
+        "deal-3",
+        "deal-3",
+        "deal-3",
+        "deal-3",
+    ]
+
+
+def test_concatenate_hybrid_arrays_rejects_duplicate_deals() -> None:
+    duplicate = _arrays([4])
+
+    with pytest.raises(ValueError, match="duplicate"):
+        concatenate_hybrid_arrays([duplicate, duplicate])
 
 
 def test_fit_rejects_train_validation_deal_overlap() -> None:

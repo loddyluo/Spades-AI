@@ -7,13 +7,14 @@ import hashlib
 import json
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import torch
 
 from residual_bidder.checkpoint import build_candidate_meta, save_checkpoint_atomic
 from residual_bidder.config import BidderConfig, ConfigError, canonical_sha256
-from residual_bidder.hybrid import load_hybrid_npz
+from residual_bidder.hybrid import concatenate_hybrid_arrays, load_hybrid_npz
 from residual_bidder.training import fit_residual_ensemble
 
 
@@ -48,14 +49,26 @@ def _device(value: str) -> torch.device:
 def train_to_checkpoint(
     config: BidderConfig,
     *,
-    train_path: Path,
-    validation_path: Path,
+    train_path: Path | Sequence[Path],
+    validation_path: Path | Sequence[Path],
     output: Path,
     device: torch.device,
     max_epochs: int | None = None,
 ) -> dict[str, object]:
-    train = load_hybrid_npz(train_path)
-    validation = load_hybrid_npz(validation_path)
+    train_paths = [train_path] if isinstance(train_path, Path) else list(train_path)
+    validation_paths = (
+        [validation_path]
+        if isinstance(validation_path, Path)
+        else list(validation_path)
+    )
+    if not train_paths or not validation_paths:
+        raise ValueError("training and validation paths must be nonempty")
+    train = concatenate_hybrid_arrays(
+        [load_hybrid_npz(path) for path in train_paths]
+    )
+    validation = concatenate_hybrid_arrays(
+        [load_hybrid_npz(path) for path in validation_paths]
+    )
     member_seeds = tuple(config.model.init_seeds)
     if len(member_seeds) != 5:
         raise ValueError("minimal trainer requires exactly five member seeds")
@@ -79,8 +92,8 @@ def train_to_checkpoint(
 
     dataset_sha256 = canonical_sha256(
         {
-            "train_sha256": _sha256(train_path),
-            "validation_sha256": _sha256(validation_path),
+            "train_sha256s": [_sha256(path) for path in train_paths],
+            "validation_sha256s": [_sha256(path) for path in validation_paths],
         }
     )
     metadata = build_candidate_meta(
@@ -98,6 +111,8 @@ def train_to_checkpoint(
         "ok": True,
         "schema": "minimal-residual-training-v1",
         "device": str(device),
+        "train_files": len(train_paths),
+        "validation_files": len(validation_paths),
         "train_rows": int(train.features.shape[0]),
         "validation_rows": int(validation.features.shape[0]),
         "epochs_ran": result.epochs_ran,
@@ -127,8 +142,8 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("configs/residual_bidder/base.yaml"),
     )
-    parser.add_argument("--train", type=Path, required=True)
-    parser.add_argument("--validation", type=Path, required=True)
+    parser.add_argument("--train", type=Path, action="append", required=True)
+    parser.add_argument("--validation", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--max-epochs", type=int)
