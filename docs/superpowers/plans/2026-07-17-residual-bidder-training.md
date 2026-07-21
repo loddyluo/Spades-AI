@@ -2,8 +2,9 @@
 
 > Superseded before implementation by
 > [Stochastic Hybrid Residual Bidder Training Design](../specs/2026-07-21-stochastic-hybrid-residual-bidder-design.md).
-> Do not execute this plan. A replacement implementation plan will be written
-> after the new specification is reviewed.
+> Do not execute this plan. Use the reviewed
+> [Stochastic Hybrid Residual Bidder Implementation Plan](2026-07-21-stochastic-hybrid-residual-bidder.md)
+> instead.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
