@@ -1,0 +1,75 @@
+schema: stochastic-hybrid-residual-bidder-v1
+nsfp:
+  path: Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt
+  sha256: b994add8b3a7067aac95000f8f61f90df9045f5a3d18be5fbc947756a7c2066c
+play:
+  config_path: configs/8.yaml
+  config_sha256: 658d14e51a42bd340fd2bed039b584ff8dec20f92f00821e818710e8131e9445
+  source_manifest:
+    - strategy/spades_match_runner.py
+    - strategy/rule_based_first4_player.py
+    - strategy/rule_based_first4_nil_player.py
+    - strategy/rule_exact_first4_player.py
+    - strategy/rule_exact_first4_nil_player.py
+    - trick_taking/games/spades.py
+    - trick_taking/solvers/exact_double_dummy_cpp_fastest.py
+    - trick_taking/solvers/exact_double_dummy_cpp_fastest_core.cpp
+  exact_threshold: 36
+  first_tricks: 4
+  enable_nil: true
+  enable_blind_nil: false
+targets: {divisor: 100.0}
+model:
+  members: 5
+  input_dim: 167
+  hidden_dim: 256
+  bottleneck_dim: 128
+  output_dim: 2
+  margin_divisor: 13.47
+  init_seeds: [1701, 1702, 1703, 1704, 1705]
+policy:
+  policy_seed: 20260721
+  lambda_grid: [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0]
+  temperature_grid: [0.0, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5]
+  epsilon_grid: [0.0, 0.005, 0.01, 0.02, 0.05, 0.1]
+  rho_grid: [0.25, 0.5, 0.75, 1.0]
+workers: {outer: 0, nested_exact: 1}
+data:
+  block_deals: 256
+  shard_deals: 64
+  natural_fraction: 0.75
+  reservoir_fraction: 0.25
+  reservoir_capacity_per_stratum: 2048
+  fixed_probe_states: 10000
+  minimum_blocks: 3
+training:
+  batch_size: 4096
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  max_epochs: 200
+  early_stop_patience: 15
+  gradient_norm_clip: 1.0
+  precision: float32
+calibration:
+  halving_eta: 4
+  round_deals: [256, 1024, 4096]
+  real_play_shortlist: 8
+  real_play_deals: 256
+promotion:
+  alpha_one_sided: 0.05
+  power: 0.80
+  minimum_detectable_points: 1.0
+  minimum_deals: 4096
+  round_to_deals: 256
+  bootstrap_resamples: 10000
+  protected_stratum_fraction: 0.05
+  protected_behavior_strata:
+    - incumbent_nil_presence
+    - incumbent_tail_presence
+    - incumbent_first_center_bucket
+stopping:
+  latest_blocks: 3
+  probability_l1: 0.01
+  changed_probe_fraction: 0.005
+storage:
+  run_dir: output/residual-bidder/main
