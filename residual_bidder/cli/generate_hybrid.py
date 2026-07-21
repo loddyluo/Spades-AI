@@ -13,8 +13,14 @@ from typing import Any
 import numpy as np
 import torch
 
+from residual_bidder.actions import BidAction
 from residual_bidder.config import BidderConfig, ConfigError
-from residual_bidder.hybrid import generate_hybrid_deal, save_hybrid_npz
+from residual_bidder.hybrid import (
+    HybridDeal,
+    HybridTrainingRow,
+    generate_hybrid_deal,
+    save_hybrid_npz,
+)
 from residual_bidder.nsfp import FrozenNSFP
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
     ExactDoubleDummyCppFastestSolver,
@@ -23,6 +29,47 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
 
 _WORKER_NSFP: FrozenNSFP | None = None
 _WORKER_SOLVER: ExactDoubleDummyCppFastestSolver | None = None
+
+
+def _pack_worker_result(deal: HybridDeal) -> tuple[object, ...]:
+    """Convert tensors to plain NumPy before crossing a process boundary."""
+
+    rows = tuple(
+        (
+            row.deal_id,
+            row.shuffle_seed,
+            row.room_id,
+            row.physical_seat,
+            row.bid_index,
+            int(row.center),
+            row.features.detach().cpu().numpy().copy(),
+            row.targets.detach().cpu().numpy().copy(),
+            row.mask.detach().cpu().numpy().copy(),
+            row.baseline_margin,
+        )
+        for row in deal.rows
+    )
+    return deal.deal_id, deal.shuffle_seed, deal.solver_calls, rows
+
+
+def _unpack_worker_result(payload: tuple[object, ...]) -> HybridDeal:
+    deal_id, shuffle_seed, solver_calls, packed_rows = payload
+    rows = tuple(
+        HybridTrainingRow(
+            deal_id=str(row[0]),
+            shuffle_seed=int(row[1]),
+            room_id=int(row[2]),
+            physical_seat=int(row[3]),
+            bid_index=int(row[4]),
+            center=BidAction(int(row[5])),
+            features=torch.from_numpy(np.asarray(row[6], dtype=np.float32).copy()),
+            targets=torch.from_numpy(np.asarray(row[7], dtype=np.float32).copy()),
+            mask=torch.from_numpy(np.asarray(row[8], dtype=np.float32).copy()),
+            baseline_margin=float(row[9]),
+        )
+        for row in packed_rows
+    )
+    return HybridDeal(str(deal_id), int(shuffle_seed), rows, int(solver_calls))
 
 
 def _initialize_worker(checkpoint: str, checkpoint_sha256: str) -> None:
@@ -43,7 +90,9 @@ def _initialize_worker(checkpoint: str, checkpoint_sha256: str) -> None:
 def _generate_worker(shuffle_seed: int):
     if _WORKER_NSFP is None or _WORKER_SOLVER is None:
         raise RuntimeError("hybrid worker was not initialized")
-    return generate_hybrid_deal(shuffle_seed, _WORKER_NSFP, _WORKER_SOLVER)
+    return _pack_worker_result(
+        generate_hybrid_deal(shuffle_seed, _WORKER_NSFP, _WORKER_SOLVER)
+    )
 
 
 def _validate_minimal_config(config: BidderConfig) -> None:
@@ -97,7 +146,10 @@ def generate_to_npz(
             initializer=_initialize_worker,
             initargs=(config.nsfp.path, config.nsfp.sha256),
         ) as pool:
-            generated = pool.map(_generate_worker, seeds, chunksize=1)
+            generated = [
+                _unpack_worker_result(payload)
+                for payload in pool.map(_generate_worker, seeds, chunksize=1)
+            ]
     arrays = save_hybrid_npz(output, generated)
     wall_seconds = time.perf_counter() - started
     solver_calls = sum(deal.solver_calls for deal in generated)

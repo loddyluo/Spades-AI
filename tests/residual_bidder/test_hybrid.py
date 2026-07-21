@@ -7,6 +7,10 @@ import pytest
 import torch
 
 from residual_bidder.actions import BidAction, from_local_bid
+from residual_bidder.cli.generate_hybrid import (
+    _pack_worker_result,
+    _unpack_worker_result,
+)
 from residual_bidder.hybrid import (
     generate_hybrid_deal,
     load_hybrid_npz,
@@ -148,3 +152,23 @@ def test_npz_round_trip_uses_only_pickle_free_arrays(tmp_path: Path) -> None:
         assert all(archive[name].dtype != object for name in archive.files)
     for name in expected.array_names():
         assert np.array_equal(getattr(expected, name), getattr(loaded, name))
+
+
+def test_multiprocess_payload_contains_no_torch_storage() -> None:
+    deal = generate_hybrid_deal(202607210030, _FakeNSFP(), _BidDifferenceSolver())
+
+    payload = _pack_worker_result(deal)
+
+    def assert_plain(value: object) -> None:
+        assert not isinstance(value, torch.Tensor)
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                assert_plain(item)
+
+    assert_plain(payload)
+    restored = _unpack_worker_result(payload)
+    expected = stack_hybrid_deals([deal])
+    actual = stack_hybrid_deals([restored])
+    assert restored.solver_calls == deal.solver_calls
+    for name in expected.array_names():
+        assert np.array_equal(getattr(expected, name), getattr(actual, name))
