@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from residual_bidder.deployment import (
+    DEPLOYED_CALIBRATION,
     DEPLOYED_CHECKPOINT_SHA256,
     DEPLOYED_MODEL_ID,
     load_deployed_acting_bidder,
@@ -37,6 +38,16 @@ def test_selected_checkpoint_loads_as_deterministic_acting_bidder() -> None:
 
     assert bidder.model_id == DEPLOYED_MODEL_ID
     assert bidder.checkpoint_sha256 == DEPLOYED_CHECKPOINT_SHA256
+    assert bidder.policy.calibration == DEPLOYED_CALIBRATION
+    assert bidder.policy_id == (
+        "18963ba56a997f2e70ba05f8f649072390e07d1fb5d0a181a678bdda0b9e1a52"
+    )
+    assert bidder.describe()["calibration"] == {
+        "uncertainty_lambda": 1.0,
+        "temperature": 0.0,
+        "epsilon": 0.0,
+        "rho": 1.0,
+    }
     assert bidder.describe()["belief_bidder"] == "bid_nsfp.pt"
     assert first.action is second.action
     assert first.fallback_reason is None

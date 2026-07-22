@@ -35,7 +35,7 @@ DEPLOYED_MODEL_ID = (
     "72b9b2fd95da2889e1cdd43527f9ed44d28b4490dc378e67d2924a3dbb9b5164"
 )
 DEPLOYED_CALIBRATION = CalibrationTuple(
-    uncertainty_lambda=0.0,
+    uncertainty_lambda=1.0,
     temperature=0.0,
     epsilon=0.0,
     rho=1.0,

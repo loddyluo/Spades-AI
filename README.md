@@ -145,7 +145,7 @@ cd gui && npm install && npm run dev
 Then open **http://localhost:5173/** in a browser.
 
 The backend uses `Spades_AI_GO-MCTS/checkpoints/bid_residual_100k.pt` as the
-production **acting bidder** with deterministic calibration `(lambda=0, T=0,
+production **acting bidder** with deterministic calibration `(lambda=1, T=0,
 epsilon=0, rho=1)`. The original `bid_nsfp.pt` remains frozen for late-play IS
 belief weighting and as the acting bidder's per-decision fallback. Startup
 fails if the selected checkpoint, model ID, config, NSFP model, or frozen play
