@@ -8,9 +8,9 @@ Architecture:
 - Human clients receive private game views (only their own hand visible).
 - Blocking AI calls (_exact_play) run via run_in_executor to not stall the
   async event loop.
-- Bidding uses the GO-MCTS MLP bid model (bid_nsfp.pt) via the bridge,
-  matching backend.py's behaviour. Blind nil is auto-passed (not offered),
-  also matching backend.py.
+- Bidding uses the selected residual-Q 100k acting bidder. bid_nsfp.pt stays
+  frozen as the late-play belief bidder and production fallback. Blind nil is
+  auto-passed (not offered), matching backend.py.
 
 Usage:
     python gui/game_server.py --port 8765
@@ -49,6 +49,12 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
 )
 from strategy.rule_exact_first4_nil_player import RuleExactFirst4NilPlayer  # noqa: E402
 from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
+from residual_bidder.actions import to_local_bid  # noqa: E402
+from residual_bidder.deployment import (  # noqa: E402
+    DEFAULT_CHECKPOINT_PATH as DEFAULT_ACTING_BID_CKPT,
+    DEFAULT_CONFIG_PATH as DEFAULT_RESIDUAL_BIDDER_CONFIG,
+    load_deployed_acting_bidder,
+)
 
 # ── Constants ────────────────────────────────────────────────────────────
 TRICK_HOLD_SECONDS = 1.5  # pause after trick completes for animation
@@ -241,6 +247,7 @@ class GameRoom:
 
     def __init__(self, room_code: str, seed: int,
                  bid_model=None, bid_device: str = "cpu",
+                 acting_bidder=None,
                  hyperparam_config=None, exact_solver=None,
                  exact_threshold: int = 36, num_workers: int = 0,
                  showdown_checker=None) -> None:
@@ -253,6 +260,7 @@ class GameRoom:
         # Shared AI components (loaded once at startup)
         self._bid_model = bid_model
         self._bid_device = bid_device
+        self._acting_bidder = acting_bidder
         self._hyperparam_config = hyperparam_config
         self._exact_solver = exact_solver
         self._exact_threshold = exact_threshold
@@ -398,9 +406,29 @@ class GameRoom:
                 view = self.state.get_player_view(bidder)
                 view["state"] = self.state  # required by place_bid MLP path
                 ai = self.ai_players[bidder]
-                bid_value = await asyncio.get_event_loop().run_in_executor(
-                    None, ai.place_bid, legal, view
-                )
+                if self._acting_bidder is None:
+                    bid_value = await asyncio.get_event_loop().run_in_executor(
+                        None, ai.place_bid, legal, view
+                    )
+                else:
+                    decision = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        functools.partial(
+                            self._acting_bidder.choose,
+                            self.state,
+                            legal,
+                            logical_seat=bidder,
+                            deal_id=f"room:{self.room_code}:seed:{self.seed}",
+                            room_id=self.room_code,
+                        ),
+                    )
+                    bid_value = to_local_bid(decision.action)
+                    ai.last_bid_info = {
+                        "chosen_bid": bid_value,
+                        "policy_id": decision.effective_policy_id,
+                        "fallback_reason": decision.fallback_reason,
+                        "legal_bids": list(legal),
+                    }
 
             # Record bid
             is_pass = (bid_value == "pass")
@@ -804,6 +832,7 @@ rooms: dict[str, GameRoom] = {}
 # Shared AI components (loaded once at startup, shared read-only across rooms)
 _shared_bid_model = None
 _shared_bid_device = "cpu"
+_shared_acting_bidder = None
 _shared_hyperparam_config = None
 _shared_exact_solver = None
 _shared_exact_threshold = 36
@@ -866,6 +895,7 @@ async def handler(ws) -> None:
                         room_code, seed,
                         bid_model=_shared_bid_model,
                         bid_device=_shared_bid_device,
+                        acting_bidder=_shared_acting_bidder,
                         hyperparam_config=_shared_hyperparam_config,
                         exact_solver=_shared_exact_solver,
                         exact_threshold=_shared_exact_threshold,
@@ -961,7 +991,15 @@ def parse_args() -> argparse.Namespace:
                         help="Path to hyperparam YAML config")
     parser.add_argument("--bid-checkpoint", type=str,
                         default=str(DEFAULT_BID_CKPT),
-                        help="Path to bid MLP checkpoint (bid_nsfp.pt)")
+                        help="[deprecated] bid_nsfp remains the frozen belief bidder")
+    parser.add_argument("--acting-bid-checkpoint", type=str,
+                        default=str(DEFAULT_ACTING_BID_CKPT),
+                        help="Path to the selected residual-Q acting checkpoint")
+    parser.add_argument("--residual-bidder-config", type=str,
+                        default=str(DEFAULT_RESIDUAL_BIDDER_CONFIG),
+                        help="Frozen residual bidder provenance config")
+    parser.add_argument("--bid-policy-seed", type=int, default=None,
+                        help="Override the frozen acting-policy seed")
     parser.add_argument("--num-workers", type=int, default=0,
                         help="Number of parallel solver workers (0=auto, 1=sequential)")
     parser.add_argument("--seed", type=int, default=None,
@@ -971,6 +1009,7 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     global _shared_bid_model, _shared_bid_device, _shared_hyperparam_config
+    global _shared_acting_bidder
     global _shared_exact_solver, _shared_exact_threshold, _shared_num_workers
 
     args = parse_args()
@@ -1011,8 +1050,21 @@ async def main() -> None:
               flush=True)
         _shared_hyperparam_config = HyperparamConfig()
 
-    # Bid model
-    _shared_bid_model = _load_bid_model(args.bid_checkpoint, args.device)
+    # Only the acting bidder changes. RuleExactFirst4NilPlayer continues to
+    # lazy-load bid_nsfp.pt for late-play IS belief weighting.
+    _shared_bid_model = None
+    _shared_acting_bidder = load_deployed_acting_bidder(
+        checkpoint_path=Path(args.acting_bid_checkpoint),
+        config_path=Path(args.residual_bidder_config),
+        repo_root=REPO_ROOT,
+        device=args.device,
+        policy_seed=args.bid_policy_seed,
+    )
+    print(
+        "  [OK] loaded acting bidder: "
+        f"model_id={_shared_acting_bidder.model_id}",
+        flush=True,
+    )
 
     # Exact solver (shared read-only across rooms)
     _shared_exact_solver = ExactDoubleDummyCppFastestSolver()

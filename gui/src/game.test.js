@@ -6,6 +6,7 @@ import {
   advanceUntilHuman,
   applyCard,
   applyShowdownOffer,
+  buildAiPayload,
   buildShowdownPayload,
   confirmLocalShowdown,
   remoteStateFromServer,
@@ -137,6 +138,18 @@ test('showdown payload is the only local payload containing all four hands', () 
   assert.deepEqual(payload.remainingHands, state.hands.map((hand) => hand.map((card) => card.code)));
   assert.deepEqual(payload.tricksWon, state.tricksWon);
   assert.deepEqual(payload.currentTrick, []);
+});
+
+
+test('acting bidder payload carries the reproducible deal seed', () => {
+  const state = showdownBoundary(5);
+
+  const payload = buildAiPayload(state);
+
+  assert.equal(payload.seed, state.seed);
+  assert.equal(payload.firstSeat, state.firstSeat);
+  assert.equal(payload.currentPlayer, state.currentPlayer);
+  assert.equal('remainingHands' in payload, false);
 });
 
 

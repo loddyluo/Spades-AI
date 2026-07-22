@@ -5,6 +5,8 @@
 
 > 架构：一个容器内同时跑 Caddy（网页服务器 + 自动 HTTPS）和多个 Python AI 进程。
 > 后端无状态，所以"多人同时玩"靠多开进程解决，对你完全透明。
+> 镜像默认使用已选定的 `bid_residual_100k.pt` 负责实际叫牌；旧
+> `bid_nsfp.pt` 仅保留为残局 belief bidder 和运行时安全回退。
 
 ---
 
@@ -32,7 +34,9 @@ docker run --rm -p 8080:80 -e SITE_ADDRESS=:80 spades
 
 然后：
 - 浏览器打开 **http://localhost:8080** → 应能发牌、出牌、AI 应手。
-- 健康检查：另开一个终端跑 `curl http://localhost:8080/api/health`，应返回 `{"ok": true ...}`。
+- 健康检查：另开一个终端跑 `curl http://localhost:8080/api/health`。
+  返回值中的 `acting_bidder.name` 应为 `residual_q_100k`，且
+  `model_id` 应以 `72b9b2fd95da` 开头。
 
 按 `Ctrl+C` 停止。确认这步没问题，再上云。
 

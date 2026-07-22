@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
 import torch
+
+_COLLAB_ROOT = Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS"
+if str(_COLLAB_ROOT) not in sys.path:
+    sys.path.insert(0, str(_COLLAB_ROOT))
 
 from spades_ai.models.bid_encoder import BidEncoder
 from spades_ai.models.bid_mlp import BidMLP

@@ -201,9 +201,11 @@ function serializeTrickCards(cards) {
   return cards.map((entry) => ({ seat: entry.seat, card: entry.card.code }));
 }
 
-function buildAiPayload(state) {
+export function buildAiPayload(state) {
   const seat = state.currentPlayer;
   return {
+    seed: state.seed,
+    firstSeat: state.firstSeat,
     phase: state.phase,
     currentPlayer: seat,
     leader: state.leader,

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from gui.game_server import GameRoom, _deal_hands_frontend_compat
+from residual_bidder.actions import BidAction
+from residual_bidder.hybrid import _initial_state
 from trick_taking.card import Suit
 from trick_taking.forced_outcome import (
     ShowdownCheck,
@@ -23,6 +26,52 @@ class _FakeSocket:
 
     async def send(self, raw: str) -> None:
         self.messages.append(json.loads(raw))
+
+
+def test_room_routes_all_ai_bids_through_deployed_acting_bidder() -> None:
+    class FixedActingBidder:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def choose(self, state, legal_bids, **kwargs):
+            self.calls.append({"state": state, "legal": list(legal_bids), **kwargs})
+            return SimpleNamespace(
+                action=BidAction.BID_3,
+                effective_policy_id="residual-test",
+                fallback_reason=None,
+            )
+
+    class BiddingPlayer:
+        def __init__(self) -> None:
+            self.last_bid_info = None
+            self.notified: list[tuple[int, str]] = []
+            self.team_bids = None
+
+        def place_bid(self, legal_bids, view):
+            raise AssertionError("legacy acting bidder must not be called")
+
+        def bid_placed(self, bidder, bid):
+            self.notified.append((bidder, bid))
+
+        def set_teams(self, teams, bids):
+            self.team_bids = (list(teams), list(bids))
+
+    async def scenario() -> None:
+        acting_bidder = FixedActingBidder()
+        room = GameRoom("RESIDUAL", 202607220003, acting_bidder=acting_bidder)
+        room.state = _initial_state(room.seed, room.rules)
+        room.ai_players = {seat: BiddingPlayer() for seat in range(4)}
+
+        await room._bidding_phase()
+
+        assert room.state.max_bid == ["bid_3"] * 4
+        assert len(acting_bidder.calls) == 4
+        assert {call["logical_seat"] for call in acting_bidder.calls} == {0, 1, 2, 3}
+        assert all(call["room_id"] == "RESIDUAL" for call in acting_bidder.calls)
+        assert all(player.last_bid_info["policy_id"] == "residual-test"
+                   for player in room.ai_players.values())
+
+    asyncio.run(scenario())
 
 
 def _late_state() -> GameState:

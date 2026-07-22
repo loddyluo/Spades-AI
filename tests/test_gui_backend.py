@@ -3,6 +3,7 @@ import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,10 +12,74 @@ from gui.backend import (
     build_full_showdown_state,
     build_local_state,
 )
+from residual_bidder.actions import BidAction
 from strategy.rule_exact_first4_player import RuleExactFirst4Player
 from trick_taking.card import Suit, _STANDARD_CARDS, cards_to_bitset
 from trick_taking.forced_outcome import ShowdownStateError
 from trick_taking.games.spades import SpadesRules
+
+
+def _bidding_payload() -> dict[str, object]:
+    return {
+        "seed": 202607220002,
+        "firstSeat": 0,
+        "phase": "bidding",
+        "currentPlayer": 2,
+        "leader": 0,
+        "remainingHand": [f"{rank}H" for rank in "23456789TJQKA"],
+        "bids": [
+            {"type": "normal", "value": 3},
+            {"type": "nil", "value": 0},
+            None,
+            None,
+        ],
+        "spadesBroken": False,
+        "completedTricks": [],
+        "currentTrick": [],
+    }
+
+
+def test_bidding_state_preserves_public_bid_history_for_residual_runtime() -> None:
+    state, seat = build_local_state(_bidding_payload())
+
+    assert seat == state.current_bidder == 2
+    assert [(bid.player_id, bid.value) for bid in state.bids] == [
+        (0, "bid_3"),
+        (1, "nil"),
+    ]
+    assert state.max_bid == ["bid_3", "nil", None, None]
+
+
+def test_provider_routes_acting_bid_through_residual_bidder_only() -> None:
+    state, seat = build_local_state(_bidding_payload())
+
+    class FixedActingBidder:
+        def __init__(self) -> None:
+            self.call = None
+
+        def choose(self, chosen_state, legal_bids, **kwargs):
+            self.call = (chosen_state, list(legal_bids), kwargs)
+            return SimpleNamespace(
+                action=BidAction.BID_4,
+                effective_policy_id="residual-test",
+                fallback_reason=None,
+            )
+
+    acting_bidder = FixedActingBidder()
+    provider = RuleExactProvider.__new__(RuleExactProvider)
+    provider.acting_bidder = acting_bidder
+    provider.players = [SimpleNamespace(last_bid_info=None) for _ in range(4)]
+
+    choice = provider._choose_bid(state, seat, _bidding_payload())
+
+    assert (choice.value, choice.bid_type, choice.detail) == (4, "normal", "residual_bid")
+    assert acting_bidder.call[0] is state
+    assert acting_bidder.call[2] == {
+        "logical_seat": 2,
+        "deal_id": "local:202607220002",
+        "room_id": "http-local",
+    }
+    assert provider.players[seat].last_bid_info["policy_id"] == "residual-test"
 
 
 @pytest.mark.parametrize(

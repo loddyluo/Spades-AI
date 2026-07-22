@@ -144,7 +144,12 @@ cd gui && npm install && npm run dev
 
 Then open **http://localhost:5173/** in a browser.
 
-The backend loads two policy checkpoints (`55_2.pt` for non-nil games, `55_2nil.pt` when any player bids nil) and one bid model (`Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt`). If a checkpoint is missing it falls back to random weights or heuristic bidding.
+The backend uses `Spades_AI_GO-MCTS/checkpoints/bid_residual_100k.pt` as the
+production **acting bidder** with deterministic calibration `(lambda=0, T=0,
+epsilon=0, rho=1)`. The original `bid_nsfp.pt` remains frozen for late-play IS
+belief weighting and as the acting bidder's per-decision fallback. Startup
+fails if the selected checkpoint, model ID, config, NSFP model, or frozen play
+pipeline hashes do not match.
 
 ### Evaluation — rl_exact vs DDS
 
@@ -398,7 +403,7 @@ python gui/backend.py
 cd gui && npm install && npm run dev
 ```
 
-The backend is stateless — each HTTP request rebuilds the game state from the JSON payload. The frontend never sends hidden opponent cards to the backend; the AI only sees its own hand and public history.
+The backend is stateless — each HTTP request rebuilds the game state from the JSON payload. The frontend never sends hidden opponent cards to the backend; the AI only sees its own hand and public history. `/api/health` reports the deployed acting bidder's model ID, policy ID, checkpoint hash, calibration, and frozen belief bidder.
 
 ### [`Spades_AI_GO-MCTS/`](Spades_AI_GO-MCTS/) — Collaborator Model Package
 

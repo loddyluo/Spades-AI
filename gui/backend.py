@@ -14,8 +14,9 @@ player's remaining hand.  This backend reconstructs a partial
   nil strategy (RuleExactFirst4NilPlayer → RuleBasedFirst4NilPlayer) instead
   of the rule-based player.
 
-Bidding uses the GO-MCTS MLP bid model (bid_nsfp.pt) via the bridge, exactly
-like DDSPlayer / RLExactPlayer in evaluation.
+Bidding uses the selected residual-Q 100k acting bidder.  The original
+bid_nsfp.pt remains frozen inside the late-play importance-sampling belief
+model and as the acting bidder's fail-safe fallback.
 
 Hyperparameter config defaults to configs/8.yaml.
 
@@ -44,7 +45,7 @@ for _p in (str(REPO_ROOT), str(GO_MCTS_DIR)):
         sys.path.insert(0, _p)
 
 from trick_taking.card import Card, Rank, Suit, _STANDARD_CARDS, cards_to_bitset  # noqa: E402
-from trick_taking.game_state import GameState, Phase, TrickRecord  # noqa: E402
+from trick_taking.game_state import Bid, GameState, Phase, TrickRecord  # noqa: E402
 from trick_taking.forced_outcome import (  # noqa: E402
     ShowdownStateError,
     check_for_showdown,
@@ -57,6 +58,12 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
 
 from strategy.rule_exact_first4_nil_player import RuleExactFirst4NilPlayer  # noqa: E402
 from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
+from residual_bidder.actions import to_local_bid  # noqa: E402
+from residual_bidder.deployment import (  # noqa: E402
+    DEFAULT_CHECKPOINT_PATH as DEFAULT_ACTING_BID_CHECKPOINT,
+    DEFAULT_CONFIG_PATH as DEFAULT_RESIDUAL_BIDDER_CONFIG,
+    load_deployed_acting_bidder,
+)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -153,12 +160,21 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
     hand_codes = payload.get("remainingHand", []) or []
     own_hand = [parse_card_code(str(code)) for code in hand_codes]
 
-    # bids → max_bid[4]
+    # bids → max_bid[4] for the frozen NSFP encoder plus ordered public
+    # history for the deployed bidder's deterministic sampling key.
     raw_bids = payload.get("bids", []) or []
     max_bid: list[Any] = [None, None, None, None]
+    bid_history: list[Bid] = []
     for i in range(4):
         entry = raw_bids[i] if i < len(raw_bids) else None
         max_bid[i] = frontend_bid_to_local(entry)
+    opener = int(payload.get("firstSeat", 0)) % 4
+    for offset in range(4):
+        bidder = (opener + offset) % 4
+        if max_bid[bidder] is not None:
+            bid_history.append(
+                Bid(player_id=bidder, value=max_bid[bidder], is_pass=False)
+            )
 
     # completed tricks → trick_history + played_bitset + tricks_won
     played_bitset = 0
@@ -224,7 +240,7 @@ def build_local_state(payload: dict[str, Any]) -> tuple[GameState, int]:
     state.hand_bitsets = [cards_to_bitset(h) for h in hands]
     state.all_cards = list(_STANDARD_CARDS)
     state.max_bid = max_bid
-    state.bids = []  # not needed by encoder / solver; max_bid is authoritative
+    state.bids = bid_history
     state.teams = [0, 1, 0, 1]
     state.turn = seat
     state.current_bidder = seat
@@ -389,7 +405,18 @@ class RuleExactProvider:
         self.hyperparam_config = HyperparamConfig.from_yaml(args.config)
         print(f"  [OK] loaded config: {args.config}", flush=True)
 
-        self.bid_model = _load_bid_model(args.bid_checkpoint, device)
+        self.acting_bidder = load_deployed_acting_bidder(
+            checkpoint_path=Path(args.acting_bid_checkpoint),
+            config_path=Path(args.residual_bidder_config),
+            repo_root=REPO_ROOT,
+            device=device,
+            policy_seed=args.bid_policy_seed,
+        )
+        print(
+            "  [OK] loaded acting bidder: "
+            f"model_id={self.acting_bidder.model_id}",
+            flush=True,
+        )
 
         # The wrapper serializes entry to the native process-global caches, so
         # this instance can be shared safely across seats.
@@ -407,14 +434,16 @@ class RuleExactProvider:
             RuleExactFirst4NilPlayer(
                 exact_solver=self.exact_solver,
                 exact_threshold=self.exact_threshold,
-                bid_model=self.bid_model,
+                # Acting bids are handled by self.acting_bidder.  The card
+                # player still lazy-loads bid_nsfp.pt for IS belief weighting.
+                bid_model=None,
                 bid_device=device,
                 hyperparam_config=self.hyperparam_config,
                 num_workers=args.num_workers,
             )
             for _ in range(4)
         ]
-        self.ai_name = "rule_exact"
+        self.ai_name = "rule_exact_residual_q_100k"
 
     # ── core dispatch ────────────────────────────────────────────────
     def choose_action(self, payload: dict[str, Any]) -> AiChoice:
@@ -463,24 +492,47 @@ class RuleExactProvider:
         view["state"] = state  # the contract play_card expects
 
         if state.phase == Phase.BIDDING:
-            return self._choose_bid(player, view)
+            return self._choose_bid(state, seat, payload)
         if state.phase == Phase.PLAYING:
             return self._choose_play(player, state, seat, view)
         raise ValueError(f"AI invoked in invalid phase: {state.phase}")
 
-    def _choose_bid(self, player: RuleExactFirst4NilPlayer, view: dict[str, Any]) -> AiChoice:
-        # Present a normal single-round bid menu (no blind_nil prompt — the GUI
-        # has a flat one-shot bidding flow).  place_bid routes through the MLP
-        # bid model via the bridge.
+    def _choose_bid(
+        self,
+        state: GameState,
+        seat: int,
+        payload: dict[str, Any],
+    ) -> AiChoice:
+        # The local GUI has a flat one-shot bidding flow, so blind nil is not
+        # offered.  Only this acting path uses residual Q; card play is unchanged.
         legal_bids = ["nil"] + [numeric_bid_to_str(i) for i in range(1, 14)]
-        raw = player.place_bid(legal_bids, view)
+        raw_seed = payload.get("seed")
+        deal_id = f"local:{raw_seed}" if isinstance(raw_seed, int) else "local:unseeded"
+        decision = self.acting_bidder.choose(
+            state,
+            legal_bids,
+            logical_seat=seat,
+            deal_id=deal_id,
+            room_id="http-local",
+        )
+        raw = to_local_bid(decision.action)
+        detail = (
+            "residual_bid"
+            if decision.fallback_reason is None
+            else "residual_fallback_nsfp"
+        )
+        self.players[seat].last_bid_info = {
+            "chosen_bid": raw,
+            "policy_id": decision.effective_policy_id,
+            "fallback_reason": decision.fallback_reason,
+            "legal_bids": list(legal_bids),
+        }
         if raw == "nil":
-            return AiChoice(kind="bid", value=0, bid_type="nil", detail="mlp_bid")
+            return AiChoice(kind="bid", value=0, bid_type="nil", detail=detail)
         if isinstance(raw, str) and raw.startswith("bid_"):
             return AiChoice(kind="bid", value=int(raw.split("_")[1]),
-                            bid_type="normal", detail="mlp_bid")
-        # Defensive fallback
-        return AiChoice(kind="bid", value=1, bid_type="normal", detail="fallback")
+                            bid_type="normal", detail=detail)
+        raise ValueError(f"deployed acting bidder returned invalid bid {raw!r}")
 
     def _choose_play(self, player: RuleExactFirst4NilPlayer, state: GameState, seat: int,
                      view: dict[str, Any]) -> AiChoice:
@@ -542,7 +594,12 @@ def build_response_handler(provider: RuleExactProvider):
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path in {"/", "/health", "/api/health"}:
-                self._send_json(200, {"ok": True, "ai": provider.ai_name, "seed": provider.seed})
+                self._send_json(200, {
+                    "ok": True,
+                    "ai": provider.ai_name,
+                    "seed": provider.seed,
+                    "acting_bidder": provider.acting_bidder.describe(),
+                })
                 return
             self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
 
@@ -607,7 +664,16 @@ def parse_args() -> argparse.Namespace:
                         help="[deprecated] nil strategy now uses RuleBasedFirst4NilPlayer; "
                              "this arg is ignored")
     parser.add_argument("--bid-checkpoint", type=str,
-                        default=str(REPO_ROOT / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt"))
+                        default=str(REPO_ROOT / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt"),
+                        help="[deprecated] bid_nsfp remains the frozen belief bidder")
+    parser.add_argument("--acting-bid-checkpoint", type=str,
+                        default=str(DEFAULT_ACTING_BID_CHECKPOINT),
+                        help="path to the selected residual-Q acting checkpoint")
+    parser.add_argument("--residual-bidder-config", type=str,
+                        default=str(DEFAULT_RESIDUAL_BIDDER_CONFIG),
+                        help="frozen residual bidder provenance config")
+    parser.add_argument("--bid-policy-seed", type=int, default=None,
+                        help="override the frozen acting-policy seed")
     parser.add_argument("--num-workers", type=int, default=0,
                         help="number of parallel solver workers (0=auto, 1=sequential)")
     parser.add_argument("--seed", type=int, default=None,

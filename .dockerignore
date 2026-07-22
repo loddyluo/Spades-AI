@@ -42,7 +42,7 @@ debug_*.txt
 debug_*.py
 *.zip
 
-# --- 训练用 checkpoint（运行时只需 55_2nil.pt 与 bid_nsfp.pt，二者不在此排除） ---
+# --- 训练用 checkpoint（运行时模型含 bid_residual_100k.pt 与 bid_nsfp.pt） ---
 55_2.pt
 rl_checkpoints/
 rl/checkpoints/
