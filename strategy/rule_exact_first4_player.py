@@ -710,7 +710,19 @@ class RuleExactFirst4Player(AIPlayer):
         else:
             best_action = None
 
+        # ── 硬性约束：出牌必须是等大牌张中最大的 ──
         if best_action is not None and best_action in legal_cards:
+            # 从 state 计算已出过的牌（按花色）
+            _played_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
+            for _rec in state.trick_history:
+                for _pid, _c in _rec.cards:
+                    _played_by_suit[_c.suit].add(_c.rank.value)
+            for _pid, _c in state.table_cards:
+                _played_by_suit[_c.suit].add(_c.rank.value)
+            best_action = self._enforce_largest_equal_magnitude(
+                best_action, state.hands[self.position], legal_cards, _played_by_suit,
+            )
+
             # 构造 action_scores 供 trace 日志记录（格式与 RLExactPlayer 一致）
             action_scores = sorted(
                 [{"action": card, "value": float(q)}
@@ -1175,6 +1187,54 @@ class RuleExactFirst4Player(AIPlayer):
                 return card_rank < group_max
 
         return False
+
+    @staticmethod
+    def _enforce_largest_equal_magnitude(
+        card: Card, hand: list[Card], legal_cards: list[Card],
+        played_ranks_by_suit: dict[Suit, set[int]],
+    ) -> Card:
+        """硬性规定：出的牌必须是其等大牌张组中最大的（在 legal_cards 范围内）。
+
+        形成手牌同花色牌的等大组（与 _card_has_larger_equal_magnitude 同逻辑），
+        如果选中的 card 不是组内最大且 legal 的牌，则替换为最大的那张。
+        """
+        suit = card.suit
+        played = played_ranks_by_suit.get(suit, set())
+
+        # 取手牌中同花色的牌
+        suit_cards = [c for c in hand if c.suit == suit]
+        if len(suit_cards) <= 1:
+            return card
+
+        suit_cards.sort(key=lambda c: c.rank.value, reverse=True)
+
+        # 形成等大组
+        groups: list[list[Card]] = []
+        current_group = [suit_cards[0]]
+        for i in range(1, len(suit_cards)):
+            prev_rank = suit_cards[i-1].rank.value
+            curr_rank = suit_cards[i].rank.value
+            all_between_played = all(
+                r in played
+                for r in range(curr_rank + 1, prev_rank)
+            )
+            if all_between_played:
+                current_group.append(suit_cards[i])
+            else:
+                groups.append(list(current_group))
+                current_group = [suit_cards[i]]
+        groups.append(list(current_group))
+
+        # 找到 card 所在组，取 legal_cards 中最大的
+        card_rank = card.rank.value
+        for group in groups:
+            if any(c.rank.value == card_rank for c in group):
+                legal_in_group = [c for c in group if c in legal_cards]
+                if legal_in_group:
+                    best = max(legal_in_group, key=lambda c: c.rank.value)
+                    return best
+                return card
+        return card
 
     def _compute_importance_weight(
         self, initial_hands: list[list[Card]],
