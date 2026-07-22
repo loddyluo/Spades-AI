@@ -472,6 +472,41 @@ class RLExactPlayer(AIPlayer):
             self.last_play_info = {"mode": "rl_policy_argmax"}
             return chosen_card
 
+    @staticmethod
+    def _enforce_largest_equal_magnitude(
+        card: Card, hand: list[Card], legal_cards: list[Card],
+        played_ranks_by_suit: dict[Suit, set[int]],
+    ) -> Card:
+        """硬性规定：出的牌必须是其等大牌张组中最大的（在 legal_cards 范围内）。"""
+        suit = card.suit
+        played = played_ranks_by_suit.get(suit, set())
+        suit_cards = [c for c in hand if c.suit == suit]
+        if len(suit_cards) <= 1:
+            return card
+        suit_cards.sort(key=lambda c: c.rank.value, reverse=True)
+        groups: list[list[Card]] = []
+        current_group = [suit_cards[0]]
+        for i in range(1, len(suit_cards)):
+            prev_rank = suit_cards[i-1].rank.value
+            curr_rank = suit_cards[i].rank.value
+            all_between_played = all(
+                r in played for r in range(curr_rank + 1, prev_rank)
+            )
+            if all_between_played:
+                current_group.append(suit_cards[i])
+            else:
+                groups.append(list(current_group))
+                current_group = [suit_cards[i]]
+        groups.append(list(current_group))
+        card_rank = card.rank.value
+        for group in groups:
+            if any(c.rank.value == card_rank for c in group):
+                legal_in_group = [c for c in group if c in legal_cards]
+                if legal_in_group:
+                    return max(legal_in_group, key=lambda c: c.rank.value)
+                return card
+        return card
+
     def _exact_play(self, state: GameState, legal_cards: list[Card]) -> Card:
         """使用精确求解器选择动作（对对手手牌做 32 次确定化采样后平均）。"""
         if self.exact_solver is None:
@@ -504,6 +539,16 @@ class RLExactPlayer(AIPlayer):
                 best_action = card
 
         if best_action is not None:
+            # 硬性约束：出牌必须是等大牌张中最大的
+            _played_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
+            for _rec in state.trick_history:
+                for _pid, _c in _rec.cards:
+                    _played_by_suit[_c.suit].add(_c.rank.value)
+            for _pid, _c in state.table_cards:
+                _played_by_suit[_c.suit].add(_c.rank.value)
+            best_action = self._enforce_largest_equal_magnitude(
+                best_action, state.hands[self.position], legal_cards, _played_by_suit,
+            )
             self.last_play_info = {"mode": "exact_determinized", "samples": K}
             return best_action
 
@@ -1088,6 +1133,16 @@ class RLExactPlayer(AIPlayer):
         best_value = float(action_q_values.get(best_action, 0.0)) if best_action else 0.0
 
         if best_action is not None and best_action in legal_cards:
+            # 硬性约束：出牌必须是等大牌张中最大的
+            _played_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
+            for _rec in state.trick_history:
+                for _pid, _c in _rec.cards:
+                    _played_by_suit[_c.suit].add(_c.rank.value)
+            for _pid, _c in state.table_cards:
+                _played_by_suit[_c.suit].add(_c.rank.value)
+            best_action = self._enforce_largest_equal_magnitude(
+                best_action, state.hands[self.position], legal_cards, _played_by_suit,
+            )
             self.last_play_info = {
                 "mode": "exact_is_determinized",
                 "samples": n_samples_used,
