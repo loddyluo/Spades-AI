@@ -1103,22 +1103,95 @@ class RuleExactFirst4Player(AIPlayer):
 
         return void_suits
 
+    @staticmethod
+    def _compute_legal_cards_for_state(
+        hand: list[Card], pos_in_trick: int,
+        led_suit: Suit | None, spades_broken: bool,
+    ) -> list[Card]:
+        """Compute legal cards from a hand given the current trick state."""
+        if pos_in_trick == 0:  # Leading
+            if not spades_broken:
+                non_spades = [c for c in hand if c.suit != Suit.SPADES]
+                if non_spades:
+                    return non_spades
+            return list(hand)
+        else:  # Following
+            if led_suit is not None:
+                led_cards = [c for c in hand if c.suit == led_suit]
+                if led_cards:
+                    return led_cards
+            return list(hand)
+
+    @staticmethod
+    def _card_has_larger_equal_magnitude(
+        card: Card, hand: list[Card],
+        played_ranks_by_suit: dict[Suit, set[int]],
+    ) -> bool:
+        """Check if card has larger 等大牌张 in the same hand.
+
+        "等大牌张": cards of the same suit where consecutive hand cards (sorted
+        by rank) are in the same group if ALL standard ranks between them have
+        been played.  Returns True if the card is NOT the largest in its group,
+        meaning the teammate made a bad play.
+        """
+        suit = card.suit
+        played = played_ranks_by_suit.get(suit, set())
+        card_rank = card.rank.value
+
+        # Get all cards of the same suit currently in hand
+        suit_cards = [c for c in hand if c.suit == suit]
+        if len(suit_cards) <= 1:
+            return False
+
+        # Sort descending by rank
+        suit_cards.sort(key=lambda c: c.rank.value, reverse=True)
+
+        # Form 等大 groups: consecutive sorted hand cards belong to the same
+        # group iff all ranks between them in the standard ordering are played.
+        groups: list[list[Card]] = []
+        current_group = [suit_cards[0]]
+
+        for i in range(1, len(suit_cards)):
+            prev_rank = suit_cards[i-1].rank.value
+            curr_rank = suit_cards[i].rank.value
+            # All ranks strictly between curr_rank and prev_rank
+            all_between_played = all(
+                r in played
+                for r in range(curr_rank + 1, prev_rank)
+            )
+            if all_between_played:
+                current_group.append(suit_cards[i])
+            else:
+                groups.append(current_group)
+                current_group = [suit_cards[i]]
+
+        groups.append(current_group)
+
+        # Check if the card is NOT the largest in its group
+        for group in groups:
+            group_max = max(c.rank.value for c in group)
+            group_min = min(c.rank.value for c in group)
+            if group_min <= card_rank <= group_max:
+                return card_rank < group_max
+
+        return False
+
     def _compute_importance_weight(
         self, initial_hands: list[list[Card]],
         play_sequence: list[tuple[int, Card]],
         max_bid: list[str] | None = None,
         bid_prod: float | None = None,
         original_state: GameState | None = None,
+        observer_id: int | None = None,
     ) -> float:
         """Replay play_sequence against initial_hands; compute p = ∏(p_step).
 
         p = P_bid * ∏_{step} (w_step).
-        对于第 9~13 墩（step_idx // 4 >= 8），w_step 由精确求解器的 Q 值决定。
-        Q 始终是 team 0 - team 1，因此 team 0 取 max，team 1 取 min：
-          - 若动作是当前行动队伍的最优 Q，w = 1
-          - 否则 w = B / (B + A)
-            （A = 好动作数，B = 坏动作数）
-        其余墩的 w = 1。
+
+        坏动作（CLAUDE.md）:
+        1. 前 4 墩 (step < 16) 我的队友：用 rule_based 策略检查；不一致则 weight ×= 0.81
+        2. 第 5 墩起 (step >= 16) 我的队友：出牌的等大牌张中有更大的 → weight ×= 0.81
+        3. 第 9~13 墩 (step // 4 >= 8)：精确求解器 Q 值（保持原逻辑）
 
         Returns 0 if any move was illegal given this deal.
         """
@@ -1129,11 +1202,47 @@ class RuleExactFirst4Player(AIPlayer):
         else:
             bid_prod = 1.0
 
+        # ── 确定队友位置 ──
+        teammate_positions: set[int] = set()
+        if observer_id is not None:
+            teammate_positions.add((observer_id + 2) % 4)
+
+        # ── 检测是否有人叫 nil（用于选择 rule_based 变体）──
+        has_nil_bid = False
+        if max_bid is not None:
+            has_nil_bid = any(b in ("nil", "blind_nil") for b in max_bid)
+
+        # ── 为每个队友位置创建 rule_based 玩家（前 4 墩检查用）──
+        rule_players: dict[int, RuleBasedFirst4Player] = {}
+        for tpos in teammate_positions:
+            if has_nil_bid:
+                from strategy.rule_based_first4_nil_player import (
+                    RuleBasedFirst4NilPlayer,
+                )
+                rp = RuleBasedFirst4NilPlayer()
+                rp.start_game(tpos, list(initial_hands[tpos]), 4)
+                # 标准 Spades 队伍分配 (0,2) vs (1,3)
+                rp.set_teams([0, 1, 0, 1], max_bid)
+            else:
+                rp = RuleBasedFirst4Player()
+                rp.start_game(tpos, list(initial_hands[tpos]), 4)
+            # 喂入叫牌历史
+            if max_bid is not None:
+                for bidder, bid_val in enumerate(max_bid):
+                    try:
+                        rp.bid_placed(bidder, bid_val)
+                    except Exception:
+                        pass
+            rule_players[tpos] = rp
+
         hands = [list(h) for h in initial_hands]
         spades_broken = False
         pos_in_trick = 0
         led_suit: Suit | None = None
         weight = 1.0
+
+        # Track played ranks per suit (for 等大牌张 computation)
+        played_ranks_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
 
         # Track current incomplete trick's cards (for solver state construction)
         solver_table: list[tuple[int, Card]] = []
@@ -1162,6 +1271,35 @@ class RuleExactFirst4Player(AIPlayer):
                 has_led = any(c.suit == led_suit for c in hand)
                 if has_led and card.suit != led_suit:
                     return 0.0
+
+            # ── 前 4 墩（step < 16）：用 rule_based 检查队友动作 ──
+            if step_idx < 16 and player in rule_players:
+                rp = rule_players[player]
+                legal = self._compute_legal_cards_for_state(
+                    hand, pos_in_trick, led_suit, spades_broken,
+                )
+                state_view: dict[str, Any] = {
+                    "table_cards": list(solver_table),
+                    "tricks_played": replay_tricks_played,
+                    "spades_broken": spades_broken,
+                    "trump_broken": spades_broken,
+                }
+                try:
+                    rp_card = rp.play_card(legal, state_view)
+                    if rp_card is not None and rp_card.card_id != card.card_id:
+                        weight *= 0.81  # 坏动作
+                except Exception:
+                    pass  # rule player 异常不影响权重
+
+            # ── 第 5 墩起（step >= 16）：等大牌张检查队友动作 ──
+            if step_idx >= 16 and player in teammate_positions:
+                if self._card_has_larger_equal_magnitude(
+                    card, hand, played_ranks_by_suit,
+                ):
+                    weight *= 0.81  # 坏动作：出了非最大等大牌张
+
+            # ── 更新已出牌记录（供后续等大牌张计算）──
+            played_ranks_by_suit[card.suit].add(card.rank.value)
 
             # ── 第 9~13 墩 (0-indexed: 8~12) 用精确求解器判定动作好坏 ──
             trick_num = step_idx // 4
@@ -1219,6 +1357,13 @@ class RuleExactFirst4Player(AIPlayer):
             # ── 执行动作 & 更新追踪 ──
             hand.pop(idx)
             solver_table.append((player, card))
+
+            # 将本步动作喂给 rule_players（保持内部状态一致，供后续前 4 墩检查）
+            for rp in rule_players.values():
+                try:
+                    rp.card_played(player, card)
+                except Exception:
+                    pass
 
             if card.suit == Suit.SPADES:
                 spades_broken = True
@@ -1292,7 +1437,7 @@ class RuleExactFirst4Player(AIPlayer):
             for initial_hands, bid_prod in zip(batch_proposals, bid_prods):
                 w = self._compute_importance_weight(
                     initial_hands, play_sequence, bid_prod=bid_prod,
-                    original_state=state,
+                    original_state=state, observer_id=observer_id,
                 )
                 if w > 0.0:
                     proposals.append(initial_hands)
