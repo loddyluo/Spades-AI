@@ -1,4 +1,4 @@
-"""Evaluate one residual acting bidder with the unchanged full-play player."""
+"""Evaluate two acting bidders with the unchanged full-play player."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ def evaluate_checkpoint_real(
     config: BidderConfig,
     *,
     checkpoint: Path | None,
+    opponent_checkpoint: Path | None,
     start_seed: int,
     deals: int,
     policy_seed: int,
@@ -46,9 +47,13 @@ def evaluate_checkpoint_real(
     torch.set_num_threads(1)
     nsfp = FrozenNSFP.load(Path(config.nsfp.path), config.nsfp.sha256, torch.device("cpu"))
     opponent = NSFPArgmaxPolicy(nsfp)
+    opponent_model_id = "legacy-nsfp"
+    opponent_policy_id = opponent.policy_id
     model_id = "legacy-nsfp-control"
     policy_id = opponent.policy_id
     if control_nsfp:
+        if opponent_checkpoint is not None:
+            raise ValueError("--opponent-checkpoint cannot be used with --control-nsfp")
         candidate = opponent
     else:
         if checkpoint is None:
@@ -66,6 +71,25 @@ def evaluate_checkpoint_real(
         )
         model_id = candidate_meta.model_id
         policy_id = candidate.policy_id
+
+    if opponent_checkpoint is not None:
+        opponent_ensemble, opponent_meta = load_checkpoint(
+            opponent_checkpoint,
+            expected_nsfp_sha256=config.nsfp.sha256,
+            expected_play_pipeline_sha256=_play_pipeline_sha256(config),
+            expected_config_sha256=config.sha256(),
+            expected_dataset_manifest_sha256=_checkpoint_dataset_sha256(
+                opponent_checkpoint
+            ),
+        )
+        opponent_calibration = CalibrationTuple(0.0, 0.0, 0.0, 1.0)
+        opponent = StochasticResidualPolicy(
+            nsfp,
+            opponent_ensemble,
+            promote_meta(opponent_meta, opponent_calibration),
+        )
+        opponent_model_id = opponent_meta.model_id
+        opponent_policy_id = opponent.policy_id
 
     solver = ExactDoubleDummyCppFastestSolver()
     if not solver.native_available:
@@ -97,6 +121,8 @@ def evaluate_checkpoint_real(
         "control_nsfp": control_nsfp,
         "model_id": model_id,
         "policy_id": policy_id,
+        "opponent_model_id": opponent_model_id,
+        "opponent_policy_id": opponent_policy_id,
         "calibration": {
             "uncertainty_lambda": 0.0,
             "temperature": 0.0,
@@ -136,6 +162,7 @@ def _parser() -> argparse.ArgumentParser:
         default=Path("configs/residual_bidder/base.yaml"),
     )
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--opponent-checkpoint", type=Path)
     parser.add_argument("--control-nsfp", action="store_true")
     parser.add_argument("--start-seed", type=int, required=True)
     parser.add_argument("--deals", type=int, required=True)
@@ -150,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         report = evaluate_checkpoint_real(
             BidderConfig.load(arguments.config),
             checkpoint=arguments.checkpoint,
+            opponent_checkpoint=arguments.opponent_checkpoint,
             start_seed=arguments.start_seed,
             deals=arguments.deals,
             policy_seed=arguments.policy_seed,
