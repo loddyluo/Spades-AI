@@ -141,6 +141,21 @@ def test_load_fails_closed_on_frozen_hash_drift(tmp_path: Path, field: str) -> N
         load_checkpoint(path, **expected)
 
 
+def test_load_can_treat_play_pipeline_hash_as_provenance_only(tmp_path: Path) -> None:
+    ensemble = ResidualQEnsemble(SEEDS)
+    metadata = _candidate(ensemble)
+    path = tmp_path / "candidate.pt"
+    save_checkpoint_atomic(path, ensemble, metadata)
+    expected = _expected_hashes()
+    expected["expected_play_pipeline_sha256"] = None
+
+    loaded, loaded_meta = load_checkpoint(path, **expected)
+
+    assert loaded_meta.play_pipeline_sha256 == HASHES["play_pipeline_sha256"]
+    for key, value in ensemble.state_dict().items():
+        assert torch.equal(loaded.state_dict()[key], value)
+
+
 def test_load_rejects_wrong_member_count_or_dimensions(tmp_path: Path) -> None:
     ensemble = ResidualQEnsemble(SEEDS)
     valid = tmp_path / "valid.pt"

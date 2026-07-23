@@ -378,7 +378,7 @@ def _load_and_validate_artifact(
     path: Path,
     *,
     expected_nsfp_sha256: str,
-    expected_play_pipeline_sha256: str,
+    expected_play_pipeline_sha256: str | None,
     expected_config_sha256: str,
     expected_dataset_manifest_sha256: str,
     require_promoted: bool,
@@ -397,6 +397,12 @@ def _load_and_validate_artifact(
         "dataset_manifest_sha256": expected_dataset_manifest_sha256,
     }
     for field, value in expected.items():
+        # The card-play pipeline is training provenance, not part of the
+        # acting bidder's runtime interface. Production callers may therefore
+        # leave this expectation unset, while reproducibility-sensitive
+        # training/evaluation callers can still require an exact match.
+        if value is None:
+            continue
         if not _is_sha256(value):
             raise ValueError(f"expected_{field} must be a lowercase SHA-256 digest")
         if getattr(metadata, field) != value:
@@ -428,12 +434,12 @@ def load_checkpoint(
     path: Path,
     *,
     expected_nsfp_sha256: str,
-    expected_play_pipeline_sha256: str,
+    expected_play_pipeline_sha256: str | None,
     expected_config_sha256: str,
     expected_dataset_manifest_sha256: str,
     require_promoted: bool = False,
 ) -> tuple[ResidualQEnsemble, BidderCheckpointMeta]:
-    """Safely load and fully validate a checkpoint against frozen provenance."""
+    """Safely load a checkpoint, optionally enforcing card-play provenance."""
 
     return _load_and_validate_artifact(
         Path(path),

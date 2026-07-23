@@ -185,6 +185,9 @@ class DeployedActingBidder:
             "model_id": self.model_id,
             "policy_id": self.policy_id,
             "checkpoint_sha256": self._checkpoint_sha256,
+            "training_play_pipeline_sha256": (
+                self._policy.metadata.play_pipeline_sha256
+            ),
             "calibration": {
                 "uncertainty_lambda": calibration.uncertainty_lambda,
                 "temperature": calibration.temperature,
@@ -205,7 +208,7 @@ def load_deployed_acting_bidder(
     expected_checkpoint_sha256: str = DEPLOYED_CHECKPOINT_SHA256,
     expected_model_id: str = DEPLOYED_MODEL_ID,
 ) -> DeployedActingBidder:
-    """Load the selected 100k policy and validate every frozen dependency."""
+    """Load the selected model without binding it to current card-play source."""
 
     root = Path(repo_root).resolve()
     checkpoint = Path(checkpoint_path).resolve()
@@ -226,7 +229,10 @@ def load_deployed_acting_bidder(
     ensemble, candidate_metadata = load_checkpoint(
         checkpoint,
         expected_nsfp_sha256=config.nsfp.sha256,
-        expected_play_pipeline_sha256=_play_pipeline_sha256(config, root),
+        # This hash remains in checkpoint metadata as training provenance.
+        # Runtime card-play changes do not alter the bidder's input/output
+        # contract and must not prevent the GUI from starting.
+        expected_play_pipeline_sha256=None,
         expected_config_sha256=config.sha256(),
         expected_dataset_manifest_sha256=_checkpoint_dataset_sha256(checkpoint),
     )

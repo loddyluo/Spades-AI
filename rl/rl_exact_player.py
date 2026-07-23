@@ -539,13 +539,11 @@ class RLExactPlayer(AIPlayer):
                 best_action = card
 
         if best_action is not None:
-            # 硬性约束：出牌必须是等大牌张中最大的
+            # 只统计已完成墩；当前桌面牌仍影响本墩胜负，必须阻断等大分组。
             _played_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
             for _rec in state.trick_history:
                 for _pid, _c in _rec.cards:
                     _played_by_suit[_c.suit].add(_c.rank.value)
-            for _pid, _c in state.table_cards:
-                _played_by_suit[_c.suit].add(_c.rank.value)
             best_action = self._enforce_largest_equal_magnitude(
                 best_action, state.hands[self.position], legal_cards, _played_by_suit,
             )
@@ -1133,13 +1131,11 @@ class RLExactPlayer(AIPlayer):
         best_value = float(action_q_values.get(best_action, 0.0)) if best_action else 0.0
 
         if best_action is not None and best_action in legal_cards:
-            # 硬性约束：出牌必须是等大牌张中最大的
+            # 只统计已完成墩；当前桌面牌仍影响本墩胜负，必须阻断等大分组。
             _played_by_suit: dict[Suit, set[int]] = {s: set() for s in Suit}
             for _rec in state.trick_history:
                 for _pid, _c in _rec.cards:
                     _played_by_suit[_c.suit].add(_c.rank.value)
-            for _pid, _c in state.table_cards:
-                _played_by_suit[_c.suit].add(_c.rank.value)
             best_action = self._enforce_largest_equal_magnitude(
                 best_action, state.hands[self.position], legal_cards, _played_by_suit,
             )

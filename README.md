@@ -389,7 +389,8 @@ python rl/both_eval.py --num-games 1500 --seed 61 --num-workers 30 \
 
 | File | Purpose |
 |------|---------|
-| `backend.py` | Python HTTP server (no framework — uses `http.server`). Reconstructs `GameState` from frontend payload and calls `RLExactPlayer` |
+| `backend.py` | Python HTTP server (no framework — uses `http.server`). Reconstructs `GameState` from frontend payload and calls `RuleExactFirst4NilPlayer` (nil-aware rules for the first 4 tricks, then importance-sampled exact play) |
+| `game_server.py` | Authoritative WebSocket game server. Uses the same `RuleExactFirst4NilPlayer` play pipeline directly |
 | `src/game.js` | React-based card game UI with drag-to-play, animations, dual-mode (play alone or vs AI) |
 | `src/styles.css` | Card table styling |
 | `vite.config.js` | Vite dev server config |

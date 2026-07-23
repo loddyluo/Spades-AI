@@ -13,7 +13,12 @@ from typing import Any
 
 @dataclass
 class BudgetThreshold:
-    """One row in the budget table: when remaining_in <= max_remaining, use these values."""
+    """One budget row.
+
+    ``top_k`` is the importance-sampling quota and ``max_samples`` is the
+    final total solver-sample cap, including both IS and diversity-fill
+    proposals.
+    """
     max_remaining: int
     top_k: int
     max_samples: int
@@ -21,7 +26,7 @@ class BudgetThreshold:
 
 @dataclass
 class BudgetConfig:
-    """Budget table: maps remaining_in ranges to (top_k, max_samples)."""
+    """Map remaining-card ranges to ``(IS quota, total sample cap)``."""
     thresholds: list[BudgetThreshold] = field(default_factory=lambda: [
         BudgetThreshold(max_remaining=16, top_k=128, max_samples=256),
         BudgetThreshold(max_remaining=24, top_k=64, max_samples=128),
@@ -55,7 +60,7 @@ class HyperparamConfig:
       min_pool_size: int = 100
           Minimum number of valid (w > 0) proposals required.
       budget: BudgetConfig
-          Maps remaining_in ranges to (top_k, max_samples) values.
+          Maps remaining_in ranges to (IS quota, final total sample cap).
       bad_action_weight: str = "x"
           Multiplier for bad actions during importance weight computation.
           Values:

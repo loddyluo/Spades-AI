@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import residual_bidder.deployment as deployment_module
 from residual_bidder.deployment import (
     DEPLOYED_CALIBRATION,
     DEPLOYED_CHECKPOINT_SHA256,
@@ -49,6 +50,9 @@ def test_selected_checkpoint_loads_as_deterministic_acting_bidder() -> None:
         "rho": 1.0,
     }
     assert bidder.describe()["belief_bidder"] == "bid_nsfp.pt"
+    assert bidder.describe()["training_play_pipeline_sha256"] == (
+        "8bfe50f89f77f50eb6489576d41949bd31565ccb1d3f2b246e4dcba7718d2c39"
+    )
     assert first.action is second.action
     assert first.fallback_reason is None
     assert sum(value > 0.0 for value in first.distribution.probabilities) == 1
@@ -58,6 +62,23 @@ def test_selected_checkpoint_loads_as_deterministic_acting_bidder() -> None:
 def test_selected_checkpoint_is_hash_pinned_before_deserialization() -> None:
     with pytest.raises(ValueError, match="checkpoint SHA-256 mismatch"):
         load_deployed_acting_bidder(expected_checkpoint_sha256="0" * 64)
+
+
+def test_deployment_does_not_inspect_runtime_card_play_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_runtime_hash(*_args, **_kwargs):
+        raise AssertionError("production load must not hash card-play sources")
+
+    monkeypatch.setattr(
+        deployment_module,
+        "_play_pipeline_sha256",
+        unexpected_runtime_hash,
+    )
+
+    bidder = load_deployed_acting_bidder()
+
+    assert bidder.model_id == DEPLOYED_MODEL_ID
 
 
 def test_declining_blind_nil_does_not_change_actual_bid_index() -> None:
