@@ -4,7 +4,7 @@
  * 优化技术总览：
  * 1. Zobrist Hashing - 增量更新哈希，O(1) make/unmake
  * 2. State Normalization (Rank Canonicalization) - 消除rank间隙，TT命中率暴增
- * 3. Quick Tricks Pruning - 确定赢墩分析，提前剪枝
+ * 3. Global Score-Range Pruning - 用所有可能终局的超集安全剪枝
  * 4. TT Only at Trick Boundaries - 减少缓存污染，提高命中率
  * 5. Zero Heap Allocation - 全部使用栈上固定数组
  * 6. Position-Aware Move Ordering - 领牌/跟牌使用不同排序策略
@@ -205,9 +205,15 @@ static uint64_t compute_full_hash(const NativeState* s) {
 // State Normalization (Rank Canonicalization)
 // ============================================================
 
-// Normalize hands for TT lookup: remove rank gaps, only relative order matters.
-// Returns a canonical hash that maps structurally equivalent positions to the same value.
-static uint64_t compute_normalized_hash(const NativeState* s) {
+struct NormalizedTTKey {
+    uint64_t hash;
+    uint64_t verify;
+};
+
+// Normalize once, then derive both independent TT fingerprints from the same
+// canonical hands.  The previous implementation repeated the full rank-map
+// construction whenever a candidate slot needed collision verification.
+static NormalizedTTKey compute_normalized_tt_key(const NativeState* s) {
     // Collect all remaining cards across all hands
     uint64_t all_remaining = 0;
     for (int p = 0; p < 4; p++) all_remaining |= s->hand_bits[p];
@@ -225,7 +231,6 @@ static uint64_t compute_normalized_hash(const NativeState* s) {
         // assign decreasing normalized rank
         // E.g. bits {12, 10, 9, 7} → normalized {3, 2, 1, 0}
         int rank_map[13];  // original bit position → normalized rank
-        int norm_rank = 0;
         // Count bits first to know the highest normalized rank
         int total = __builtin_popcount(remaining_suit);
         // Assign from highest bit to lowest
@@ -249,7 +254,7 @@ static uint64_t compute_normalized_hash(const NativeState* s) {
         }
     }
 
-    // Compute hash from normalized hands + game state
+    // Primary direct-map key.
     uint64_t h = 0;
     for (int p = 0; p < 4; p++) {
         h ^= norm_hands[p] * (0x9E3779B97F4A7C15ULL + p * 0x6A09E667F3BCC908ULL);
@@ -261,39 +266,8 @@ static uint64_t compute_normalized_hash(const NativeState* s) {
     for (int p = 0; p < 4; p++)
         h ^= zobrist_tricks_won[p][s->tricks_won[p]];
     h ^= zobrist_tricks_played[s->tricks_played];
-    return h;
-}
 
-// Verification hash for collision detection (use different mixing)
-static uint64_t compute_normalized_verify(const NativeState* s) {
-    uint64_t all_remaining = 0;
-    for (int p = 0; p < 4; p++) all_remaining |= s->hand_bits[p];
-
-    uint64_t norm_hands[4] = {0, 0, 0, 0};
-    for (int suit = 0; suit < 4; suit++) {
-        int base = suit * 13;
-        uint32_t remaining_suit = static_cast<uint32_t>((all_remaining >> base) & 0x1FFFULL);
-        if (remaining_suit == 0) continue;
-        int total = __builtin_popcount(remaining_suit);
-        int rank_map[13];
-        int nr = total - 1;
-        for (int bit = 12; bit >= 0; bit--) {
-            if (remaining_suit & (1u << bit)) {
-                rank_map[bit] = nr--;
-            }
-        }
-        for (int p = 0; p < 4; p++) {
-            uint32_t player_suit = static_cast<uint32_t>((s->hand_bits[p] >> base) & 0x1FFFULL);
-            uint32_t bits = player_suit;
-            while (bits) {
-                int bit = __builtin_ctz(bits);
-                norm_hands[p] |= (1ULL << (base + rank_map[bit]));
-                bits &= bits - 1;
-            }
-        }
-    }
-
-    // Different mixing constants for verify
+    // Independent collision verifier.
     uint64_t v = 0xCAFEBABEDEADFACEULL;
     for (int p = 0; p < 4; p++) {
         v ^= norm_hands[p];
@@ -309,7 +283,7 @@ static uint64_t compute_normalized_verify(const NativeState* s) {
     }
     v ^= (uint64_t)s->spades_broken << 17;
     v ^= (uint64_t)s->tricks_played << 21;
-    return v;
+    return {h, v};
 }
 
 // ============================================================
@@ -338,6 +312,9 @@ struct SolverCtx {
     TTEntry* tt;
     int32_t killer[56];       // [depth] killer move
     int32_t history[4][52];   // [player][card_id] history heuristic scores
+    double score_range_lower[14][14][16];
+    double score_range_upper[14][14][16];
+    uint8_t score_range_valid[14][14][16];
     int64_t nodes_searched;
     uint32_t generation;      // current generation (increment to "clear" TT)
     bool owns_tt;             // whether this ctx owns (should free) the TT
@@ -346,6 +323,7 @@ struct SolverCtx {
         tt = new TTEntry[TT_SIZE]();
         memset(killer, -1, sizeof(killer));
         memset(history, 0, sizeof(history));
+        memset(score_range_valid, 0, sizeof(score_range_valid));
         nodes_searched = 0;
         generation = 1;
         owns_tt = true;
@@ -357,6 +335,7 @@ struct SolverCtx {
         if (generation == 0) generation = 1;  // skip 0 (default-initialized value)
         memset(killer, -1, sizeof(killer));
         memset(history, 0, sizeof(history));
+        memset(score_range_valid, 0, sizeof(score_range_valid));
         nodes_searched = 0;
     }
 
@@ -376,66 +355,11 @@ struct SolverCtx {
     inline void mark_slot(TTEntry& e) {
         e.generation = generation;
     }
+
+    inline void reset_score_range_cache() {
+        memset(score_range_valid, 0, sizeof(score_range_valid));
+    }
 };
-
-// ============================================================
-// Coarse Partition TT (Level 0 - Hand Shape)
-//
-// Indexes by: # cards per suit per player + leader + tricks_played
-// Groups many distinct card distributions that share the same "shape"
-// into one entry with loose bounds. Provides fast early pruning.
-// ============================================================
-
-static constexpr int COARSE_TT_SIZE_BITS = 18;  // 256K entries
-static constexpr int COARSE_TT_SIZE = 1 << COARSE_TT_SIZE_BITS;
-static constexpr int COARSE_TT_MASK = COARSE_TT_SIZE - 1;
-
-struct CoarseTTEntry {
-    uint64_t key;
-    double lower_bound;
-    double upper_bound;
-    uint32_t generation;
-};
-
-static CoarseTTEntry* g_coarse_tt = nullptr;
-static uint32_t g_coarse_gen = 0;
-
-static void ensure_coarse_tt() {
-    if (!g_coarse_tt) {
-        g_coarse_tt = new CoarseTTEntry[COARSE_TT_SIZE]();
-    }
-}
-
-// Compute coarse key from hand shape (# cards per suit per player)
-static uint64_t compute_coarse_key(const NativeState* s) {
-    uint64_t h = 0x12345678ABCDEF01ULL;
-    for (int p = 0; p < 4; p++) {
-        for (int suit = 0; suit < 4; suit++) {
-            uint32_t count = __builtin_popcount(suit_ranks(s->hand_bits[p], suit));
-            h ^= (uint64_t)count << ((p * 4 + suit) * 4);
-        }
-        h = (h << 7) | (h >> 57);
-        h *= 0x9E3779B97F4A7C15ULL;
-    }
-    h ^= (uint64_t)s->turn;
-    h = (h << 11) | (h >> 53);
-    h ^= (uint64_t)s->trick_leader << 4;
-    h = (h << 13) | (h >> 51);
-    h ^= (uint64_t)s->tricks_played << 8;
-    h = (h << 17) | (h >> 47);
-    h ^= (uint64_t)s->spades_broken << 16;
-    // Include tricks_won for accurate scoring bounds
-    for (int p = 0; p < 4; p++) {
-        h ^= (uint64_t)s->tricks_won[p] << (20 + p * 4);
-    }
-    h ^= h >> 32;
-    h *= 0xBF58476D1CE4E5B9ULL;
-    return h;
-}
-
-static inline CoarseTTEntry& coarse_slot(uint64_t key) {
-    return g_coarse_tt[key & COARSE_TT_MASK];
-}
 
 // ============================================================
 // Trick Winner
@@ -505,229 +429,121 @@ static double evaluate_score_diff(const NativeState* s) {
     return team_scores[0] - team_scores[1];
 }
 
-// ============================================================
-// Quick Tricks Analysis (Per-Player, Correct)
-// ============================================================
 
-// Count guaranteed tricks PER PLAYER, not per team.
-// A single player holding the top N consecutive spades (trumps) guarantees N tricks.
-// A single player holding cards in a suit where opponents are void AND have no trump
-// also guarantees those tricks.
+// A score range over a SUPERSET of every reachable terminal outcome.
 //
-// Key insight: a player never plays two cards in the same trick, so if Player X
-// holds ♠A,♠K,♠Q (top 3 spades), each will be played in a different trick and
-// each will win (since no higher spade exists).
+// We enumerate every possible split of the remaining tricks between the two
+// teams.  Each unresolved nil is independently allowed to succeed or fail.
+// Some combinations are impossible, but including extra outcomes can only
+// widen [lower, upper], never exclude the true minimax value.  Therefore:
+//   lower >= beta  => safe fail-high
+//   upper <= alpha => safe fail-low
 //
-// BUT: if ♠A is held by Player 0 and ♠K by Player 2 (same team), they CAN collide
-// in the same trick (both ruffing). So we must count per-player, not per-team.
-
-static bool quick_tricks_bound_perplayer(const NativeState* s, int32_t* team0_min, int32_t* team0_max) {
-    if (s->table_count != 0) return false;
-
-    int32_t remaining = 13 - s->tricks_played;
-    if (remaining <= 1) return false;
-
-    // Count guaranteed tricks for the LEADING PLAYER only.
-    // The leader chooses what to lead. They can force a trick if:
-    // 1. They hold the highest remaining trump (spade) → always wins
-    // 2. They hold the master of a non-trump suit AND opponents can't ruff
-    //    (opponents have cards in that suit OR have no trump)
-    int32_t leader = s->trick_leader;
-    int32_t leader_team = s->teams[leader];
-    int32_t lho = (leader + 1) % 4;
-    int32_t rho = (leader + 3) % 4;
-
-    int32_t qtricks = 0;
-    int32_t leader_cards = popcount64(s->hand_bits[leader]);
-
-    // === Trump (Spades): count leader's consecutive top spades ===
-    {
-        uint32_t all_spades = suit_ranks(s->hand_bits[0] | s->hand_bits[1] |
-                                          s->hand_bits[2] | s->hand_bits[3], 0);
-        uint32_t leader_spades = suit_ranks(s->hand_bits[leader], 0);
-
-        for (int bit = 12; bit >= 0; bit--) {
-            if (!(all_spades & (1u << bit))) continue;
-            if (leader_spades & (1u << bit)) {
-                qtricks++;
-            } else {
-                break;  // Someone else has a higher spade
-            }
-        }
-    }
-
-    // === Non-trump suits: leader's masters where opponents can't ruff ===
-    bool lho_has_trump = (suit_ranks(s->hand_bits[lho], 0) != 0);
-    bool rho_has_trump = (suit_ranks(s->hand_bits[rho], 0) != 0);
-
-    for (int32_t suit = 1; suit < 4; suit++) {
-        uint32_t leader_ranks = suit_ranks(s->hand_bits[leader], suit);
-        if (leader_ranks == 0) continue;
-
-        uint32_t lho_ranks = suit_ranks(s->hand_bits[lho], suit);
-        uint32_t rho_ranks = suit_ranks(s->hand_bits[rho], suit);
-        uint32_t all_suit = leader_ranks | lho_ranks | rho_ranks |
-                            suit_ranks(s->hand_bits[(leader+2)%4], suit);
-
-        // Can opponents ruff this suit?
-        bool lho_can_ruff = (lho_ranks == 0) && lho_has_trump;
-        bool rho_can_ruff = (rho_ranks == 0) && rho_has_trump;
-        if (lho_can_ruff || rho_can_ruff) continue;
-
-        // Leader holds master? (highest remaining in this suit)
-        int32_t master_bit = 31 - __builtin_clz(all_suit);
-        if (!(leader_ranks & (1u << master_bit))) continue;
-
-        // Count consecutive top cards held by leader where opponents must follow
-        int lho_count = __builtin_popcount(lho_ranks);
-        int rho_count = __builtin_popcount(rho_ranks);
-
-        for (int bit = master_bit; bit >= 0; bit--) {
-            if (!(all_suit & (1u << bit))) continue;
-            if (!(leader_ranks & (1u << bit))) break;  // Not leader's card
-
-            // Opponents must have cards to follow (or no trump to ruff)
-            // After each trick, opponents use one card from this suit
-            if (lho_count <= 0 && lho_has_trump) break;
-            if (rho_count <= 0 && rho_has_trump) break;
-
-            qtricks++;
-            if (lho_count > 0) lho_count--;
-            if (rho_count > 0) rho_count--;
-        }
-    }
-
-    // Cap at leader's card count and remaining tricks
-    if (qtricks > leader_cards) qtricks = leader_cards;
-    if (qtricks > remaining) qtricks = remaining;
-
-    if (qtricks == 0) return false;
-
-    // Convert to team bounds
-    if (leader_team == 0) {
-        *team0_min = qtricks;
-        *team0_max = remaining;  // no upper bound info from this analysis
-    } else {
-        *team0_min = 0;
-        *team0_max = remaining - qtricks;  // opponent guarantees qtricks → team0 gets at most remaining-qtricks
-    }
-
-    return true;
-}
-
-// Convert trick bounds to score bounds for pruning.
-// KEY INSIGHT: score depends on team total tricks + whether nil bidders won any tricks.
-// For nil bidders, only one extra binary variable: did they win ≥1 trick?
-// We enumerate: team0_extra × nil_success_combinations (at most 2^num_nil_players).
-static bool can_prune_with_tricks(const NativeState* s, double alpha, double beta,
-                                   int32_t team0_min_extra, int32_t team0_max_extra,
-                                   double* pruned_value) {
-    int32_t remaining = 13 - s->tricks_played;
+// This remains sound with the non-monotone overtrick penalty and at partially
+// played tricks; unlike the old quick-trick path it makes no claim that a
+// voluntarily cashable winner is unavoidable.
+static bool prune_with_global_score_range(
+    const NativeState* s,
+    double alpha,
+    double beta,
+    SolverCtx& ctx,
+    double* pruned_value
+) {
+    const int32_t remaining = 13 - s->tricks_played;
     if (remaining <= 0) return false;
 
-    int32_t range = team0_max_extra - team0_min_extra;
-    if (range < 0) return false;
+    int32_t team_bid[2] = {0, 0};
+    int32_t current_tricks[2] = {0, 0};
+    uint32_t nil_failed_mask = 0;
+    double nil_lower = 0.0;
+    double nil_upper = 0.0;
 
-    // Identify nil bidders and their current state
-    struct NilInfo {
-        int32_t player;
-        int32_t team;
-        int32_t bid_type;  // 0=nil, 14=blind_nil
-        bool already_won;  // already won a trick (nil failed for sure)
-    };
-    NilInfo nil_players[4];
-    int num_nil = 0;
+    for (int32_t player = 0; player < 4; player++) {
+        const int32_t team = s->teams[player];
+        const int32_t bid = s->max_bid[player];
+        current_tricks[team] += s->tricks_won[player];
+        if (
+            (bid == 0 || bid == 14)
+            && s->tricks_won[player] > 0
+        ) {
+            nil_failed_mask |= 1u << player;
+        }
+        if (bid != 0 && bid != 14) {
+            team_bid[team] += bid;
+            continue;
+        }
 
-    int32_t team0_bid = 0, team1_bid = 0;
-    int32_t team0_current = 0, team1_current = 0;
-
-    for (int p = 0; p < 4; p++) {
-        int32_t bid = s->max_bid[p];
-        if (s->teams[p] == 0) {
-            team0_current += s->tricks_won[p];
-            if (bid == 0 || bid == 14) {
-                nil_players[num_nil++] = {p, 0, bid, s->tricks_won[p] > 0};
-            } else {
-                team0_bid += bid;
-            }
+        const double bonus = bid == 14 ? 100.0 : 50.0;
+        if (s->tricks_won[player] > 0) {
+            // Failed nil is fixed: -bonus for team 0, +bonus in score
+            // difference when the failed bidder belongs to team 1.
+            const double contribution = team == 0 ? -bonus : bonus;
+            nil_lower += contribution;
+            nil_upper += contribution;
         } else {
-            team1_current += s->tricks_won[p];
-            if (bid == 0 || bid == 14) {
-                nil_players[num_nil++] = {p, 1, bid, s->tricks_won[p] > 0};
-            } else {
-                team1_bid += bid;
-            }
+            // The unresolved nil may contribute either sign to score_diff.
+            nil_lower -= bonus;
+            nil_upper += bonus;
         }
     }
 
-    // Limit: at most 2 nil players (4 would be pathological)
-    if (num_nil > 2) return false;
-
-    // Enumerate: team0_extra × nil outcomes
-    // For each nil player: if already_won, outcome is fixed (failed).
-    // If not yet won, enumerate: {succeeds (wins 0 more), fails (wins ≥1 more)}.
-    int num_nil_unknown = 0;
-    for (int i = 0; i < num_nil; i++) {
-        if (!nil_players[i].already_won) num_nil_unknown++;
-    }
-    int nil_combos = 1 << num_nil_unknown;  // at most 4
-
-    double lower = std::numeric_limits<double>::infinity();
-    double upper = -std::numeric_limits<double>::infinity();
-
-    for (int32_t extra = team0_min_extra; extra <= team0_max_extra; extra++) {
-        int32_t t0_total = team0_current + extra;
-        int32_t t1_total = team1_current + (remaining - extra);
-
-        // For each nil outcome combination
-        for (int combo = 0; combo < nil_combos; combo++) {
-            double nil_score_adj = 0.0;
-            int bit = 0;
-            bool combo_valid = true;
-
-            for (int i = 0; i < num_nil; i++) {
-                bool nil_failed;
-                if (nil_players[i].already_won) {
-                    nil_failed = true;  // already failed, fixed
+    const int32_t tricks_played = s->tricks_played;
+    const int32_t team0_current = current_tricks[0];
+    const int32_t nil_index = static_cast<int32_t>(
+        nil_failed_mask & 0xFu
+    );
+    double lower;
+    double upper;
+    if (
+        ctx.score_range_valid[
+            tricks_played
+        ][team0_current][nil_index]
+    ) {
+        lower = ctx.score_range_lower[
+            tricks_played
+        ][team0_current][nil_index];
+        upper = ctx.score_range_upper[
+            tricks_played
+        ][team0_current][nil_index];
+    } else {
+        lower = std::numeric_limits<double>::infinity();
+        upper = -std::numeric_limits<double>::infinity();
+        for (int32_t team0_extra = 0;
+             team0_extra <= remaining;
+             team0_extra++) {
+            const int32_t final_tricks[2] = {
+                current_tricks[0] + team0_extra,
+                current_tricks[1] + remaining - team0_extra,
+            };
+            double contract_score[2] = {0.0, 0.0};
+            for (int32_t team = 0; team < 2; team++) {
+                if (team_bid[team] == 0) continue;
+                if (final_tricks[team] >= team_bid[team]) {
+                    contract_score[team] =
+                        team_bid[team] * 10.0
+                        - (
+                            final_tricks[team] - team_bid[team]
+                        ) * 9.0;
                 } else {
-                    nil_failed = (combo >> bit) & 1;  // enumerate success/failure
-                    bit++;
-                }
-
-                double bonus = (nil_players[i].bid_type == 14) ? 100.0 : 50.0;
-                double adj = nil_failed ? -bonus : bonus;
-
-                if (nil_players[i].team == 0) {
-                    nil_score_adj += adj;
-                } else {
-                    nil_score_adj -= adj;  // opponent's nil affects score_diff negatively
+                    contract_score[team] = -team_bid[team] * 10.0;
                 }
             }
-
-            // Team scores (non-nil part)
-            double s0 = 0.0, s1 = 0.0;
-            if (team0_bid > 0) {
-                if (t0_total >= team0_bid) {
-                    s0 = team0_bid * 10.0 - (t0_total - team0_bid) * 9.0;
-                } else {
-                    s0 = -team0_bid * 10.0;
-                }
-            }
-            if (team1_bid > 0) {
-                if (t1_total >= team1_bid) {
-                    s1 = team1_bid * 10.0 - (t1_total - team1_bid) * 9.0;
-                } else {
-                    s1 = -team1_bid * 10.0;
-                }
-            }
-
-            double diff = (s0 - s1) + nil_score_adj;
-            if (diff < lower) lower = diff;
-            if (diff > upper) upper = diff;
+            const double contract_diff =
+                contract_score[0] - contract_score[1];
+            lower = std::min(lower, contract_diff + nil_lower);
+            upper = std::max(upper, contract_diff + nil_upper);
         }
+        ctx.score_range_lower[
+            tricks_played
+        ][team0_current][nil_index] = lower;
+        ctx.score_range_upper[
+            tricks_played
+        ][team0_current][nil_index] = upper;
+        ctx.score_range_valid[
+            tricks_played
+        ][team0_current][nil_index] = 1;
     }
 
-    // Alpha-beta pruning with these bounds
     if (lower >= beta) {
         *pruned_value = lower;
         return true;
@@ -770,15 +586,11 @@ static void filter_equivalent(const NativeState* s, int32_t player_id, ActionLis
                 prev_my_bit = bit;
                 continue;
             }
-            // Check gap between prev_my_bit and bit
-            bool has_gap = false;
-            uint32_t between_mask = 0;
-            for (int g = bit + 1; g < prev_my_bit; g++) {
-                between_mask |= (1u << g);
-            }
-            if (ot_ranks & between_mask) {
-                has_gap = true;
-            }
+            // Bits strictly between the two ranks.  Both shifts are <= 12.
+            const uint32_t between_mask =
+                ((1u << prev_my_bit) - 1u)
+                ^ ((1u << (bit + 1)) - 1u);
+            const bool has_gap = (ot_ranks & between_mask) != 0;
             if (!has_gap) {
                 remove_mask |= (1ULL << (base + bit));
             } else {
@@ -831,7 +643,11 @@ static void legal_actions_impl(const NativeState* s, int32_t player_id,
 
 static void legal_actions(const NativeState* s, int32_t player_id,
                           ActionList& actions) {
+#ifdef SPADES_DISABLE_EQUIVALENT_FILTER
+    legal_actions_impl(s, player_id, actions, false);
+#else
     legal_actions_impl(s, player_id, actions, true);
+#endif
 }
 
 static void legal_actions_all(const NativeState* s, int32_t player_id,
@@ -854,6 +670,39 @@ static void score_moves(const NativeState* s, int32_t player_id, ActionList& act
                         int32_t scores[13], SolverCtx& ctx, int32_t tt_best, int32_t depth) {
     const int32_t team = s->teams[player_id];
     const int32_t table_count = s->table_count;
+    uint64_t all_remaining = 0;
+    int32_t winner_team = -1;
+    int32_t best_lead_rank = -1;
+    bool winning_has_spade = false;
+    int32_t player_suit_counts[4] = {0, 0, 0, 0};
+
+    if (table_count == 0) {
+        for (int p = 0; p < 4; p++) {
+            all_remaining |= s->hand_bits[p];
+        }
+    } else {
+        const int32_t winner_pid = current_trick_winner(s);
+        winner_team = (
+            winner_pid >= 0 ? s->teams[winner_pid] : -1
+        );
+        const int32_t lead_suit = s->table_suits[0];
+        for (int k = 0; k < table_count; k++) {
+            if (s->table_suits[k] == 0 && lead_suit != 0) {
+                winning_has_spade = true;
+            }
+            if (
+                s->table_suits[k] == lead_suit
+                && s->table_ranks[k] > best_lead_rank
+            ) {
+                best_lead_rank = s->table_ranks[k];
+            }
+        }
+        for (int suit = 0; suit < 4; suit++) {
+            player_suit_counts[suit] = popcount64(
+                suit_ranks(s->hand_bits[player_id], suit)
+            );
+        }
+    }
 
     for (int i = 0; i < actions.count; i++) {
         int32_t cid = actions.cards[i];
@@ -881,8 +730,6 @@ static void score_moves(const NativeState* s, int32_t player_id, ActionList& act
             int32_t rank = card_rank(cid);
 
             // Check if this card is the master (highest remaining) in its suit
-            uint64_t all_remaining = 0;
-            for (int p = 0; p < 4; p++) all_remaining |= s->hand_bits[p];
             uint32_t suit_remaining = suit_ranks(all_remaining, suit);
             int top_bit = 31 - __builtin_clz(suit_remaining);
             if ((rank - 2) == top_bit) {
@@ -900,9 +747,6 @@ static void score_moves(const NativeState* s, int32_t player_id, ActionList& act
             int32_t rank = card_rank(cid);
             int32_t lead_suit = s->table_suits[0];
 
-            // Determine current winner and winning rank
-            int32_t winner_pid = current_trick_winner(s);
-            int32_t winner_team = (winner_pid >= 0) ? s->teams[winner_pid] : -1;
             bool partner_winning = (winner_team == team);
 
             if (suit == lead_suit) {
@@ -912,17 +756,6 @@ static void score_moves(const NativeState* s, int32_t player_id, ActionList& act
                     score += (14 - rank) * 100;  // Lower rank = higher score
                 } else {
                     // Opponent winning - try to WIN with minimum card that beats them
-                    // Find current best rank in lead suit
-                    int32_t best_lead_rank = -1;
-                    bool winning_has_spade = false;
-                    for (int k = 0; k < s->table_count; k++) {
-                        if (s->table_suits[k] == 0 && lead_suit != 0) {
-                            winning_has_spade = true;
-                        }
-                        if (s->table_suits[k] == lead_suit && s->table_ranks[k] > best_lead_rank) {
-                            best_lead_rank = s->table_ranks[k];
-                        }
-                    }
                     if (!winning_has_spade && rank > best_lead_rank) {
                         // Can win! Prefer the minimum winning card
                         score += 4000 + (14 - rank) * 50;
@@ -948,7 +781,7 @@ static void score_moves(const NativeState* s, int32_t player_id, ActionList& act
                 } else {
                     // Discard: prefer short suit cards, low cards
                     // Count cards in this suit (prefer shorter suits)
-                    uint32_t my_suit_count = popcount64(suit_ranks(s->hand_bits[player_id], suit));
+                    int32_t my_suit_count = player_suit_counts[suit];
                     score += (14 - rank) * 10 + (13 - my_suit_count) * 20;
                 }
             }
@@ -1202,28 +1035,27 @@ static double minimax(NativeState* s, double alpha, double beta, SolverCtx& ctx)
     // Terminal check
     if (s->tricks_played >= 13) return evaluate_score_diff(s);
 
+    const double alpha_original = alpha;
+    const double beta_original = beta;
     int32_t current_player = s->turn;
     int32_t current_team = s->teams[current_player];
     int32_t depth = s->tricks_played * 4 + s->table_count;
 
     // === TT lookup (only at trick boundaries for higher hit rate) ===
+#ifdef SPADES_DISABLE_TT
+    bool use_tt = false;
+#else
     bool use_tt = (s->table_count == 0);
+#endif
     uint64_t tt_key = 0, tt_verify = 0;
     int32_t tt_best = -1;
-    uint64_t coarse_key = 0;
 
     if (use_tt) {
-        // Level 0: Coarse Partition TT — DISABLED for pruning.
-        // Different positions with same hand-shape can have arbitrarily different
-        // minimax values in Spades (due to specific card ranks mattering).
-        // Coarse TT is only safe for trick-count games (Bridge), not score games.
-        coarse_key = 0;  // unused
-
-        // Level 1: Fine Partition TT (normalized card distribution)
-        tt_key = compute_normalized_hash(s);
+        const NormalizedTTKey normalized = compute_normalized_tt_key(s);
+        tt_key = normalized.hash;
+        tt_verify = normalized.verify;
         TTEntry& slot = ctx.slot(tt_key);
         if (ctx.slot_valid(slot) && slot.key == tt_key) {
-            tt_verify = compute_normalized_verify(s);
             if (slot.verify == tt_verify) {
                 if (slot.flag == TT_EXACT) return slot.value;
                 if (slot.flag == TT_LOWER_BOUND && slot.value >= beta) return slot.value;
@@ -1236,17 +1068,13 @@ static double minimax(NativeState* s, double alpha, double beta, SolverCtx& ctx)
         }
     }
 
-    // === Quick Tricks Pruning (per-player, team-total scoring) ===
-    // Sound for non-nil bids: score depends only on team total tricks.
-    if (s->table_count == 0 && s->tricks_played < 12) {
-        int32_t t0_min, t0_max;
-        if (quick_tricks_bound_perplayer(s, &t0_min, &t0_max)) {
-            double pruned_value;
-            if (can_prune_with_tricks(s, alpha, beta, t0_min, t0_max, &pruned_value)) {
-                return pruned_value;
-            }
-        }
+#ifndef SPADES_DISABLE_GLOBAL_SCORE_RANGE
+    double score_range_value;
+    if (prune_with_global_score_range(
+            s, alpha, beta, ctx, &score_range_value)) {
+        return score_range_value;
     }
+#endif
 
     // === Generate legal actions ===
     ActionList actions;
@@ -1267,7 +1095,6 @@ static double minimax(NativeState* s, double alpha, double beta, SolverCtx& ctx)
     sort_actions_by_score(actions, scores);
 
     // === PVS Search ===
-    bool pruned = false;
     double value;
     int32_t best_action_here = actions.cards[0];
     bool first_child = true;
@@ -1300,7 +1127,6 @@ static double minimax(NativeState* s, double alpha, double beta, SolverCtx& ctx)
             }
             if (value > alpha) alpha = value;
             if (value >= beta) {
-                pruned = true;
                 // Update killer
                 ctx.killer[depth] = action;
                 // Update history (deeper cuts get more bonus)
@@ -1335,7 +1161,6 @@ static double minimax(NativeState* s, double alpha, double beta, SolverCtx& ctx)
             }
             if (value < beta) beta = value;
             if (value <= alpha) {
-                pruned = true;
                 ctx.killer[depth] = action;
                 int remaining = 13 - s->tricks_played;
                 ctx.history[current_player][action] += remaining * remaining;
@@ -1346,21 +1171,23 @@ static double minimax(NativeState* s, double alpha, double beta, SolverCtx& ctx)
 
     // === Store in TT (only at trick boundaries) ===
     if (use_tt) {
-        // Level 1: Fine Partition TT
-        if (tt_verify == 0) tt_verify = compute_normalized_verify(s);
         TTEntry& slot = ctx.slot(tt_key);
         int32_t new_depth = 13 - s->tricks_played;
         if (!ctx.slot_valid(slot) || new_depth >= slot.depth) {
             slot.key = tt_key;
             slot.verify = tt_verify;
             slot.value = value;
-            slot.flag = pruned ? (current_team == 0 ? TT_LOWER_BOUND : TT_UPPER_BOUND) : TT_EXACT;
+            if (value <= alpha_original) {
+                slot.flag = TT_UPPER_BOUND;
+            } else if (value >= beta_original) {
+                slot.flag = TT_LOWER_BOUND;
+            } else {
+                slot.flag = TT_EXACT;
+            }
             slot.best_action = best_action_here;
             slot.depth = new_depth;
             ctx.mark_slot(slot);
         }
-
-        // Level 0: Coarse Partition TT — disabled (see lookup comment above)
     }
 
     return value;
@@ -1380,20 +1207,27 @@ static double minimax_nw(NativeState* s, double alpha, double beta, SolverCtx& c
 
     if (s->tricks_played >= 13) return evaluate_score_diff(s);
 
+    const double alpha_original = alpha;
+    const double beta_original = beta;
     int32_t current_player = s->turn;
     int32_t current_team = s->teams[current_player];
     int32_t depth = s->tricks_played * 4 + s->table_count;
 
     // TT lookup (only at trick boundaries)
+#ifdef SPADES_DISABLE_TT
+    bool use_tt = false;
+#else
     bool use_tt = (s->table_count == 0);
+#endif
     uint64_t tt_key = 0, tt_verify = 0;
     int32_t tt_best = -1;
 
     if (use_tt) {
-        tt_key = compute_normalized_hash(s);
+        const NormalizedTTKey normalized = compute_normalized_tt_key(s);
+        tt_key = normalized.hash;
+        tt_verify = normalized.verify;
         TTEntry& slot = ctx.slot(tt_key);
         if (ctx.slot_valid(slot) && slot.key == tt_key) {
-            tt_verify = compute_normalized_verify(s);
             if (slot.verify == tt_verify) {
                 if (slot.flag == TT_EXACT) return slot.value;
                 if (slot.flag == TT_LOWER_BOUND && slot.value >= beta) return slot.value;
@@ -1408,18 +1242,13 @@ static double minimax_nw(NativeState* s, double alpha, double beta, SolverCtx& c
         }
     }
 
-    // Quick Tricks pruning (disabled - same issue as main minimax)
-    /*
-    if (s->table_count == 0 && s->tricks_played < 12) {
-        int32_t t0_min, t0_max;
-        if (quick_tricks_bound_perplayer(s, &t0_min, &t0_max)) {
-            double pruned_value;
-            if (can_prune_with_tricks(s, alpha, beta, t0_min, t0_max, &pruned_value)) {
-                return pruned_value;
-            }
-        }
+#ifndef SPADES_DISABLE_GLOBAL_SCORE_RANGE
+    double score_range_value;
+    if (prune_with_global_score_range(
+            s, alpha, beta, ctx, &score_range_value)) {
+        return score_range_value;
     }
-    */
+#endif
 
     // Generate actions
     ActionList actions;
@@ -1440,7 +1269,6 @@ static double minimax_nw(NativeState* s, double alpha, double beta, SolverCtx& c
     sort_actions_by_score(actions, scores);
 
     // Plain alpha-beta (NO PVS - critical for null-window correctness)
-    bool pruned = false;
     double value;
     int32_t best_action_here = actions.cards[0];
 
@@ -1458,7 +1286,6 @@ static double minimax_nw(NativeState* s, double alpha, double beta, SolverCtx& c
             }
             if (value > alpha) alpha = value;
             if (value >= beta) {
-                pruned = true;
                 ctx.killer[depth] = action;
                 int rem = 13 - s->tricks_played;
                 ctx.history[current_player][action] += rem * rem;
@@ -1479,7 +1306,6 @@ static double minimax_nw(NativeState* s, double alpha, double beta, SolverCtx& c
             }
             if (value < beta) beta = value;
             if (value <= alpha) {
-                pruned = true;
                 ctx.killer[depth] = action;
                 int rem = 13 - s->tricks_played;
                 ctx.history[current_player][action] += rem * rem;
@@ -1490,14 +1316,19 @@ static double minimax_nw(NativeState* s, double alpha, double beta, SolverCtx& c
 
     // Store in TT
     if (use_tt) {
-        if (tt_verify == 0) tt_verify = compute_normalized_verify(s);
         TTEntry& slot = ctx.slot(tt_key);
         int32_t new_depth = 13 - s->tricks_played;
         if (!ctx.slot_valid(slot) || new_depth >= slot.depth) {
             slot.key = tt_key;
             slot.verify = tt_verify;
             slot.value = value;
-            slot.flag = pruned ? (current_team == 0 ? TT_LOWER_BOUND : TT_UPPER_BOUND) : TT_EXACT;
+            if (value <= alpha_original) {
+                slot.flag = TT_UPPER_BOUND;
+            } else if (value >= beta_original) {
+                slot.flag = TT_LOWER_BOUND;
+            } else {
+                slot.flag = TT_EXACT;
+            }
             slot.best_action = best_action_here;
             slot.depth = new_depth;
             ctx.mark_slot(slot);
@@ -1622,10 +1453,6 @@ void analyze_forced_outcome_native(const NativeState* input,
 double solve_native(const NativeState* input) {
     init_zobrist();
     ensure_tt_buffer();
-    ensure_coarse_tt();
-
-    g_coarse_gen++;
-    if (g_coarse_gen == 0) g_coarse_gen = 1;
 
     SolverCtx ctx;
     ctx.tt = g_tt_buffer;
@@ -1633,6 +1460,7 @@ double solve_native(const NativeState* input) {
     ctx.nodes_searched = 0;
     memset(ctx.killer, -1, sizeof(ctx.killer));
     memset(ctx.history, 0, sizeof(ctx.history));
+    ctx.reset_score_range_cache();
     static uint32_t g_gen = 0;
     g_gen++;
     if (g_gen == 0) g_gen = 1;
@@ -1640,10 +1468,9 @@ double solve_native(const NativeState* input) {
 
     NativeState s = *input;
 
-    // Full-window PVS with Quick Tricks: proven 100% correct (180/180 tests pass).
-    // Binary search over possible scores was attempted but TT entries from different
-    // null-window iterations interact incorrectly, causing ~5% error rate.
-    // The full-window PVS approach already benefits from QT pruning + normalization.
+    // Full-window PVS with normalized TT and admissible global score bounds.
+    // Exact score-partition search remains disabled until its per-root Q-value
+    // convergence is independently verified against the exhaustive oracle.
     double result = minimax(&s, -std::numeric_limits<double>::infinity(),
                            std::numeric_limits<double>::infinity(), ctx);
     return result;
@@ -1652,9 +1479,6 @@ double solve_native(const NativeState* input) {
 void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
     init_zobrist();
     ensure_tt_buffer();
-    ensure_coarse_tt();
-    g_coarse_gen++;
-    if (g_coarse_gen == 0) g_coarse_gen = 1;
 
     NativeState s = *input;
     out_result->current_player = s.turn;
@@ -1674,6 +1498,7 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         ctx.nodes_searched = 0;
         memset(ctx.killer, -1, sizeof(ctx.killer));
         memset(ctx.history, 0, sizeof(ctx.history));
+        ctx.reset_score_range_cache();
         out_result->value = minimax(&s, -std::numeric_limits<double>::infinity(),
                                     std::numeric_limits<double>::infinity(), ctx);
         out_result->best_action = -1;
@@ -1713,6 +1538,7 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         ctx.nodes_searched = 0;
         memset(ctx.killer, -1, sizeof(ctx.killer));
         memset(ctx.history, 0, sizeof(ctx.history));
+        ctx.reset_score_range_cache();
 
         UndoInfo undo = make_move(&s, s.turn, actions.cards[0]);
         q_values[0] = minimax(&s, -std::numeric_limits<double>::infinity(),
@@ -1722,7 +1548,7 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         // Sequential for ALL practical sizes. Parallel path disabled because:
         // 1. Thread TT allocation (160MB each) dwarfs search time for ≤44 cards
         // 2. Shared TT accumulates knowledge across actions (huge benefit)
-        // 3. Aspiration window (best_val) provides natural pruning
+        // 3. Every returned Q value is searched with a full window
         gen_wq++;
         SolverCtx ctx;
         ctx.tt = g_tt_buffer;
@@ -1731,19 +1557,16 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
         ctx.nodes_searched = 0;
         memset(ctx.killer, -1, sizeof(ctx.killer));
         memset(ctx.history, 0, sizeof(ctx.history));
-
-        double best_val = maximize ? -std::numeric_limits<double>::infinity()
-                                   : std::numeric_limits<double>::infinity();
+        ctx.reset_score_range_cache();
 
         for (int i = 0; i < n; i++) {
             UndoInfo undo = make_move(&s, s.turn, actions.cards[i]);
-            if (maximize) {
-                q_values[i] = minimax(&s, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), ctx);
-                if (q_values[i] > best_val) best_val = q_values[i];
-            } else {
-                q_values[i] = minimax(&s, -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), ctx);
-                if (q_values[i] < best_val) best_val = q_values[i];
-            }
+            q_values[i] = minimax(
+                &s,
+                -std::numeric_limits<double>::infinity(),
+                std::numeric_limits<double>::infinity(),
+                ctx
+            );
             unmake_move(&s, undo);
         }
     } else {
@@ -1757,6 +1580,7 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
             ctx.nodes_searched = 0;
             memset(ctx.killer, -1, sizeof(ctx.killer));
             memset(ctx.history, 0, sizeof(ctx.history));
+            ctx.reset_score_range_cache();
 
             UndoInfo undo = make_move(&s, s.turn, actions.cards[0]);
             q_values[0] = minimax(&s, -std::numeric_limits<double>::infinity(),
@@ -1783,6 +1607,7 @@ void solve_native_with_q(const NativeState* input, RootQResult* out_result) {
                 local_ctx.nodes_searched = 0;
                 memset(local_ctx.killer, -1, sizeof(local_ctx.killer));
                 memset(local_ctx.history, 0, sizeof(local_ctx.history));
+                local_ctx.reset_score_range_cache();
 
                 NativeState local_s = s;
                 UndoInfo undo = make_move(&local_s, local_s.turn, actions.cards[i]);
