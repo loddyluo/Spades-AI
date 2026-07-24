@@ -591,6 +591,47 @@ button { cursor: pointer; }
   flex-wrap: wrap;
 }
 
+.overlay--error {
+  background: rgba(29, 3, 3, 0.72);
+}
+.ai-error {
+  border-color: rgba(255, 126, 126, 0.72);
+  background: linear-gradient(180deg, #5d1d24, #301014);
+}
+.ai-error__title {
+  margin: 0 0 10px;
+  color: #ffd5d5;
+  font-size: 1.65rem;
+}
+.ai-error__summary {
+  margin: 0 0 18px;
+  color: #ffd5d5;
+  line-height: 1.5;
+}
+.ai-error__detail {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 185, 185, 0.3);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  text-align: left;
+}
+.ai-error__detail span {
+  display: block;
+  margin-bottom: 6px;
+  color: #ffb8b8;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+}
+.ai-error__detail code {
+  color: #fff0f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .btn-ghost {
   padding: 9px 18px;
   border-radius: 11px;

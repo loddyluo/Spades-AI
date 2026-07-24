@@ -242,6 +242,10 @@ def _build_client_state(
 
 # ── Game Room ────────────────────────────────────────────────────────────
 
+class AiFallbackError(RuntimeError):
+    """Raised when an AI would otherwise continue with a fallback action."""
+
+
 class GameRoom:
     """One game room: 2 human connections + 2 AI players."""
 
@@ -374,11 +378,22 @@ class GameRoom:
             await self._bidding_phase()
             await self._playing_phase()
             await self._broadcast_game_over()
+        except AiFallbackError as exc:
+            traceback.print_exc()
+            for ws in self.connections.values():
+                await self._safe_send(ws, {
+                    "type": "error",
+                    "code": "ai_fallback",
+                    "fatal": True,
+                    "message": f"AI fallback，牌局已暂停：{exc}",
+                })
         except Exception as exc:
             traceback.print_exc()
             for ws in self.connections.values():
                 await self._safe_send(ws, {
                     "type": "error",
+                    "code": "ai_backend_error",
+                    "fatal": True,
                     "message": f"服务器错误: {exc}",
                 })
 
@@ -396,8 +411,9 @@ class GameRoom:
             if legal == ["blind_nil", "pass"]:
                 bid_value = "pass"
             elif not legal:
-                # Should not happen in Spades, but guard
-                bid_value = "pass"
+                raise AiFallbackError(
+                    f"座位 {bidder} 没有合法叫牌，拒绝默认改为 pass"
+                )
             elif bidder in self.connections:
                 # ── Human turn ───────────────────────────────────
                 bid_value = await self._wait_for_human_bid(bidder, legal)
@@ -407,8 +423,8 @@ class GameRoom:
                 view["state"] = self.state  # required by place_bid MLP path
                 ai = self.ai_players[bidder]
                 if self._acting_bidder is None:
-                    bid_value = await asyncio.get_event_loop().run_in_executor(
-                        None, ai.place_bid, legal, view
+                    raise AiFallbackError(
+                        "叫牌主策略不可用，拒绝改用旧叫牌策略"
                     )
                 else:
                     decision = await asyncio.get_event_loop().run_in_executor(
@@ -429,6 +445,10 @@ class GameRoom:
                         "fallback_reason": decision.fallback_reason,
                         "legal_bids": list(legal),
                     }
+                    if decision.fallback_reason is not None:
+                        raise AiFallbackError(
+                            f"座位 {bidder} 叫牌：{decision.fallback_reason}"
+                        )
 
             # Record bid
             is_pass = (bid_value == "pass")
@@ -609,11 +629,15 @@ class GameRoom:
         card_code = str(action.get("card", ""))
         try:
             card = _card_from_code(card_code)  # frontend sends rank+suit format
-        except Exception:
-            card = legal_cards[0]
+        except Exception as exc:
+            raise AiFallbackError(
+                f"座位 {seat} 提交了无效牌 {card_code!r}，拒绝替换为默认合法牌"
+            ) from exc
 
         if card not in legal_cards:
-            card = legal_cards[0]
+            raise AiFallbackError(
+                f"座位 {seat} 提交了非法牌 {card_code!r}，拒绝替换为默认合法牌"
+            )
 
         return card
 
@@ -629,8 +653,19 @@ class GameRoom:
         card = await loop.run_in_executor(
             None, ai.play_card, legal_cards, view
         )
+        mode = ""
+        fallback_reason = None
+        play_info = getattr(ai, "last_play_info", None)
+        if isinstance(play_info, dict):
+            mode = str(play_info.get("mode", ""))
+            fallback_reason = play_info.get("fallback_reason")
+        if fallback_reason is not None or "fallback" in mode.lower():
+            reason = fallback_reason or mode
+            raise AiFallbackError(f"座位 {seat} 出牌：{reason}")
         if card not in legal_cards:
-            card = legal_cards[0]
+            raise AiFallbackError(
+                f"座位 {seat} 的 AI 返回非法牌，拒绝替换为默认合法牌"
+            )
         return card
 
     # ── State broadcast ─────────────────────────────────────────────
@@ -683,10 +718,10 @@ class GameRoom:
         )
         try:
             result = await asyncio.get_running_loop().run_in_executor(None, call)
-        except Exception:
-            # An operational failure must never reveal cards or stop play.
-            traceback.print_exc()
-            return False
+        except Exception as exc:
+            raise AiFallbackError(
+                f"自动摊牌检查失败，拒绝静默继续：{exc}"
+            ) from exc
         if result.status != "fixed" or result.resolution is None:
             return False
         await self._offer_showdown(result.resolution)

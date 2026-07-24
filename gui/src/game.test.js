@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   PACE,
+  advanceUntilFinished,
   advanceUntilHuman,
   applyCard,
   applyShowdownOffer,
@@ -10,6 +11,7 @@ import {
   buildReplaySnapshot,
   buildShowdownPayload,
   confirmLocalShowdown,
+  createInitialGame,
   dealHands,
   remoteStateFromServer,
   shouldCheckShowdown,
@@ -155,6 +157,97 @@ test('acting bidder payload carries the reproducible deal seed', () => {
 });
 
 
+test('a failed AI request pauses a local game without applying a fallback bid', async () => {
+  const state = createInitialGame(101, 1);
+  const priorFetch = globalThis.fetch;
+  const emitted = [];
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 500,
+    async text() {
+      return JSON.stringify({ ok: false, error: 'worker OOM' });
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilHuman(state, (step) => emitted.push(step)),
+      /AI 后端请求失败.*worker OOM/,
+    );
+    assert.deepEqual(state.bids, [null, null, null, null]);
+    assert.equal(state.log.length, 1);
+    assert.deepEqual(emitted, []);
+  } finally {
+    globalThis.fetch = priorFetch;
+  }
+});
+
+
+test('AI test mode rejects a backend-declared bidding fallback', async () => {
+  const state = createInitialGame(202, 0);
+  const priorFetch = globalThis.fetch;
+  const emitted = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        ok: true,
+        kind: 'bid',
+        ai: 'rule_exact',
+        bid: { value: 3, type: 'normal' },
+        detail: 'residual_fallback_nsfp',
+      };
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilFinished(state, (step) => emitted.push(step)),
+      /AI 后端触发 fallback.*residual_fallback_nsfp/,
+    );
+    assert.deepEqual(state.bids, [null, null, null, null]);
+    assert.deepEqual(emitted, []);
+  } finally {
+    globalThis.fetch = priorFetch;
+  }
+});
+
+
+test('a backend-declared card fallback pauses before playing the card', async () => {
+  const state = createInitialGame(303, 1);
+  state.phase = 'playing';
+  state.currentPlayer = 0;
+  state.leader = 0;
+  state.bids = Array.from({ length: 4 }, () => ({ value: 3, type: 'normal' }));
+  const priorFetch = globalThis.fetch;
+  const emitted = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        ok: true,
+        kind: 'play',
+        ai: 'rule_exact',
+        card: state.hands[0][0].code,
+        detail: 'exact_no_match_fallback',
+      };
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilHuman(state, (step) => emitted.push(step)),
+      /AI 后端触发 fallback.*exact_no_match_fallback/,
+    );
+    assert.equal(state.hands[0].length, 13);
+    assert.deepEqual(state.currentTrick, []);
+    assert.deepEqual(emitted, []);
+  } finally {
+    globalThis.fetch = priorFetch;
+  }
+});
+
+
 test('a fixed offer pauses without completing or scoring the hand', () => {
   const state = showdownBoundary(5);
   const response = {
@@ -289,6 +382,47 @@ test('local coordinator checks only after collecting the completed trick', async
     assert.equal(pending.completedTricks.length, 8);
     assert.equal(posted.currentTrick.length, 0);
     assert.deepEqual(posted.remainingHands, state.hands.map((hand) => hand.map((card) => card.code)));
+  } finally {
+    globalThis.fetch = priorFetch;
+    PACE.trickHold = priorHold;
+  }
+});
+
+
+test('a failed automatic showdown request pauses instead of silently continuing', async () => {
+  const state = showdownBoundary(5);
+  state.trickNumber = 8;
+  state.tricksWon = [2, 0, 2, 3];
+  state.completedTricks = Array.from({ length: 7 }, (_, index) => ({
+    trickNumber: index + 1,
+    winner: index % 4,
+    cards: [],
+  }));
+  state.currentTrick = [
+    { seat: 0, card: { code: 'AH', rank: 'A', suit: 'H' } },
+    { seat: 1, card: { code: 'KH', rank: 'K', suit: 'H' } },
+    { seat: 2, card: { code: 'QH', rank: 'Q', suit: 'H' } },
+    { seat: 3, card: { code: 'JH', rank: 'J', suit: 'H' } },
+  ];
+  state.trickComplete = true;
+  state.trickWinner = 0;
+  state.currentPlayer = -1;
+  const priorFetch = globalThis.fetch;
+  const priorHold = PACE.trickHold;
+  PACE.trickHold = 0;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+    async text() {
+      return 'showdown worker unavailable';
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilHuman(state),
+      /Showdown check failed.*showdown worker unavailable/,
+    );
   } finally {
     globalThis.fetch = priorFetch;
     PACE.trickHold = priorHold;

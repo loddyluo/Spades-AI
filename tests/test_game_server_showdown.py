@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from gui.game_server import GameRoom, _deal_hands_frontend_compat
+from gui.game_server import AiFallbackError, GameRoom, _deal_hands_frontend_compat
 from residual_bidder.actions import BidAction
 from residual_bidder.hybrid import _initial_state
 from trick_taking.card import Suit
@@ -70,6 +70,99 @@ def test_room_routes_all_ai_bids_through_deployed_acting_bidder() -> None:
         assert all(call["room_id"] == "RESIDUAL" for call in acting_bidder.calls)
         assert all(player.last_bid_info["policy_id"] == "residual-test"
                    for player in room.ai_players.values())
+
+    asyncio.run(scenario())
+
+
+def test_room_rejects_acting_bidder_fallback() -> None:
+    class FallbackActingBidder:
+        def choose(self, state, legal_bids, **kwargs):
+            return SimpleNamespace(
+                action=BidAction.BID_3,
+                effective_policy_id="legacy-nsfp-fallback",
+                fallback_reason="residual-policy-error: worker OOM",
+            )
+
+    class BiddingPlayer:
+        last_bid_info = None
+
+        def bid_placed(self, bidder, bid):
+            return None
+
+    async def scenario() -> None:
+        room = GameRoom(
+            "FALLBACK",
+            202607220004,
+            acting_bidder=FallbackActingBidder(),
+        )
+        room.state = _initial_state(room.seed, room.rules)
+        room.ai_players = {seat: BiddingPlayer() for seat in range(4)}
+
+        with pytest.raises(AiFallbackError, match=r"叫牌.*worker OOM"):
+            await room._bidding_phase()
+
+        assert all(bid.is_pass for bid in room.state.bids)
+        assert room.state.max_bid == [None, None, None, None]
+
+    asyncio.run(scenario())
+
+
+def test_room_rejects_card_play_fallback_and_illegal_card_substitution() -> None:
+    class PlayingPlayer:
+        def __init__(self, mode: str, return_legal: bool) -> None:
+            self.last_play_info = {}
+            self.mode = mode
+            self.return_legal = return_legal
+
+        def play_card(self, legal_cards, view):
+            self.last_play_info = {"mode": self.mode}
+            if self.return_legal:
+                return legal_cards[0]
+            return next(card for card in view["state"].all_cards if card not in legal_cards)
+
+    async def scenario() -> None:
+        room = GameRoom("PLAY-FALLBACK", 202607220005)
+        room.state = _late_state()
+        seat = room.state.turn
+        legal = room.rules.playable(room.state, room.state.hands[seat], seat)
+
+        room.ai_players = {
+            seat: PlayingPlayer("exact_no_match_fallback", return_legal=True)
+        }
+        with pytest.raises(
+            AiFallbackError,
+            match=r"出牌.*exact_no_match_fallback",
+        ):
+            await room._run_ai_play(seat, legal)
+
+        room.ai_players = {
+            seat: PlayingPlayer("exact_is_determinized", return_legal=False)
+        }
+        with pytest.raises(AiFallbackError, match=r"返回非法牌"):
+            await room._run_ai_play(seat, legal)
+
+    asyncio.run(scenario())
+
+
+def test_remote_clients_receive_a_fatal_fallback_message() -> None:
+    class FailingRoom(GameRoom):
+        async def _bidding_phase(self) -> None:
+            raise AiFallbackError("座位 1 出牌：exact_no_match_fallback")
+
+    async def scenario() -> None:
+        first = _FakeSocket()
+        second = _FakeSocket()
+        room = FailingRoom("GUI-ERROR", 202607220006, exact_solver=object())
+        room.connections = {0: first, 2: second}
+
+        await room.start_game()
+
+        for socket in (first, second):
+            message = socket.messages[-1]
+            assert message["type"] == "error"
+            assert message["code"] == "ai_fallback"
+            assert message["fatal"] is True
+            assert "exact_no_match_fallback" in message["message"]
 
     asyncio.run(scenario())
 
@@ -189,6 +282,24 @@ def test_timeout_checker_continues_without_revealing_hands() -> None:
         assert offered is False
         assert room.showdown_pending is False
         assert all(message.get("showdown") is None for message in first.messages + second.messages)
+
+    asyncio.run(scenario())
+
+
+def test_showdown_checker_failure_is_reported_instead_of_silently_ignored() -> None:
+    def failing_checker(state, solver, *, time_budget_seconds):
+        raise MemoryError("showdown worker OOM")
+
+    async def scenario() -> None:
+        room, _, _ = _room(failing_checker)
+
+        with pytest.raises(
+            AiFallbackError,
+            match=r"自动摊牌检查失败.*worker OOM",
+        ):
+            await room._maybe_offer_showdown()
+
+        assert room.showdown_pending is False
 
     asyncio.run(scenario())
 

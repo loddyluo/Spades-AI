@@ -629,6 +629,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [game, setGame] = useState(() => createInitialGame(0, 0));
   const [replaySnapshot, setReplaySnapshot] = useState(null);
+  const [aiError, setAiError] = useState('');
 
   // 500-match cumulative state
   const [matchScore, setMatchScore] = useState({ ns: 0, ew: 0 });
@@ -651,9 +652,18 @@ export default function App() {
   });
   const wsRef = useRef(null);
   const sentShowdownRef = useRef(null);
+  const remoteCloseExpectedRef = useRef(false);
+  const remoteFinishedRef = useRef(false);
+
+  const pauseForAiError = (err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('AI backend failed; game paused without fallback:', err);
+    setAiError(message || '未知错误');
+  };
 
   // Deal a hand. Random modes should omit `seed` or pass randomDealSeed().
   const dealHand = async (seat, seed = randomDealSeed(), firstSeat = 0) => {
+    setAiError('');
     setBusy(true);
     try {
       const resolvedSeat = Number.isInteger(seat) ? seat : humanSeat;
@@ -661,6 +671,8 @@ export default function App() {
       const fresh = createInitialGame(seed, resolvedSeat, firstSeat);
       setGame(fresh);
       setGame(await advanceUntilHuman(fresh, setGame));
+    } catch (err) {
+      pauseForAiError(err);
     } finally {
       setBusy(false);
     }
@@ -697,6 +709,7 @@ export default function App() {
     settledSeedRef.current = null;
     setHumanSeat(viewSeat);
     setScreen('game');
+    setAiError('');
     setBusy(true);
     try {
       const fresh = createInitialGame(seed, viewSeat, 0);
@@ -707,6 +720,8 @@ export default function App() {
         setReplaySnapshot(buildReplaySnapshot(finalState));
         setScreen('replay');
       }
+    } catch (err) {
+      pauseForAiError(err);
     } finally {
       setBusy(false);
     }
@@ -723,6 +738,9 @@ export default function App() {
   // ── Remote (networked) game handlers ───────────────────────────
 
   const connectRemote = async (serverUrl, roomCode, seed, seat) => {
+    remoteCloseExpectedRef.current = false;
+    remoteFinishedRef.current = false;
+    setAiError('');
     setRemote((r) => ({ ...r, status: 'connecting', error: '', roomCode, seed: String(seed) }));
     try {
       // Normalise user input into a WebSocket URL.
@@ -794,6 +812,7 @@ export default function App() {
             }));
             break;
           case 'hand_over': {
+            remoteFinishedRef.current = true;
             sentShowdownRef.current = null;
             setRemote((r) => ({ ...r, status: 'finished', legalCards: null, legalBids: null }));
             // Apply score to game state
@@ -803,25 +822,36 @@ export default function App() {
           }
           case 'error':
             setRemote((r) => ({ ...r, error: msg.message }));
+            if (msg.fatal === true || msg.code === 'ai_fallback') {
+              setAiError(msg.message || '远程 AI 触发 fallback');
+            }
             break;
         }
       };
 
       ws.onclose = () => {
+        const interrupted = !remoteCloseExpectedRef.current && !remoteFinishedRef.current;
         setRemote((r) => ({ ...r, status: r.status === 'finished' ? 'finished' : 'idle',
           error: r.status !== 'finished' ? '连接已断开' : '' }));
         wsRef.current = null;
+        remoteCloseExpectedRef.current = false;
+        if (interrupted) {
+          setAiError('远程 AI 后端连接已断开，牌局已暂停。');
+        }
       };
 
       ws.onerror = () => {
         setRemote((r) => ({ ...r, error: '无法连接到服务器' }));
+        setAiError('无法连接远程 AI 后端，牌局已暂停。');
       };
     } catch (err) {
       setRemote((r) => ({ ...r, status: 'idle', error: String(err) }));
+      pauseForAiError(err);
     }
   };
 
   const disconnectRemote = () => {
+    remoteCloseExpectedRef.current = true;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -832,6 +862,7 @@ export default function App() {
       legalCards: null, legalBids: null, serverUrl: 'localhost:8765',
       roomCode: '', seed: '',
     });
+    setAiError('');
     setScreen('menu');
     setMode('single');
   };
@@ -839,21 +870,26 @@ export default function App() {
   const handleBid = async (bid) => {
     // Remote mode: send via WebSocket
     if (mode === 'remote') {
-      if (busy || game.showdown || game.phase !== 'bidding' || remote.status !== 'your_turn') return;
+      if (busy || aiError || game.showdown || game.phase !== 'bidding' || remote.status !== 'your_turn') return;
       setBusy(true);
       try {
-        wsRef.current?.send(JSON.stringify({ type: 'bid', bid }));
+        if (!wsRef.current) throw new Error('远程连接不可用');
+        wsRef.current.send(JSON.stringify({ type: 'bid', bid }));
         setRemote((r) => ({ ...r, status: 'playing', legalBids: null }));
+      } catch (err) {
+        pauseForAiError(err);
       } finally {
         setBusy(false);
       }
       return;
     }
     // Local mode
-    if (busy || game.showdown || game.phase !== 'bidding' || game.currentPlayer !== game.humanSeat) return;
+    if (busy || aiError || game.showdown || game.phase !== 'bidding' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
       setGame(await submitHumanBid(game, bid, setGame));
+    } catch (err) {
+      pauseForAiError(err);
     } finally {
       setBusy(false);
     }
@@ -862,21 +898,26 @@ export default function App() {
   const handlePlay = async (cardCode) => {
     // Remote mode: send via WebSocket
     if (mode === 'remote') {
-      if (busy || game.showdown || game.phase !== 'playing' || remote.status !== 'your_turn') return;
+      if (busy || aiError || game.showdown || game.phase !== 'playing' || remote.status !== 'your_turn') return;
       setBusy(true);
       try {
-        wsRef.current?.send(JSON.stringify({ type: 'play', card: cardCode }));
+        if (!wsRef.current) throw new Error('远程连接不可用');
+        wsRef.current.send(JSON.stringify({ type: 'play', card: cardCode }));
         setRemote((r) => ({ ...r, status: 'playing', legalCards: null }));
+      } catch (err) {
+        pauseForAiError(err);
       } finally {
         setBusy(false);
       }
       return;
     }
     // Local mode
-    if (busy || game.showdown || game.phase !== 'playing' || game.currentPlayer !== game.humanSeat) return;
+    if (busy || aiError || game.showdown || game.phase !== 'playing' || game.currentPlayer !== game.humanSeat) return;
     setBusy(true);
     try {
       setGame(await submitHumanCard(game, cardCode, setGame));
+    } catch (err) {
+      pauseForAiError(err);
     } finally {
       setBusy(false);
     }
@@ -891,7 +932,14 @@ export default function App() {
         || showdownWaitingForPartner(game.showdown, game.humanSeat)
       ) return;
       sentShowdownRef.current = showdownId;
-      wsRef.current?.send(JSON.stringify({ type: 'showdown_confirm', showdownId }));
+      try {
+        if (!wsRef.current) throw new Error('远程连接不可用');
+        wsRef.current.send(JSON.stringify({ type: 'showdown_confirm', showdownId }));
+      } catch (err) {
+        sentShowdownRef.current = null;
+        pauseForAiError(err);
+        return;
+      }
       setGame((current) => {
         if (current.showdown?.id !== showdownId) return current;
         const confirmedSeats = new Set(current.showdown.confirmedSeats || []);
@@ -973,7 +1021,9 @@ export default function App() {
   const seatAt = (pos) => [0, 1, 2, 3].find((s) => posOf(s) === pos);
 
   const humanHand = (game.hands[game.humanSeat] || []).filter(Boolean);
-  const myTurn = isRemote
+  const myTurn = aiError
+    ? false
+    : isRemote
     ? (!showdownPending && remote.status === 'your_turn')
     : (!showdownPending && !isSpectator && game.currentPlayer === game.humanSeat);
   const isBidding = game.phase === 'bidding';
@@ -990,7 +1040,8 @@ export default function App() {
 
   // status text in the center of the table
   let statusText = '';
-  if (finished) statusText = '本局结束';
+  if (aiError) statusText = 'AI 后端错误，本局已暂停';
+  else if (finished) statusText = '本局结束';
   else if (showdownPending) statusText = '结果已固定，等待确认结算';
   else if (isRemote && remote.status === 'connecting') statusText = '连接中…';
   else if (isRemote && remote.status === 'joined') statusText = '已加入，等待对手…';
@@ -1321,6 +1372,39 @@ export default function App() {
           />
         )
       ) : null}
+
+      {aiError ? (
+        <AiErrorOverlay
+          message={aiError}
+          seed={game.seed}
+          onExit={() => {
+            setAiError('');
+            if (isRemote) disconnectRemote();
+            else setScreen('menu');
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ── Fatal AI error overlay (local and remote) ───────────────────────── */
+function AiErrorOverlay({ message, seed, onExit }) {
+  return (
+    <div className="overlay overlay--error" role="alertdialog" aria-modal="true" aria-labelledby="ai-error-title">
+      <div className="overlay__card ai-error">
+        <p className="overlay__eyebrow">AI 后端错误</p>
+        <h2 id="ai-error-title" className="ai-error__title">本局已暂停</h2>
+        <p className="ai-error__summary">没有使用 fallback 继续叫牌或出牌。</p>
+        <div className="ai-error__detail">
+          <span>错误详情</span>
+          <code>{message}</code>
+        </div>
+        <p className="overlay__subtitle">种子 {seed}</p>
+        <div className="overlay__actions">
+          <button className="btn-new" onClick={onExit}>返回菜单</button>
+        </div>
+      </div>
     </div>
   );
 }
