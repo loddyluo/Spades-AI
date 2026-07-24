@@ -796,9 +796,18 @@ export default function App() {
           case 'hand_over': {
             sentShowdownRef.current = null;
             setRemote((r) => ({ ...r, status: 'finished', legalCards: null, legalBids: null }));
-            // Apply score to game state
-            setGame((g) => ({ ...g, phase: 'finished', score: msg.score,
-              tricksWon: msg.tricksWon || g.tricksWon, showdown: null }));
+            // Apply score + seed to game state.
+            // completedTricks is already correct from the last game_state
+            // (remoteStateFromServer parsed card strings into objects), so
+            // leave it untouched.
+            setGame((g) => ({
+              ...g,
+              seed: msg.seed ?? g.seed,
+              phase: 'finished',
+              score: msg.score,
+              tricksWon: msg.tricksWon || g.tricksWon,
+              showdown: null,
+            }));
             break;
           }
           case 'error':
@@ -1262,6 +1271,8 @@ export default function App() {
             verdict={teamWon(summary.score.northSouth, summary.score.eastWest) ? '你的队伍获胜 🎉' : '你的队伍落败'}
             buttonLabel="断开并返回"
             onButton={disconnectRemote}
+            replayLabel="复盘回放"
+            onReplay={enterReplay}
             busy={busy}
           />
         ) : mode === 'fixedSeed' ? (

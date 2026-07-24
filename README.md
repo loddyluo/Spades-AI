@@ -133,7 +133,7 @@ nvm use 20
 Terminal 1 — Python AI backend:
 
 ```bash
-python gui/backend.py --port 8001 --exact-threshold 36
+python gui/backend.py --port 8001 --exact-threshold 36 --num-workers 10
 ```
 
 Terminal 2 — Web dev server:

@@ -754,6 +754,18 @@ class GameRoom:
         for pid in range(4):
             team_scores[self.state.teams[pid]] += payoffs[pid]
 
+        # Completed tricks for frontend replay
+        completed_tricks = []
+        for tr in self.state.trick_history:
+            completed_tricks.append({
+                "trickNumber": len(completed_tricks) + 1,
+                "winner": tr.winner,
+                "cards": [
+                    {"seat": seat, "card": _card_to_str(card)}
+                    for seat, card in tr.cards
+                ],
+            })
+
         score_msg = {
             "type": "hand_over",
             "score": {
@@ -762,6 +774,8 @@ class GameRoom:
             },
             "tricksWon": list(self.state.tricks_won),
             "bids": [_bid_to_frontend(self.state.max_bid[p]) for p in range(4)],
+            "seed": self.seed,
+            "completedTricks": completed_tricks,
         }
         for ws in self.connections.values():
             await self._safe_send(ws, score_msg)
