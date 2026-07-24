@@ -13,6 +13,7 @@ import {
   advanceUntilFinished,
   advanceUntilHuman,
   bidLabel,
+  buildReplayRecord,
   buildReplaySnapshot,
   confirmLocalShowdown,
   createInitialGame,
@@ -343,6 +344,19 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
   const canStepBack = phase === 'done' || playIndex > 0 || trickComplete;
   const canStepForward = phase !== 'done' && (trickComplete || playIndex < snapshot.plays.length);
 
+  const exportRecord = () => {
+    const json = `${JSON.stringify(buildReplayRecord(snapshot), null, 2)}\n`;
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `spades-replay-seed-${snapshot.seed}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
   let statusText = '四家手牌已摊开，点击「下一步」开始复盘';
   if (phase === 'done') {
     statusText = '复盘结束';
@@ -442,6 +456,7 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
         <button className="btn-ghost" onClick={resetReplay} disabled={!canStepBack}>重新摊开</button>
         <button className="btn-ghost" onClick={stepBack} disabled={!canStepBack}>上一步</button>
         <button className="btn-new" onClick={stepForward} disabled={!canStepForward}>下一步</button>
+        <button className="btn-ghost" onClick={exportRecord}>导出记录</button>
         <button className="btn-ghost" onClick={onExit}>{viewLabel === '(视角)' ? '返回菜单' : '返回结算'}</button>
       </footer>
     </div>

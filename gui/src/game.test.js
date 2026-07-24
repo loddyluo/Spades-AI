@@ -8,6 +8,7 @@ import {
   applyCard,
   applyShowdownOffer,
   buildAiPayload,
+  buildReplayRecord,
   buildReplaySnapshot,
   buildShowdownPayload,
   confirmLocalShowdown,
@@ -522,4 +523,59 @@ test('remote state retains the shared seed and public history for replay', () =>
     snapshot.plays.map((play) => [play.seat, play.card.code]),
     [[0, 'AC'], [1, 'KC'], [2, 'QC'], [3, 'JC']],
   );
+});
+
+
+test('replay record exports a portable versioned game history', () => {
+  const snapshot = {
+    seed: 42,
+    humanSeat: 2,
+    bids: [
+      { value: 3, type: 'normal' },
+      { value: 0, type: 'nil' },
+      { value: 2, type: 'normal' },
+      { value: 4, type: 'normal' },
+    ],
+    hands: [
+      [{ code: 'AC', rank: 'A', suit: 'C' }],
+      [{ code: 'KC', rank: 'K', suit: 'C' }],
+      [{ code: 'QC', rank: 'Q', suit: 'C' }],
+      [{ code: 'JC', rank: 'J', suit: 'C' }],
+    ],
+    completedTricks: [{
+      trickNumber: 1,
+      winner: 0,
+      cards: [
+        { seat: 0, card: { code: 'AC', rank: 'A', suit: 'C' } },
+        { seat: 1, card: { code: 'KC', rank: 'K', suit: 'C' } },
+        { seat: 2, card: { code: 'QC', rank: 'Q', suit: 'C' } },
+        { seat: 3, card: { code: 'JC', rank: 'J', suit: 'C' } },
+      ],
+    }],
+    tricksWon: [1, 0, 0, 0],
+    score: { northSouth: 31, eastWest: -40 },
+  };
+
+  assert.deepEqual(buildReplayRecord(snapshot), {
+    format: 'spades-ai-replay',
+    version: 1,
+    seed: 42,
+    viewSeat: 2,
+    seats: ['North', 'East', 'South', 'West'],
+    bids: snapshot.bids,
+    initialHands: [['AC'], ['KC'], ['QC'], ['JC']],
+    tricks: [{
+      trickNumber: 1,
+      leader: 0,
+      winner: 0,
+      plays: [
+        { seat: 0, card: 'AC' },
+        { seat: 1, card: 'KC' },
+        { seat: 2, card: 'QC' },
+        { seat: 3, card: 'JC' },
+      ],
+    }],
+    tricksWon: [1, 0, 0, 0],
+    score: { northSouth: 31, eastWest: -40 },
+  });
 });

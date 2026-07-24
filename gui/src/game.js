@@ -782,6 +782,31 @@ export function buildReplaySnapshot(state) {
   };
 }
 
+/**
+ * Build a portable, versioned record from a replay snapshot.
+ * Cards are exported as compact rank+suit codes so the file is independent
+ * of the current UI representation.
+ */
+export function buildReplayRecord(snapshot) {
+  return {
+    format: 'spades-ai-replay',
+    version: 1,
+    seed: snapshot.seed,
+    viewSeat: snapshot.humanSeat,
+    seats: [...PLAYER_NAMES],
+    bids: snapshot.bids.map((bid) => serializeBid(bid)),
+    initialHands: snapshot.hands.map((hand) => hand.map((card) => card.code)),
+    tricks: snapshot.completedTricks.map((trick) => ({
+      trickNumber: trick.trickNumber,
+      leader: trick.cards[0]?.seat ?? null,
+      winner: trick.winner,
+      plays: serializeTrickCards(trick.cards),
+    })),
+    tricksWon: [...snapshot.tricksWon],
+    score: snapshot.score ? { ...snapshot.score } : null,
+  };
+}
+
 /** Replay animation pacing (ms). */
 export const REPLAY_PACE = {
   cardStep: 650,
