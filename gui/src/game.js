@@ -836,9 +836,10 @@ function parseCardCode(code) {
  *
  * @param {object} msg — server game_state message
  * @param {number} mySeat — this client's seat
+ * @param {number} dealSeed — shared seed used to reconstruct all four hands
  * @returns {object} frontend-compatible game state
  */
-export function remoteStateFromServer(msg, mySeat) {
+export function remoteStateFromServer(msg, mySeat, dealSeed = 0) {
   const myCards = (msg.hand || []).map(parseCardCode);
   const handSizes = msg.handSizes || [13, 13, 13, 13];
   const remoteShowdown = msg.showdown && Array.isArray(msg.showdown.revealedHands)
@@ -883,7 +884,7 @@ export function remoteStateFromServer(msg, mySeat) {
   } : null;
 
   return {
-    seed: 0, // seed is not exposed per-state; client tracks separately
+    seed: dealSeed,
     humanSeat: mySeat,
     firstSeat: msg.leader,
     phase: msg.phase,

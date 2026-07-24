@@ -572,7 +572,7 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlS
         <div className="mode-card mode-card--remote">
           <span className="mode-card__icon">🌐</span>
           <strong>远程对战</strong>
-          <span className="mode-card__desc">两人各在一台电脑，通过网络对战两个 AI。</span>
+          <span className="mode-card__desc">两人各在一台电脑，通过网络对战两个 AI，结束后可复盘。</span>
           <div className="seed-form">
             <label className="seed-form__field">
               <span>服务器</span>
@@ -763,7 +763,7 @@ export default function App() {
             break;
           case 'game_state': {
             const mySeat = msg.seat;
-            const remoteGame = remoteStateFromServer(msg, mySeat);
+            const remoteGame = remoteStateFromServer(msg, mySeat, seed);
             setGame(remoteGame);
             setHumanSeat(mySeat);
             if (!remoteGame.showdown) sentShowdownRef.current = null;
@@ -931,7 +931,7 @@ export default function App() {
   }, [finished, game.seed, screen]);
 
   const enterReplay = () => {
-    if (!replaySnapshot) setReplaySnapshot(buildReplaySnapshot(game));
+    setReplaySnapshot(buildReplaySnapshot(game));
     setScreen('replay');
   };
 
@@ -1016,9 +1016,10 @@ export default function App() {
     setMatchOver(false);
     settledSeedRef.current = null;
     setHumanSeat(seat);
-    // Placeholder state — the server will send authoritative hands via
-    // game_state shortly. We must NOT use createInitialGame here because
-    // its JS PRNG produces different hands from Python's Mersenne Twister.
+    setReplaySnapshot(null);
+    // Placeholder state — the server will send authoritative hands and
+    // history via game_state shortly. The shared deal seed is retained so a
+    // finished remote hand can be reconstructed by the replay screen.
     setGame({
       seed,
       humanSeat: seat,
@@ -1262,6 +1263,8 @@ export default function App() {
             verdict={teamWon(summary.score.northSouth, summary.score.eastWest) ? '你的队伍获胜 🎉' : '你的队伍落败'}
             buttonLabel="断开并返回"
             onButton={disconnectRemote}
+            replayLabel="复盘回放"
+            onReplay={enterReplay}
             busy={busy}
           />
         ) : mode === 'fixedSeed' ? (

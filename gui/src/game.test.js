@@ -7,8 +7,10 @@ import {
   applyCard,
   applyShowdownOffer,
   buildAiPayload,
+  buildReplaySnapshot,
   buildShowdownPayload,
   confirmLocalShowdown,
+  dealHands,
   remoteStateFromServer,
   shouldCheckShowdown,
   showdownWaitingForPartner,
@@ -353,4 +355,37 @@ test('ordinary remote state retains opponent card privacy', () => {
   assert.equal(state.hands[1].length, 2);
   assert.equal(state.hands[1].every((card) => card === undefined), true);
   assert.equal(state.showdown, null);
+});
+
+
+test('remote state retains the shared seed and public history for replay', () => {
+  const seed = 20260724;
+  const message = remoteMessage(null);
+  message.completedTricks = [{
+    trickNumber: 1,
+    winner: 0,
+    cards: [
+      { seat: 0, card: 'AC' },
+      { seat: 1, card: 'KC' },
+      { seat: 2, card: 'QC' },
+      { seat: 3, card: 'JC' },
+    ],
+  }];
+
+  const state = remoteStateFromServer(message, 0, seed);
+  const snapshot = buildReplaySnapshot({
+    ...state,
+    phase: 'finished',
+    score: { northSouth: 42, eastWest: -20 },
+  });
+
+  assert.equal(snapshot.seed, seed);
+  assert.deepEqual(
+    snapshot.hands.map((hand) => hand.map((card) => card.code)),
+    dealHands(seed).map((hand) => hand.map((card) => card.code)),
+  );
+  assert.deepEqual(
+    snapshot.plays.map((play) => [play.seat, play.card.code]),
+    [[0, 'AC'], [1, 'KC'], [2, 'QC'], [3, 'JC']],
+  );
 });
