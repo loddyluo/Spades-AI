@@ -303,30 +303,55 @@ export function applyShowdownOffer(state, response) {
 
 async function checkShowdownAfterTrick(state) {
   if (!shouldCheckShowdown(state)) return state;
-  try {
-    const response = await requestShowdownCheck(state);
-    return applyShowdownOffer(state, response);
-  } catch (err) {
-    console.warn('Automatic showdown check failed; continuing play:', err);
-    return state;
-  }
+  const response = await requestShowdownCheck(state);
+  return applyShowdownOffer(state, response);
 }
 
 async function requestAiAction(state) {
-  const response = await fetch('/api/choose-action', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildAiPayload(state)),
-  });
+  let response;
+  try {
+    response = await fetch('/api/choose-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildAiPayload(state)),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`无法连接 AI 后端：${detail}`);
+  }
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`AI backend request failed (${response.status}): ${text}`);
+    let detail = text;
+    try {
+      const body = JSON.parse(text);
+      detail = body.error || text;
+    } catch {
+      // Keep the raw response when the backend did not return JSON.
+    }
+    throw new Error(`AI 后端请求失败（HTTP ${response.status}）：${detail || '无错误详情'}`);
   }
 
-  const payload = await response.json();
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`AI 后端返回了无效响应：${detail}`);
+  }
   if (!payload.ok) {
-    throw new Error(payload.error || 'AI backend returned an error');
+    throw new Error(payload.error || 'AI 后端返回错误');
+  }
+
+  const fallbackReason = payload.fallbackReason ?? payload.fallback_reason;
+  const detail = typeof payload.detail === 'string' ? payload.detail : '';
+  if (
+    payload.fallback === true
+    || fallbackReason != null
+    || detail.toLowerCase().includes('fallback')
+  ) {
+    const reason = fallbackReason || detail || '未提供原因';
+    throw new Error(`AI 后端触发 fallback：${reason}`);
   }
 
   return payload;
@@ -373,45 +398,6 @@ export function computeScores(bids, tricksWon) {
     northSouth: scoreForTeam([0, 2]),
     eastWest: scoreForTeam([1, 3]),
   };
-}
-
-/**
- * Choose a simple AI bid.
- * Input: current state and the seat index.
- * Output: a normal bid object.
- */
-function chooseAIBid(state, seat) {
-  const hand = state.hands[seat];
-  const spades = hand.filter((card) => card.suit === 'S').length;
-  const highCards = hand.filter((card) => RANK_VALUES[card.rank] >= 11).length;
-  const estimate = Math.max(0, Math.min(13, Math.round(1 + spades * 0.7 + highCards * 0.25)));
-  return makeBid(Math.max(estimate, 1), 'normal');
-}
-
-/**
- * Choose a simple AI card.
- * Input: current state and the seat index.
- * Output: a legal card object.
- */
-function chooseAICard(state, seat) {
-  const hand = state.hands[seat];
-  const legalCards = sortCards(getLegalCards(hand, state.currentTrick, state.spadesBroken));
-
-  if (state.currentTrick.length === 0) {
-    return legalCards[0];
-  }
-
-  const ledSuit = state.currentTrick[0].card.suit;
-  const currentWinner = state.currentTrick.reduce((best, entry) => {
-    return compareTrickCards(entry.card, best.card, ledSuit) > 0 ? entry : best;
-  });
-
-  const winningCards = legalCards.filter((card) => compareTrickCards(card, currentWinner.card, ledSuit) > 0);
-  if (winningCards.length > 0) {
-    return winningCards[0];
-  }
-
-  return legalCards[0];
 }
 
 /**
@@ -631,30 +617,23 @@ export async function advanceUntilHuman(state, onStep = null) {
 
   while (next.phase !== 'finished' && !next.showdown && next.currentPlayer !== next.humanSeat) {
     if (next.phase === 'bidding') {
-      let bidState;
-      try {
-        const action = await requestAiAction(next);
-        if (action.kind !== 'bid') throw new Error(`AI returned ${action.kind} during bidding`);
-        bidState = applyBid(next, next.currentPlayer, makeBid(action.bid.value, action.bid.type), action.ai);
-      } catch (err) {
-        console.warn('Backend AI failed, using fallback AI:', err);
-        bidState = applyBid(next, next.currentPlayer, chooseAIBid(next, next.currentPlayer), 'fallback');
-      }
+      const action = await requestAiAction(next);
+      if (action.kind !== 'bid') throw new Error(`AI 叫牌阶段返回了错误动作类型：${action.kind}`);
+      const bidState = applyBid(
+        next,
+        next.currentPlayer,
+        makeBid(action.bid.value, action.bid.type),
+        action.ai,
+      );
       emit(bidState);
       await sleep(PACE.aiStep);
       continue;
     }
 
     if (next.phase === 'playing') {
-      let playState;
-      try {
-        const action = await requestAiAction(next);
-        if (action.kind !== 'play') throw new Error(`AI returned ${action.kind} during playing`);
-        playState = applyCard(next, next.currentPlayer, action.card, action.ai);
-      } catch (err) {
-        console.warn('Backend AI failed, using fallback AI:', err);
-        playState = applyCard(next, next.currentPlayer, chooseAICard(next, next.currentPlayer).code, 'fallback');
-      }
+      const action = await requestAiAction(next);
+      if (action.kind !== 'play') throw new Error(`AI 出牌阶段返回了错误动作类型：${action.kind}`);
+      const playState = applyCard(next, next.currentPlayer, action.card, action.ai);
       emit(playState);
       await sleep(PACE.aiStep);
       if (await collectIfNeeded()) break;
@@ -690,30 +669,23 @@ export async function advanceUntilFinished(state, onStep = null) {
 
   while (next.phase !== 'finished' && !next.showdown) {
     if (next.phase === 'bidding') {
-      let bidState;
-      try {
-        const action = await requestAiAction(next);
-        if (action.kind !== 'bid') throw new Error(`AI returned ${action.kind} during bidding`);
-        bidState = applyBid(next, next.currentPlayer, makeBid(action.bid.value, action.bid.type), action.ai);
-      } catch (err) {
-        console.warn('Backend AI failed, using fallback AI:', err);
-        bidState = applyBid(next, next.currentPlayer, chooseAIBid(next, next.currentPlayer), 'fallback');
-      }
+      const action = await requestAiAction(next);
+      if (action.kind !== 'bid') throw new Error(`AI 叫牌阶段返回了错误动作类型：${action.kind}`);
+      const bidState = applyBid(
+        next,
+        next.currentPlayer,
+        makeBid(action.bid.value, action.bid.type),
+        action.ai,
+      );
       emit(bidState);
       await sleep(PACE.aiStep);
       continue;
     }
 
     if (next.phase === 'playing') {
-      let playState;
-      try {
-        const action = await requestAiAction(next);
-        if (action.kind !== 'play') throw new Error(`AI returned ${action.kind} during playing`);
-        playState = applyCard(next, next.currentPlayer, action.card, action.ai);
-      } catch (err) {
-        console.warn('Backend AI failed, using fallback AI:', err);
-        playState = applyCard(next, next.currentPlayer, chooseAICard(next, next.currentPlayer).code, 'fallback');
-      }
+      const action = await requestAiAction(next);
+      if (action.kind !== 'play') throw new Error(`AI 出牌阶段返回了错误动作类型：${action.kind}`);
+      const playState = applyCard(next, next.currentPlayer, action.card, action.ai);
       emit(playState);
       await sleep(PACE.aiStep);
       if (await collectIfNeeded()) break;
@@ -810,6 +782,31 @@ export function buildReplaySnapshot(state) {
   };
 }
 
+/**
+ * Build a portable, versioned record from a replay snapshot.
+ * Cards are exported as compact rank+suit codes so the file is independent
+ * of the current UI representation.
+ */
+export function buildReplayRecord(snapshot) {
+  return {
+    format: 'spades-ai-replay',
+    version: 1,
+    seed: snapshot.seed,
+    viewSeat: snapshot.humanSeat,
+    seats: [...PLAYER_NAMES],
+    bids: snapshot.bids.map((bid) => serializeBid(bid)),
+    initialHands: snapshot.hands.map((hand) => hand.map((card) => card.code)),
+    tricks: snapshot.completedTricks.map((trick) => ({
+      trickNumber: trick.trickNumber,
+      leader: trick.cards[0]?.seat ?? null,
+      winner: trick.winner,
+      plays: serializeTrickCards(trick.cards),
+    })),
+    tricksWon: [...snapshot.tricksWon],
+    score: snapshot.score ? { ...snapshot.score } : null,
+  };
+}
+
 /** Replay animation pacing (ms). */
 export const REPLAY_PACE = {
   cardStep: 650,
@@ -836,9 +833,10 @@ function parseCardCode(code) {
  *
  * @param {object} msg — server game_state message
  * @param {number} mySeat — this client's seat
+ * @param {number} dealSeed — shared seed used to reconstruct all four hands
  * @returns {object} frontend-compatible game state
  */
-export function remoteStateFromServer(msg, mySeat) {
+export function remoteStateFromServer(msg, mySeat, dealSeed = 0) {
   const myCards = (msg.hand || []).map(parseCardCode);
   const handSizes = msg.handSizes || [13, 13, 13, 13];
   const remoteShowdown = msg.showdown && Array.isArray(msg.showdown.revealedHands)
@@ -883,7 +881,7 @@ export function remoteStateFromServer(msg, mySeat) {
   } : null;
 
   return {
-    seed: 0, // seed is not exposed per-state; client tracks separately
+    seed: dealSeed,
     humanSeat: mySeat,
     firstSeat: msg.leader,
     phase: msg.phase,

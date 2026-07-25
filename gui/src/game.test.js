@@ -3,12 +3,17 @@ import test from 'node:test';
 
 import {
   PACE,
+  advanceUntilFinished,
   advanceUntilHuman,
   applyCard,
   applyShowdownOffer,
   buildAiPayload,
+  buildReplayRecord,
+  buildReplaySnapshot,
   buildShowdownPayload,
   confirmLocalShowdown,
+  createInitialGame,
+  dealHands,
   remoteStateFromServer,
   shouldCheckShowdown,
   showdownWaitingForPartner,
@@ -153,6 +158,97 @@ test('acting bidder payload carries the reproducible deal seed', () => {
 });
 
 
+test('a failed AI request pauses a local game without applying a fallback bid', async () => {
+  const state = createInitialGame(101, 1);
+  const priorFetch = globalThis.fetch;
+  const emitted = [];
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 500,
+    async text() {
+      return JSON.stringify({ ok: false, error: 'worker OOM' });
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilHuman(state, (step) => emitted.push(step)),
+      /AI 后端请求失败.*worker OOM/,
+    );
+    assert.deepEqual(state.bids, [null, null, null, null]);
+    assert.equal(state.log.length, 1);
+    assert.deepEqual(emitted, []);
+  } finally {
+    globalThis.fetch = priorFetch;
+  }
+});
+
+
+test('AI test mode rejects a backend-declared bidding fallback', async () => {
+  const state = createInitialGame(202, 0);
+  const priorFetch = globalThis.fetch;
+  const emitted = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        ok: true,
+        kind: 'bid',
+        ai: 'rule_exact',
+        bid: { value: 3, type: 'normal' },
+        detail: 'residual_fallback_nsfp',
+      };
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilFinished(state, (step) => emitted.push(step)),
+      /AI 后端触发 fallback.*residual_fallback_nsfp/,
+    );
+    assert.deepEqual(state.bids, [null, null, null, null]);
+    assert.deepEqual(emitted, []);
+  } finally {
+    globalThis.fetch = priorFetch;
+  }
+});
+
+
+test('a backend-declared card fallback pauses before playing the card', async () => {
+  const state = createInitialGame(303, 1);
+  state.phase = 'playing';
+  state.currentPlayer = 0;
+  state.leader = 0;
+  state.bids = Array.from({ length: 4 }, () => ({ value: 3, type: 'normal' }));
+  const priorFetch = globalThis.fetch;
+  const emitted = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        ok: true,
+        kind: 'play',
+        ai: 'rule_exact',
+        card: state.hands[0][0].code,
+        detail: 'exact_no_match_fallback',
+      };
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilHuman(state, (step) => emitted.push(step)),
+      /AI 后端触发 fallback.*exact_no_match_fallback/,
+    );
+    assert.equal(state.hands[0].length, 13);
+    assert.deepEqual(state.currentTrick, []);
+    assert.deepEqual(emitted, []);
+  } finally {
+    globalThis.fetch = priorFetch;
+  }
+});
+
+
 test('a fixed offer pauses without completing or scoring the hand', () => {
   const state = showdownBoundary(5);
   const response = {
@@ -294,6 +390,47 @@ test('local coordinator checks only after collecting the completed trick', async
 });
 
 
+test('a failed automatic showdown request pauses instead of silently continuing', async () => {
+  const state = showdownBoundary(5);
+  state.trickNumber = 8;
+  state.tricksWon = [2, 0, 2, 3];
+  state.completedTricks = Array.from({ length: 7 }, (_, index) => ({
+    trickNumber: index + 1,
+    winner: index % 4,
+    cards: [],
+  }));
+  state.currentTrick = [
+    { seat: 0, card: { code: 'AH', rank: 'A', suit: 'H' } },
+    { seat: 1, card: { code: 'KH', rank: 'K', suit: 'H' } },
+    { seat: 2, card: { code: 'QH', rank: 'Q', suit: 'H' } },
+    { seat: 3, card: { code: 'JH', rank: 'J', suit: 'H' } },
+  ];
+  state.trickComplete = true;
+  state.trickWinner = 0;
+  state.currentPlayer = -1;
+  const priorFetch = globalThis.fetch;
+  const priorHold = PACE.trickHold;
+  PACE.trickHold = 0;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+    async text() {
+      return 'showdown worker unavailable';
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => advanceUntilHuman(state),
+      /Showdown check failed.*showdown worker unavailable/,
+    );
+  } finally {
+    globalThis.fetch = priorFetch;
+    PACE.trickHold = priorHold;
+  }
+});
+
+
 function remoteMessage(showdown = null) {
   return {
     type: 'game_state',
@@ -353,4 +490,92 @@ test('ordinary remote state retains opponent card privacy', () => {
   assert.equal(state.hands[1].length, 2);
   assert.equal(state.hands[1].every((card) => card === undefined), true);
   assert.equal(state.showdown, null);
+});
+
+
+test('remote state retains the shared seed and public history for replay', () => {
+  const seed = 20260724;
+  const message = remoteMessage(null);
+  message.completedTricks = [{
+    trickNumber: 1,
+    winner: 0,
+    cards: [
+      { seat: 0, card: 'AC' },
+      { seat: 1, card: 'KC' },
+      { seat: 2, card: 'QC' },
+      { seat: 3, card: 'JC' },
+    ],
+  }];
+
+  const state = remoteStateFromServer(message, 0, seed);
+  const snapshot = buildReplaySnapshot({
+    ...state,
+    phase: 'finished',
+    score: { northSouth: 42, eastWest: -20 },
+  });
+
+  assert.equal(snapshot.seed, seed);
+  assert.deepEqual(
+    snapshot.hands.map((hand) => hand.map((card) => card.code)),
+    dealHands(seed).map((hand) => hand.map((card) => card.code)),
+  );
+  assert.deepEqual(
+    snapshot.plays.map((play) => [play.seat, play.card.code]),
+    [[0, 'AC'], [1, 'KC'], [2, 'QC'], [3, 'JC']],
+  );
+});
+
+
+test('replay record exports a portable versioned game history', () => {
+  const snapshot = {
+    seed: 42,
+    humanSeat: 2,
+    bids: [
+      { value: 3, type: 'normal' },
+      { value: 0, type: 'nil' },
+      { value: 2, type: 'normal' },
+      { value: 4, type: 'normal' },
+    ],
+    hands: [
+      [{ code: 'AC', rank: 'A', suit: 'C' }],
+      [{ code: 'KC', rank: 'K', suit: 'C' }],
+      [{ code: 'QC', rank: 'Q', suit: 'C' }],
+      [{ code: 'JC', rank: 'J', suit: 'C' }],
+    ],
+    completedTricks: [{
+      trickNumber: 1,
+      winner: 0,
+      cards: [
+        { seat: 0, card: { code: 'AC', rank: 'A', suit: 'C' } },
+        { seat: 1, card: { code: 'KC', rank: 'K', suit: 'C' } },
+        { seat: 2, card: { code: 'QC', rank: 'Q', suit: 'C' } },
+        { seat: 3, card: { code: 'JC', rank: 'J', suit: 'C' } },
+      ],
+    }],
+    tricksWon: [1, 0, 0, 0],
+    score: { northSouth: 31, eastWest: -40 },
+  };
+
+  assert.deepEqual(buildReplayRecord(snapshot), {
+    format: 'spades-ai-replay',
+    version: 1,
+    seed: 42,
+    viewSeat: 2,
+    seats: ['North', 'East', 'South', 'West'],
+    bids: snapshot.bids,
+    initialHands: [['AC'], ['KC'], ['QC'], ['JC']],
+    tricks: [{
+      trickNumber: 1,
+      leader: 0,
+      winner: 0,
+      plays: [
+        { seat: 0, card: 'AC' },
+        { seat: 1, card: 'KC' },
+        { seat: 2, card: 'QC' },
+        { seat: 3, card: 'JC' },
+      ],
+    }],
+    tricksWon: [1, 0, 0, 0],
+    score: { northSouth: 31, eastWest: -40 },
+  });
 });

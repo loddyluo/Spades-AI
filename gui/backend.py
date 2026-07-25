@@ -516,22 +516,23 @@ class RuleExactProvider:
             room_id="http-local",
         )
         raw = to_local_bid(decision.action)
-        detail = (
-            "residual_bid"
-            if decision.fallback_reason is None
-            else "residual_fallback_nsfp"
-        )
         self.players[seat].last_bid_info = {
             "chosen_bid": raw,
             "policy_id": decision.effective_policy_id,
             "fallback_reason": decision.fallback_reason,
             "legal_bids": list(legal_bids),
         }
+        if decision.fallback_reason is not None:
+            raise RuntimeError(
+                f"AI bidding triggered fallback: {decision.fallback_reason}"
+            )
         if raw == "nil":
-            return AiChoice(kind="bid", value=0, bid_type="nil", detail=detail)
+            return AiChoice(
+                kind="bid", value=0, bid_type="nil", detail="residual_bid"
+            )
         if isinstance(raw, str) and raw.startswith("bid_"):
             return AiChoice(kind="bid", value=int(raw.split("_")[1]),
-                            bid_type="normal", detail=detail)
+                            bid_type="normal", detail="residual_bid")
         raise ValueError(f"deployed acting bidder returned invalid bid {raw!r}")
 
     def _choose_play(self, player: RuleExactFirst4NilPlayer, state: GameState, seat: int,
@@ -547,11 +548,18 @@ class RuleExactProvider:
             raise ValueError(f"seat {seat} has no legal cards to play")
 
         card = player.play_card(legal_cards, view)
-        if card not in legal_cards:
-            card = legal_cards[0]
         mode = ""
+        fallback_reason = None
         if isinstance(player.last_play_info, dict):
             mode = str(player.last_play_info.get("mode", ""))
+            fallback_reason = player.last_play_info.get("fallback_reason")
+        if fallback_reason is not None or "fallback" in mode.lower():
+            reason = fallback_reason or mode
+            raise RuntimeError(f"AI card play triggered fallback: {reason}")
+        if card not in legal_cards:
+            raise RuntimeError(
+                "AI card play returned an illegal card; fallback is disabled"
+            )
         return AiChoice(kind="play", card=card_to_code(card), detail=mode)
 
 

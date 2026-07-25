@@ -82,6 +82,64 @@ def test_provider_routes_acting_bid_through_residual_bidder_only() -> None:
     assert provider.players[seat].last_bid_info["policy_id"] == "residual-test"
 
 
+def test_provider_rejects_acting_bidder_fallback() -> None:
+    state, seat = build_local_state(_bidding_payload())
+
+    class FallbackActingBidder:
+        def choose(self, chosen_state, legal_bids, **kwargs):
+            return SimpleNamespace(
+                action=BidAction.BID_4,
+                effective_policy_id="legacy-nsfp-fallback",
+                fallback_reason="residual-policy-error: worker OOM",
+            )
+
+    provider = RuleExactProvider.__new__(RuleExactProvider)
+    provider.acting_bidder = FallbackActingBidder()
+    provider.players = [SimpleNamespace(last_bid_info=None) for _ in range(4)]
+
+    with pytest.raises(RuntimeError, match=r"bidding triggered fallback.*worker OOM"):
+        provider._choose_bid(state, seat, _bidding_payload())
+
+    assert provider.players[seat].last_bid_info["fallback_reason"].endswith(
+        "worker OOM"
+    )
+
+
+def test_provider_rejects_card_play_fallback() -> None:
+    payload = {
+        "phase": "playing",
+        "currentPlayer": 0,
+        "leader": 0,
+        "remainingHand": ["2H"],
+        "bids": [
+            {"type": "normal", "value": 1},
+            {"type": "normal", "value": 1},
+            {"type": "normal", "value": 1},
+            {"type": "normal", "value": 1},
+        ],
+        "spadesBroken": False,
+        "completedTricks": [],
+        "currentTrick": [],
+    }
+    state, seat = build_local_state(payload)
+
+    class FallbackPlayer:
+        last_play_info: dict[str, str] = {}
+
+        def play_card(self, legal_cards, view):
+            self.last_play_info = {"mode": "exact_no_match_fallback"}
+            return legal_cards[0]
+
+    provider = RuleExactProvider.__new__(RuleExactProvider)
+    provider.rules = SpadesRules()
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"card play triggered fallback.*exact_no_match_fallback",
+    ):
+        provider._choose_play(FallbackPlayer(), state, seat, {"state": state})
+
+
 @pytest.mark.parametrize(
     ("public_history", "payload_flag", "expected"),
     [
