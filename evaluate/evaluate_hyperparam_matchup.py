@@ -335,6 +335,9 @@ def _init_worker(init_args: tuple) -> None:
      acting_bid_ckpt, residual_bidder_config, device, bid_policy_seed) = init_args
     _WORKER_CONFIG_A = config_a
     _WORKER_CONFIG_B = config_b
+    # 并行模式下，每局内部 solver 只用单线程；多局之间靠外层 ProcessPoolExecutor 并行
+    _WORKER_CONFIG_A.num_workers = 1
+    _WORKER_CONFIG_B.num_workers = 1
     _WORKER_EXACT_THRESHOLD = exact_threshold
     _WORKER_SOLVER = _build_exact_solver()
     _WORKER_ACTING_BIDDER = load_deployed_acting_bidder(
