@@ -1,5 +1,5 @@
 """
-超参数选拔赛: 两个具有不同超参数的 RuleExactFirst4Player 队式对打。
+超参数选拔赛: 两个具有不同超参数的 RuleExactFirst4NilPlayer 队式对打。
 
 用法:
     # 用默认超参数 vs 自定义超参数，打 100 局
@@ -84,18 +84,24 @@ from evaluate.evaluate_our_mcts_vs_rule_v2 import (
 )
 from evaluate.evaluate_rl_first4_vs_rule_first4 import (
     _build_exact_solver,
-    _load_bid_model,
     _compute_team_scores,
 )
+from residual_bidder.actions import to_local_bid
+from residual_bidder.deployment import (
+    DEFAULT_CHECKPOINT_PATH as DEFAULT_ACTING_BID_CKPT,
+    DEFAULT_CONFIG_PATH as DEFAULT_RESIDUAL_BIDDER_CONFIG,
+    load_deployed_acting_bidder,
+)
 from strategy.hyperparam_config import HyperparamConfig
-from strategy.rule_exact_first4_player import RuleExactFirst4Player
+from strategy.rule_exact_first4_nil_player import RuleExactFirst4NilPlayer
 from strategy.spades_match_runner import SpadesMatchRunner
+from trick_taking.game_state import Phase, Bid
 from trick_taking.games.spades import SpadesRules
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Hyperparameter tournament: two RuleExactFirst4Player configs vs each other",
+        description="Hyperparameter tournament: two RuleExactFirst4NilPlayer configs vs each other",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--config-a", type=str, default="",
@@ -108,9 +114,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exact-threshold", type=int, default=36,
                         help="Remaining cards threshold for exact solver")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device")
-    parser.add_argument("--bid-checkpoint", type=str,
-                        default="./Spades_AI_GO-MCTS/checkpoints/bid_nsfp.pt",
-                        help="Bid MLP checkpoint")
+    parser.add_argument("--acting-bid-checkpoint", type=str,
+                        default=str(DEFAULT_ACTING_BID_CKPT),
+                        help="Path to the selected residual-Q acting checkpoint")
+    parser.add_argument("--residual-bidder-config", type=str,
+                        default=str(DEFAULT_RESIDUAL_BIDDER_CONFIG),
+                        help="Frozen residual bidder provenance config")
+    parser.add_argument("--bid-policy-seed", type=int, default=None,
+                        help="Override the frozen acting-policy seed")
     parser.add_argument("--num-workers", type=int, default=1,
                         help="Parallel workers (1 = single process)")
     parser.add_argument("--max-redeals", type=int, default=64,
@@ -136,14 +147,12 @@ def _build_player(
     config: HyperparamConfig,
     exact_solver,
     exact_threshold: int,
-    bid_model,
-    bid_device: str,
-) -> RuleExactFirst4Player:
-    return RuleExactFirst4Player(
+) -> RuleExactFirst4NilPlayer:
+    return RuleExactFirst4NilPlayer(
         exact_solver=exact_solver,
         exact_threshold=exact_threshold,
-        bid_model=bid_model,
-        bid_device=bid_device,
+        bid_model=None,
+        bid_device="cpu",
         hyperparam_config=config,
     )
 
@@ -153,13 +162,11 @@ def _build_team_players(
     config_b: HyperparamConfig,
     exact_solver,
     exact_threshold: int,
-    bid_model,
-    bid_device: str,
     swap_seats: bool,
 ) -> list:
     """Team match: config A on team 0 (seats 0,2), config B on team 1 (seats 1,3)."""
-    build_a = lambda: _build_player(config_a, exact_solver, exact_threshold, bid_model, bid_device)
-    build_b = lambda: _build_player(config_b, exact_solver, exact_threshold, bid_model, bid_device)
+    build_a = lambda: _build_player(config_a, exact_solver, exact_threshold)
+    build_b = lambda: _build_player(config_b, exact_solver, exact_threshold)
     if not swap_seats:
         return [build_a(), build_b(), build_a(), build_b()]
     return [build_b(), build_a(), build_b(), build_a()]
@@ -177,10 +184,14 @@ def play_one_game(
     players: list,
     seed: int,
     rules: SpadesRules,
+    acting_bidder,
     game_trace: dict[str, Any] | None = None,
     show_card_progress: bool = False,
 ) -> Any:
     """Play one seeded game (no nil-skip, matching evaluate_rl_exact_vs_rule_first4_exact.py).
+
+    Bidding uses the residual-Q acting bidder (``acting_bidder.choose()``) instead
+    of the player's ``place_bid()``, matching ``game_server.py`` behavior.
 
     If game_trace is provided, players should already be wrapped with TracePlayerProxy.
     If show_card_progress is True, display a per-game tqdm progress bar.
@@ -198,7 +209,35 @@ def play_one_game(
         on_bidding_finished=(lambda: pbar.update(0) if pbar else None) if show_card_progress else None,
     )
     runner._start_game()
-    runner._bidding_phase()
+
+    # Manual bidding phase using residual-Q acting bidder (same as game_server.py)
+    state = runner.state
+    state.phase = Phase.BIDDING
+    while not rules.end_bidding(state):
+        bidder = state.current_bidder
+        legal_bids = rules.legal_bids(state, bidder)
+
+        decision = acting_bidder.choose(
+            state, legal_bids,
+            logical_seat=bidder,
+            deal_id=f"eval:seed:{seed}",
+            room_id="hyperparam_matchup",
+        )
+        bid = to_local_bid(decision.action)
+
+        if legal_bids and bid not in legal_bids:
+            raise ValueError(f"玩家{bidder}叫牌非法: {bid!r}, 合法叫牌: {legal_bids}")
+
+        state.bids.append(Bid(player_id=bidder, value=bid, is_pass=(bid == "pass")))
+        if bid != "pass":
+            state.max_bid[bidder] = bid
+
+        for player in players:
+            player.bid_placed(bidder, bid)
+
+        state.current_bidder = rules.next_bid_turn(state)
+        runner._refresh_all_player_features()
+
     runner._set_teams()
     runner._play_phase()
     result = runner._score_game()
@@ -221,8 +260,7 @@ def play_episode(
     exact_threshold: int,
     episode_seed: int,
     rules: SpadesRules,
-    bid_model,
-    bid_device: str,
+    acting_bidder,
     trace_enabled: bool = False,
     show_card_progress: bool = False,
 ) -> dict[str, Any] | None:
@@ -236,7 +274,7 @@ def play_episode(
         swap = (game_idx == 1)
         players = _build_team_players(
             config_a, config_b, exact_solver, exact_threshold,
-            bid_model, bid_device, swap_seats=swap,
+            swap_seats=swap,
         )
         game_seed = episode_seed  # 队式赛：两局同一副牌，只交换座位
         seat_specs = _seat_specs_for_game(swap)
@@ -253,6 +291,7 @@ def play_episode(
             players=players,
             seed=game_seed,
             rules=rules,
+            acting_bidder=acting_bidder,
             game_trace=game_trace,
             show_card_progress=show_card_progress,
         )
@@ -279,27 +318,32 @@ def play_episode(
 
 # ── Worker globals (preloaded once per process, matching evaluate_rl_exact_vs_rule_first4_exact.py) ──
 _WORKER_SOLVER = None
-_WORKER_BID_MODEL = None
+_WORKER_ACTING_BIDDER = None
 _WORKER_RULES = None
 _WORKER_CONFIG_A = None
 _WORKER_CONFIG_B = None
 _WORKER_EXACT_THRESHOLD = None
-_WORKER_DEVICE = None
 
 
 def _init_worker(init_args: tuple) -> None:
-    """Preload solver/bid model once per worker process."""
-    global _WORKER_SOLVER, _WORKER_BID_MODEL, _WORKER_RULES
+    """Preload solver/acting bidder once per worker process."""
+    global _WORKER_SOLVER, _WORKER_ACTING_BIDDER, _WORKER_RULES
     global _WORKER_CONFIG_A, _WORKER_CONFIG_B
-    global _WORKER_EXACT_THRESHOLD, _WORKER_DEVICE
+    global _WORKER_EXACT_THRESHOLD
 
-    (config_a, config_b, exact_threshold, bid_checkpoint, device) = init_args
+    (config_a, config_b, exact_threshold,
+     acting_bid_ckpt, residual_bidder_config, device, bid_policy_seed) = init_args
     _WORKER_CONFIG_A = config_a
     _WORKER_CONFIG_B = config_b
     _WORKER_EXACT_THRESHOLD = exact_threshold
-    _WORKER_DEVICE = device
     _WORKER_SOLVER = _build_exact_solver()
-    _WORKER_BID_MODEL = _load_bid_model(bid_checkpoint, device)
+    _WORKER_ACTING_BIDDER = load_deployed_acting_bidder(
+        checkpoint_path=Path(acting_bid_ckpt),
+        config_path=Path(residual_bidder_config),
+        repo_root=REPO_ROOT,
+        device=device,
+        policy_seed=bid_policy_seed,
+    )
     _WORKER_RULES = SpadesRules(enable_nil=True, enable_blind_nil=False)
 
 
@@ -313,8 +357,7 @@ def _worker_eval_single(job: tuple[int, int]) -> dict[str, Any] | None:
         exact_threshold=_WORKER_EXACT_THRESHOLD,
         episode_seed=base_seed + ep_idx,
         rules=_WORKER_RULES,
-        bid_model=_WORKER_BID_MODEL,
-        bid_device=_WORKER_DEVICE,
+        acting_bidder=_WORKER_ACTING_BIDDER,
         trace_enabled=True,
         show_card_progress=True,  # each worker shows its own per-card progress
     )
@@ -352,12 +395,12 @@ def main() -> None:
     trace_enabled = bool(args.trace_log_dir)
 
     print("=" * 72, flush=True)
-    print("超参数选拔赛 — RuleExactFirst4Player 队式对打", flush=True)
+    print("超参数选拔赛 — RuleExactFirst4NilPlayer 队式对打", flush=True)
     print(f"总对局数: {args.num_games} ({num_episodes} episodes × 2 games)", flush=True)
     print(f"Config A: {args.config_a or '(defaults)'}", flush=True)
     print(f"Config B: {args.config_b or '(defaults)'}", flush=True)
     print(f"精确阈值: {args.exact_threshold}", flush=True)
-    print(f"叫牌: {args.bid_checkpoint}", flush=True)
+    print(f"叫牌: residual-Q acting bidder ({args.acting_bid_checkpoint})", flush=True)
     print(f"Workers: {args.num_workers}", flush=True)
     print(f"Trace log: {args.trace_log_dir if trace_enabled else 'disabled'}", flush=True)
     print(f"JSON output: {args.output or 'none'}", flush=True)
@@ -384,7 +427,13 @@ def main() -> None:
 
     if args.num_workers <= 1:
         exact_solver = _build_exact_solver()
-        bid_model = _load_bid_model(args.bid_checkpoint, args.device)
+        acting_bidder = load_deployed_acting_bidder(
+            checkpoint_path=Path(args.acting_bid_checkpoint),
+            config_path=Path(args.residual_bidder_config),
+            repo_root=REPO_ROOT,
+            device=args.device,
+            policy_seed=args.bid_policy_seed,
+        )
         rules = SpadesRules(enable_nil=True, enable_blind_nil=False)
 
         for ep_idx in tqdm(range(num_episodes), desc="Playing games", unit="episode"):
@@ -395,9 +444,7 @@ def main() -> None:
                 exact_threshold=args.exact_threshold,
                 episode_seed=args.seed + ep_idx,
                 rules=rules,
-                bid_model=bid_model,
-                bid_device=args.device,
-                max_redeals=args.max_redeals,
+                acting_bidder=acting_bidder,
                 trace_enabled=trace_enabled,
                 show_card_progress=(args.num_workers <= 1),
             )
@@ -427,7 +474,8 @@ def main() -> None:
         from concurrent.futures import ProcessPoolExecutor
 
         init_args = (config_a, config_b, args.exact_threshold,
-                     args.bid_checkpoint, args.device)
+                     args.acting_bid_checkpoint, args.residual_bidder_config,
+                     args.device, args.bid_policy_seed)
         jobs = [(ep_idx, args.seed) for ep_idx in range(num_episodes)]
         n_workers = min(args.num_workers, num_episodes)
 
@@ -535,6 +583,8 @@ def _print_config_diff(cfg: HyperparamConfig) -> None:
         ("num_proposals_limit", cfg.num_proposals_limit, defaults.num_proposals_limit),
         ("min_pool_size", cfg.min_pool_size, defaults.min_pool_size),
         ("bad_action_weight", cfg.bad_action_weight, defaults.bad_action_weight),
+        ("bad_action_penalty_factor", cfg.bad_action_penalty_factor, defaults.bad_action_penalty_factor),
+        ("gamma", cfg.gamma, defaults.gamma),
         ("trick_num_threshold", cfg.trick_num_threshold, defaults.trick_num_threshold),
         ("swap_is_fill", cfg.swap_is_fill, defaults.swap_is_fill),
         ("multiplier_clip", cfg.multiplier_clip, defaults.multiplier_clip),

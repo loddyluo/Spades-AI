@@ -69,6 +69,10 @@ class HyperparamConfig:
             - "0.0"      : weight *= 0.0  (有坏动作就淘汰)
             - "1.0"      : weight *= 1.0  (不惩罚)
             - "x**2"     : weight *= x²
+      gamma: float = 1.0
+          Exponent applied to bid probability products: ``bid_prod ** gamma``.
+          Values >1 sharpen (amplify likelihood differences), <1 flatten,
+          1 = identity (no effect).
       trick_num_threshold: int = 8
           Tricks with index >= this value use solver Q-values for weighting
           (0-indexed; 8 = 9th trick onward).
@@ -91,7 +95,9 @@ class HyperparamConfig:
 
     # Importance weight computation
     bad_action_weight: str = "x"  # "x"=bad_count/total; 数字字符串=常数
+    bad_action_penalty_factor: float = 0.81  # 队友出牌与规则玩家不一致时的权重衰减系数
     trick_num_threshold: int = 8
+    gamma: float = 1.0  # bid_prod 的指数：bid_prod ** gamma (默认 1 = 不变)
 
     # Selection ordering
     swap_is_fill: bool = False
@@ -149,7 +155,9 @@ class HyperparamConfig:
             min_pool_size=raw.get("min_pool_size", 100),
             budget=budget,
             bad_action_weight=raw.get("bad_action_weight", "x"),
+            bad_action_penalty_factor=float(raw.get("bad_action_penalty_factor", 0.81)),
             trick_num_threshold=raw.get("trick_num_threshold", 8),
+            gamma=float(raw.get("gamma", 1.0)),
             swap_is_fill=bool(raw.get("swap_is_fill", False)),
             multiplier_clip=float(raw.get("multiplier_clip", 40.0)),
             multiplier_clip_factor=float(raw.get("multiplier_clip_factor", 1.0)),
@@ -182,7 +190,9 @@ class HyperparamConfig:
                 },
             },
             "bad_action_weight": self.bad_action_weight,
+            "bad_action_penalty_factor": self.bad_action_penalty_factor,
             "trick_num_threshold": self.trick_num_threshold,
+            "gamma": self.gamma,
             "swap_is_fill": self.swap_is_fill,
             "multiplier_clip": self.multiplier_clip,
             "multiplier_clip_factor": self.multiplier_clip_factor,

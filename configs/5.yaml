@@ -22,6 +22,8 @@ budget:
     max_samples: 32
 
 bad_action_weight: "x"
+bad_action_penalty_factor: 0.81
+gamma: 1.0
 trick_num_threshold: 8
 swap_is_fill: false
 multiplier_clip: 40.0

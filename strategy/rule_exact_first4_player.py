@@ -1205,6 +1205,9 @@ class RuleExactFirst4Player(AIPlayer):
                 product *= self._bid_likelihood_cache[key]
             bid_prods.append(product)
             offset += 4
+        gamma = self.config.gamma
+        if gamma != 1.0:
+            bid_prods = [p ** gamma for p in bid_prods]
         return bid_prods
 
     @staticmethod
@@ -1679,7 +1682,7 @@ class RuleExactFirst4Player(AIPlayer):
                             expected is not None
                             and expected.card_id != card.card_id
                         ):
-                            play_weights[proposal_index] *= 0.81
+                            play_weights[proposal_index] *= self.config.bad_action_penalty_factor
                     except Exception:
                         pass
 
@@ -1694,7 +1697,7 @@ class RuleExactFirst4Player(AIPlayer):
                         current_hand,
                         completed_ranks_by_suit,
                     ):
-                        play_weights[proposal_index] *= 0.81
+                        play_weights[proposal_index] *= self.config.bad_action_penalty_factor
 
                 hand_bits[proposal_index][player] = (
                     current_bits & ~card_bit
@@ -1793,8 +1796,8 @@ class RuleExactFirst4Player(AIPlayer):
         p = P_bid * ∏_{step} (w_step).
 
         坏动作（CLAUDE.md）:
-        1. 前 4 墩 (step < 16) 我的队友：用 rule_based 策略检查；不一致则 weight ×= 0.81
-        2. 第 5 墩起 (step >= 16) 我的队友：出牌的等大牌张中有更大的 → weight ×= 0.81
+        1. 前 4 墩 (step < 16) 我的队友：用 rule_based 策略检查；不一致则 weight ×= bad_action_penalty_factor（默认 0.81）
+        2. 第 5 墩起 (step >= 16) 我的队友：出牌的等大牌张中有更大的 → weight ×= bad_action_penalty_factor（默认 0.81）
         3. 第 9~13 墩 (step // 4 >= 8)：精确求解器 Q 值（保持原逻辑）
 
         When ``replay_snapshot`` is a matching prefix of at least four tricks,
@@ -1938,7 +1941,7 @@ class RuleExactFirst4Player(AIPlayer):
                 try:
                     rp_card = rp.play_card(legal, state_view)
                     if rp_card is not None and rp_card.card_id != card.card_id:
-                        weight *= 0.81  # 坏动作
+                        weight *= self.config.bad_action_penalty_factor  # 坏动作
                 except Exception:
                     pass  # rule player 异常不影响权重
 
@@ -1947,7 +1950,7 @@ class RuleExactFirst4Player(AIPlayer):
                 if self._card_has_larger_equal_magnitude(
                     card, hand, completed_ranks_by_suit,
                 ):
-                    weight *= 0.81  # 坏动作：出了非最大等大牌张
+                    weight *= self.config.bad_action_penalty_factor  # 坏动作：出了非最大等大牌张
 
             # ── 第 9~13 墩 (0-indexed: 8~12) 用精确求解器判定动作好坏 ──
             trick_num = step_idx // 4
