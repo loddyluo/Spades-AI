@@ -235,6 +235,16 @@ def play_one_game(
         for player in players:
             player.bid_placed(bidder, bid)
 
+        # 记录叫牌到 trace（手动叫牌未经过 TracePlayerProxy.place_bid）
+        if game_trace is not None:
+            game_trace["bids"].append({
+                "seat": bidder,
+                "spec": game_trace["players"][bidder]["spec"],
+                "legal_bids": [str(b) for b in legal_bids],
+                "chosen_bid": str(bid),
+                "raw_strength": None,
+            })
+
         state.current_bidder = rules.next_bid_turn(state)
         runner._refresh_all_player_features()
 
