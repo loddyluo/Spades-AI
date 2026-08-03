@@ -46,3 +46,6 @@ id_ed25519
 
 # Local isolated Git worktrees used for development tasks.
 .worktrees/
+
+# Local Claude planning notes.
+.claude/plans/
