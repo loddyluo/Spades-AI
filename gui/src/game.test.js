@@ -11,9 +11,13 @@ import {
   buildReplayRecord,
   buildReplaySnapshot,
   buildShowdownPayload,
+  computeScores,
   confirmLocalShowdown,
   createInitialGame,
   dealHands,
+  determineTrickWinner,
+  getLegalCards,
+  parseReplayImport,
   remoteStateFromServer,
   shouldCheckShowdown,
   showdownWaitingForPartner,
@@ -578,4 +582,172 @@ test('replay record exports a portable versioned game history', () => {
     tricksWon: [1, 0, 0, 0],
     score: { northSouth: 31, eastWest: -40 },
   });
+});
+
+
+function completeReplayRecord(seed = 20260804, viewSeat = 0) {
+  const initialHands = dealHands(seed).map((hand) => hand.map((card) => ({ ...card })));
+  const remainingHands = initialHands.map((hand) => hand.map((card) => ({ ...card })));
+  const bids = [
+    { value: 2, type: 'normal' },
+    { value: 3, type: 'normal' },
+    { value: 4, type: 'normal' },
+    { value: 2, type: 'normal' },
+  ];
+  const tricks = [];
+  const tricksWon = [0, 0, 0, 0];
+  let leader = 0;
+  let spadesBroken = false;
+
+  for (let trickNumber = 1; trickNumber <= 13; trickNumber += 1) {
+    const currentTrick = [];
+    for (let offset = 0; offset < 4; offset += 1) {
+      const seat = (leader + offset) % 4;
+      const legalCards = getLegalCards(remainingHands[seat], currentTrick, spadesBroken);
+      const card = legalCards[0];
+      remainingHands[seat] = remainingHands[seat].filter((candidate) => candidate.code !== card.code);
+      currentTrick.push({ seat, card: { ...card } });
+      spadesBroken = spadesBroken || card.suit === 'S';
+    }
+    const winner = determineTrickWinner(currentTrick);
+    tricksWon[winner] += 1;
+    tricks.push({
+      trickNumber,
+      leader,
+      winner,
+      plays: currentTrick.map((entry) => ({ seat: entry.seat, card: entry.card.code })),
+    });
+    leader = winner;
+  }
+
+  return {
+    format: 'spades-ai-replay',
+    version: 1,
+    seed,
+    viewSeat,
+    seats: ['North', 'East', 'South', 'West'],
+    bids,
+    initialHands: initialHands.map((hand) => hand.map((card) => card.code)),
+    tricks,
+    tricksWon,
+    score: computeScores(bids, tricksWon),
+  };
+}
+
+
+test('portable replay records round-trip through strict import validation', () => {
+  const record = completeReplayRecord(20260804, 2);
+
+  const options = parseReplayImport(record);
+
+  assert.equal(options.length, 1);
+  assert.equal(options[0].snapshot.humanSeat, 2);
+  assert.equal(options[0].snapshot.plays.length, 52);
+  assert.equal(options[0].snapshot.completedTricks.length, 13);
+  assert.deepEqual(buildReplayRecord(options[0].snapshot), record);
+});
+
+
+test('replay import sorts every hand using the standard display order', () => {
+  const sortedRecord = completeReplayRecord(20260804);
+  const shuffledRecord = {
+    ...sortedRecord,
+    initialHands: sortedRecord.initialHands.map((hand) => [...hand].reverse()),
+  };
+
+  const [option] = parseReplayImport(shuffledRecord);
+
+  assert.deepEqual(
+    option.snapshot.hands.map((hand) => hand.map((card) => card.code)),
+    sortedRecord.initialHands,
+  );
+});
+
+
+test('DeepSeek team-match records import with model seat labels and real team scores', () => {
+  const record = completeReplayRecord(20260805);
+  const currentPayoff = record.score.northSouth - record.score.eastWest;
+  const document = {
+    format: 'spades-ai-deepseek-team-match',
+    version: 1,
+    games: [{
+      seed: record.seed,
+      winner: currentPayoff > 0 ? 'current_spades_ai' : 'deepseek-v4-flash',
+      current_ai_payoff: currentPayoff,
+      deepseek_payoff: -currentPayoff,
+      bids: record.bids.map((bid) => bid.type === 'nil' ? 'nil' : `bid_${bid.value}`),
+      initial_hands: Object.fromEntries(record.initialHands.map((hand, seat) => [String(seat), hand])),
+      tricks: record.tricks.map((trick, index) => ({
+        index,
+        leader: trick.leader,
+        winner: trick.winner,
+        cards: trick.plays,
+      })),
+      tricks_won: record.tricksWon,
+      seat_assignment: {
+        0: 'current_spades_ai',
+        1: 'deepseek-v4-flash',
+        2: 'current_spades_ai',
+        3: 'deepseek-v4-flash',
+      },
+    }],
+  };
+
+  const [option] = parseReplayImport(document);
+
+  assert.match(option.label, /种子 20260805/);
+  assert.match(option.snapshot.seatNames[0], /当前 AI/);
+  assert.match(option.snapshot.seatNames[1], /DeepSeek/);
+  assert.deepEqual(option.snapshot.score, record.score);
+  assert.equal(option.snapshot.plays.length, 52);
+});
+
+
+test('a replay summary exposes all embedded hands as selectable options', () => {
+  const first = { ...completeReplayRecord(20260804), label: '第一局' };
+  const second = { ...completeReplayRecord(20260805), label: '第二局' };
+  const summary = {
+    format: 'spades-deepseek-8-team-match-summary',
+    version: 1,
+    replay_records: [first, second],
+  };
+
+  const options = parseReplayImport(summary);
+
+  assert.deepEqual(options.map((option) => option.label), ['第一局', '第二局']);
+  assert.deepEqual(options.map((option) => option.snapshot.seed), [20260804, 20260805]);
+});
+
+
+test('a duplicate-match summary exposes both tables for replay', () => {
+  const tableA = { ...completeReplayRecord(20260804), label: '副牌 20260804 · A 桌' };
+  const tableB = { ...completeReplayRecord(20260804), label: '副牌 20260804 · B 桌' };
+  const summary = {
+    format: 'spades-deepseek-duplicate-match-summary',
+    version: 1,
+    replay_records: [tableA, tableB],
+  };
+
+  const options = parseReplayImport(summary);
+
+  assert.deepEqual(options.map((option) => option.label), [
+    '副牌 20260804 · A 桌',
+    '副牌 20260804 · B 桌',
+  ]);
+});
+
+
+test('replay import rejects illegal cards and index-only summaries with actionable errors', () => {
+  const illegal = structuredClone(completeReplayRecord(20260804));
+  illegal.tricks[0].plays[0].card = illegal.initialHands[1][0];
+
+  assert.throws(() => parseReplayImport(illegal), /并不持有/);
+  assert.throws(
+    () => parseReplayImport({
+      format: 'spades-deepseek-8-team-match-summary',
+      version: 1,
+      games: [],
+    }),
+    /只含统计索引/,
+  );
 });

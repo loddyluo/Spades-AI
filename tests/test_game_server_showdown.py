@@ -9,6 +9,8 @@ import pytest
 from gui.game_server import AiFallbackError, GameRoom, _deal_hands_frontend_compat
 from residual_bidder.actions import BidAction
 from residual_bidder.hybrid import _initial_state
+from rl.nil_solver_leaf_env import NIL_ROLES
+from rl.policy_network import PolicyMLP
 from trick_taking.card import Suit
 from trick_taking.forced_outcome import (
     ShowdownCheck,
@@ -152,7 +154,22 @@ def test_remote_clients_receive_a_fatal_fallback_message() -> None:
     async def scenario() -> None:
         first = _FakeSocket()
         second = _FakeSocket()
-        room = FailingRoom("GUI-ERROR", 202607220006, exact_solver=object())
+        actor = PolicyMLP(input_dim=536, hidden_dims=[4], output_dim=52)
+        room = FailingRoom(
+            "GUI-ERROR",
+            202607220006,
+            exact_solver=object(),
+            nonnil_play_actor=SimpleNamespace(
+                actor=actor,
+                model_id="nonnil-test",
+                sha256="a" * 64,
+            ),
+            nil_play_actors=SimpleNamespace(
+                actors={role: actor for role in NIL_ROLES},
+                model_id="nil-test",
+                sha256="b" * 64,
+            ),
+        )
         room.connections = {0: first, 2: second}
 
         await room.start_game()

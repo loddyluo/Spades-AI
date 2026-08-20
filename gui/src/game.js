@@ -782,6 +782,301 @@ export function buildReplaySnapshot(state) {
   };
 }
 
+function replayImportError(message) {
+  throw new Error(`复盘记录无效：${message}`);
+}
+
+function replaySeat(value, context) {
+  if (!Number.isInteger(value) || value < 0 || value > 3) {
+    replayImportError(`${context} 必须是 0-3 的座位编号`);
+  }
+  return value;
+}
+
+function replayCard(code, context) {
+  if (typeof code !== 'string' || !/^[2-9TJQKA][CDHS]$/.test(code)) {
+    replayImportError(`${context} 包含无效牌码 ${JSON.stringify(code)}`);
+  }
+  return {
+    code,
+    rank: code.slice(0, -1),
+    suit: code.slice(-1),
+  };
+}
+
+function replayBid(rawBid, context) {
+  if (rawBid === 'nil') {
+    return makeBid(0, 'nil');
+  }
+  if (typeof rawBid === 'string') {
+    const match = /^bid_(\d+)$/.exec(rawBid);
+    const value = match ? Number.parseInt(match[1], 10) : NaN;
+    if (Number.isInteger(value) && value >= 1 && value <= 13) {
+      return makeBid(value);
+    }
+    replayImportError(`${context} 包含无效叫牌 ${JSON.stringify(rawBid)}`);
+  }
+  if (!rawBid || typeof rawBid !== 'object' || Array.isArray(rawBid)) {
+    replayImportError(`${context} 缺少叫牌对象`);
+  }
+  if (rawBid.type === 'nil' && rawBid.value === 0) {
+    return makeBid(0, 'nil');
+  }
+  if (
+    rawBid.type === 'normal'
+    && Number.isInteger(rawBid.value)
+    && rawBid.value >= 1
+    && rawBid.value <= 13
+  ) {
+    return makeBid(rawBid.value);
+  }
+  replayImportError(`${context} 包含无效叫牌 ${JSON.stringify(rawBid)}`);
+}
+
+function replaySeatNames(rawNames) {
+  if (rawNames == null) {
+    return [...PLAYER_NAMES];
+  }
+  if (
+    !Array.isArray(rawNames)
+    || rawNames.length !== 4
+    || rawNames.some((name) => typeof name !== 'string' || !name.trim())
+  ) {
+    replayImportError('seats 必须包含四个非空名称');
+  }
+  return rawNames.map((name) => name.trim());
+}
+
+function replaySnapshotFromRecord(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    replayImportError('顶层必须是 JSON 对象');
+  }
+  if (record.format !== 'spades-ai-replay' || record.version !== 1) {
+    replayImportError(`不支持的复盘格式 ${JSON.stringify(record.format)} / 版本 ${JSON.stringify(record.version)}`);
+  }
+  if (!Number.isSafeInteger(record.seed) || record.seed < 0) {
+    replayImportError('seed 必须是非负安全整数');
+  }
+  const humanSeat = replaySeat(record.viewSeat ?? 0, 'viewSeat');
+  const bids = Array.isArray(record.bids) && record.bids.length === 4
+    ? record.bids.map((bid, seat) => replayBid(bid, `座位 ${seat}`))
+    : replayImportError('bids 必须包含四个叫牌');
+
+  if (!Array.isArray(record.initialHands) || record.initialHands.length !== 4) {
+    replayImportError('initialHands 必须包含四家手牌');
+  }
+  const hands = record.initialHands.map((rawHand, seat) => {
+    if (!Array.isArray(rawHand) || rawHand.length !== 13) {
+      replayImportError(`座位 ${seat} 的初始手牌必须恰好有 13 张`);
+    }
+    return sortCards(
+      rawHand.map((code, index) => replayCard(code, `座位 ${seat} 第 ${index + 1} 张牌`)),
+    );
+  });
+  const allCodes = hands.flatMap((hand) => hand.map((card) => card.code));
+  const standardCodes = new Set(createDeck().map((card) => card.code));
+  if (new Set(allCodes).size !== 52 || allCodes.some((code) => !standardCodes.has(code))) {
+    replayImportError('四家初始手牌必须无重复地组成标准 52 张牌');
+  }
+
+  if (!Array.isArray(record.tricks) || record.tricks.length !== 13) {
+    replayImportError('tricks 必须包含 13 墩');
+  }
+  const remainingHands = hands.map((hand) => hand.map((card) => ({ ...card })));
+  const completedTricks = [];
+  const plays = [];
+  const calculatedTricksWon = [0, 0, 0, 0];
+  let previousWinner = null;
+  let spadesBroken = false;
+
+  record.tricks.forEach((rawTrick, trickIndex) => {
+    const trickNumber = trickIndex + 1;
+    if (!rawTrick || typeof rawTrick !== 'object' || Array.isArray(rawTrick)) {
+      replayImportError(`第 ${trickNumber} 墩必须是对象`);
+    }
+    if (rawTrick.trickNumber !== trickNumber) {
+      replayImportError(`第 ${trickNumber} 墩的 trickNumber 不连续`);
+    }
+    const leader = replaySeat(rawTrick.leader, `第 ${trickNumber} 墩 leader`);
+    if (previousWinner != null && leader !== previousWinner) {
+      replayImportError(`第 ${trickNumber} 墩应由上一墩赢家座位 ${previousWinner} 首攻`);
+    }
+    if (!Array.isArray(rawTrick.plays) || rawTrick.plays.length !== 4) {
+      replayImportError(`第 ${trickNumber} 墩必须包含四次出牌`);
+    }
+
+    const currentTrick = [];
+    rawTrick.plays.forEach((rawPlay, offset) => {
+      if (!rawPlay || typeof rawPlay !== 'object' || Array.isArray(rawPlay)) {
+        replayImportError(`第 ${trickNumber} 墩第 ${offset + 1} 次出牌必须是对象`);
+      }
+      const expectedSeat = (leader + offset) % 4;
+      const seat = replaySeat(rawPlay.seat, `第 ${trickNumber} 墩第 ${offset + 1} 次出牌 seat`);
+      if (seat !== expectedSeat) {
+        replayImportError(`第 ${trickNumber} 墩第 ${offset + 1} 次应由座位 ${expectedSeat} 出牌`);
+      }
+      const card = replayCard(rawPlay.card, `第 ${trickNumber} 墩第 ${offset + 1} 次出牌`);
+      const cardIndex = remainingHands[seat].findIndex((candidate) => candidate.code === card.code);
+      if (cardIndex < 0) {
+        replayImportError(`座位 ${seat} 在第 ${trickNumber} 墩并不持有 ${card.code}`);
+      }
+      const legalCards = getLegalCards(remainingHands[seat], currentTrick, spadesBroken);
+      if (!legalCards.some((candidate) => candidate.code === card.code)) {
+        replayImportError(`座位 ${seat} 在第 ${trickNumber} 墩非法打出 ${card.code}`);
+      }
+      remainingHands[seat].splice(cardIndex, 1);
+      currentTrick.push({ seat, card });
+      spadesBroken = spadesBroken || card.suit === 'S';
+    });
+
+    const calculatedWinner = determineTrickWinner(currentTrick);
+    const winner = replaySeat(rawTrick.winner, `第 ${trickNumber} 墩 winner`);
+    if (winner !== calculatedWinner) {
+      replayImportError(`第 ${trickNumber} 墩赢家应为座位 ${calculatedWinner}，记录为 ${winner}`);
+    }
+    calculatedTricksWon[winner] += 1;
+    previousWinner = winner;
+    const cards = currentTrick.map((entry) => ({ seat: entry.seat, card: { ...entry.card } }));
+    completedTricks.push({ trickNumber, winner, cards });
+    plays.push(...cards.map((entry) => ({
+      seat: entry.seat,
+      card: { ...entry.card },
+      trickNumber,
+      winner,
+    })));
+  });
+
+  if (
+    !Array.isArray(record.tricksWon)
+    || record.tricksWon.length !== 4
+    || record.tricksWon.some((value, seat) => value !== calculatedTricksWon[seat])
+  ) {
+    replayImportError(`tricksWon 与逐墩结果不一致，应为 ${calculatedTricksWon.join(',')}`);
+  }
+  if (remainingHands.some((hand) => hand.length !== 0)) {
+    replayImportError('13 墩结束后仍有未打出的牌');
+  }
+
+  const calculatedScore = computeScores(bids, calculatedTricksWon);
+  if (record.score != null) {
+    if (
+      typeof record.score !== 'object'
+      || record.score.northSouth !== calculatedScore.northSouth
+      || record.score.eastWest !== calculatedScore.eastWest
+    ) {
+      replayImportError(`score 与叫牌/墩数不一致，应为 NS=${calculatedScore.northSouth}, EW=${calculatedScore.eastWest}`);
+    }
+  }
+
+  return {
+    seed: record.seed,
+    humanSeat,
+    seatNames: replaySeatNames(record.seats),
+    bids,
+    tricksWon: calculatedTricksWon,
+    score: calculatedScore,
+    hands,
+    plays,
+    completedTricks,
+  };
+}
+
+function deepseekSeatName(rawName, seat) {
+  if (rawName === 'current_spades_ai') return `当前 AI · ${PLAYER_NAMES[seat]}`;
+  if (rawName === 'deepseek-v4-flash') return `DeepSeek · ${PLAYER_NAMES[seat]}`;
+  return typeof rawName === 'string' && rawName.trim()
+    ? `${rawName.trim()} · ${PLAYER_NAMES[seat]}`
+    : PLAYER_NAMES[seat];
+}
+
+function deepseekGameReplayRecord(game, gameIndex) {
+  if (!game || typeof game !== 'object' || Array.isArray(game)) {
+    replayImportError(`DeepSeek 第 ${gameIndex + 1} 局必须是对象`);
+  }
+  const initialHands = Array.from({ length: 4 }, (_, seat) => game.initial_hands?.[String(seat)]);
+  if (!Array.isArray(game.tricks)) {
+    replayImportError(`DeepSeek 第 ${gameIndex + 1} 局缺少 tricks`);
+  }
+  const bids = Array.isArray(game.bids)
+    ? game.bids.map((bid, seat) => replayBid(bid, `DeepSeek 第 ${gameIndex + 1} 局座位 ${seat}`))
+    : game.bids;
+  const tricksWon = game.tricks_won;
+  const score = Array.isArray(bids) && Array.isArray(tricksWon)
+    ? computeScores(bids, tricksWon)
+    : null;
+  return {
+    format: 'spades-ai-replay',
+    version: 1,
+    seed: game.seed,
+    viewSeat: 0,
+    seats: Array.from({ length: 4 }, (_, seat) => deepseekSeatName(game.seat_assignment?.[String(seat)], seat)),
+    bids,
+    initialHands,
+    tricks: game.tricks.map((trick, trickIndex) => ({
+      trickNumber: trickIndex + 1,
+      leader: trick.leader,
+      winner: trick.winner,
+      plays: Array.isArray(trick.cards)
+        ? trick.cards.map((entry) => ({ seat: entry.seat, card: entry.card }))
+        : trick.cards,
+    })),
+    tricksWon,
+    score,
+  };
+}
+
+function replayOption(record, index, label = null) {
+  const snapshot = replaySnapshotFromRecord(record);
+  return {
+    label: label || (typeof record.label === 'string' && record.label.trim()) || `种子 ${snapshot.seed}`,
+    snapshot,
+    index,
+  };
+}
+
+/**
+ * Parse an imported replay JSON document.
+ * Supports the GUI's portable record, DeepSeek team-match output, and a
+ * summary/bundle containing portable records. Every hand is fully validated
+ * before it is returned to the replay screen.
+ */
+export function parseReplayImport(document) {
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    replayImportError('顶层必须是 JSON 对象');
+  }
+  if (document.format === 'spades-ai-replay') {
+    return [replayOption(document, 0)];
+  }
+  if (document.format === 'spades-ai-deepseek-team-match') {
+    if (document.version !== 1 || !Array.isArray(document.games) || document.games.length === 0) {
+      replayImportError('DeepSeek 队式赛文件缺少有效 games');
+    }
+    return document.games.map((game, index) => {
+      const record = deepseekGameReplayRecord(game, index);
+      const payoff = Number(game.current_ai_payoff);
+      let outcome = '平局';
+      if (game.winner === 'current_spades_ai') outcome = `当前 AI 胜${Number.isFinite(payoff) ? ` +${payoff}` : ''}`;
+      if (game.winner === 'deepseek-v4-flash') outcome = `DeepSeek 胜${Number.isFinite(payoff) ? ` ${-payoff >= 0 ? '+' : ''}${-payoff}` : ''}`;
+      return replayOption(record, index, `种子 ${game.seed} · ${outcome}`);
+    });
+  }
+  if (
+    document.format === 'spades-ai-replay-bundle'
+    || document.format === 'spades-deepseek-8-team-match-summary'
+    || document.format === 'spades-deepseek-duplicate-match-summary'
+  ) {
+    if (document.version !== 1) {
+      replayImportError(`不支持的汇总版本 ${JSON.stringify(document.version)}`);
+    }
+    const records = document.replay_records ?? document.records;
+    if (!Array.isArray(records) || records.length === 0) {
+      replayImportError('汇总文件只含统计索引，不含 replay_records；请导入完整汇总或单局 seed JSON');
+    }
+    return records.map((record, index) => replayOption(record, index));
+  }
+  replayImportError(`不支持的 format ${JSON.stringify(document.format)}`);
+}
+
 /**
  * Build a portable, versioned record from a replay snapshot.
  * Cards are exported as compact rank+suit codes so the file is independent
@@ -793,7 +1088,7 @@ export function buildReplayRecord(snapshot) {
     version: 1,
     seed: snapshot.seed,
     viewSeat: snapshot.humanSeat,
-    seats: [...PLAYER_NAMES],
+    seats: snapshot.seatNames ? [...snapshot.seatNames] : [...PLAYER_NAMES],
     bids: snapshot.bids.map((bid) => serializeBid(bid)),
     initialHands: snapshot.hands.map((hand) => hand.map((card) => card.code)),
     tricks: snapshot.completedTricks.map((trick) => ({

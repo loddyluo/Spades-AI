@@ -19,6 +19,7 @@ import {
   createInitialGame,
   getHumanLegalCards,
   makeBid,
+  parseReplayImport,
   remoteStateFromServer,
   showdownWaitingForPartner,
   submitHumanBid,
@@ -40,6 +41,7 @@ const MODE_LABELS = {
   match500: '500 分赛',
   fixedSeed: '给定种子',
   aiTest: '测试 AI',
+  importReplay: '导入复盘',
   remote: '远程对战',
 };
 
@@ -250,12 +252,13 @@ function replayTricksWonAt(snapshot, playIndex, trickComplete) {
 }
 
 function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode, isViewSeat = false, viewLabel = '(You)' }) {
+  const seatName = snapshot.seatNames?.[seat] ?? SEAT_NAMES[seat];
   return (
     <div className={`replay-seat replay-seat--${pos}`}>
       <div className={`replay-seat__label team-${teamOf(seat)}`}>
-        <span className="replay-seat__avatar">{SEAT_NAMES[seat][0]}</span>
+        <span className="replay-seat__avatar">{seatName[0]}</span>
         <div className="replay-seat__meta">
-          <strong>{SEAT_NAMES[seat]}{isViewSeat ? <> <em>{viewLabel}</em></> : null}</strong>
+          <strong>{seatName}{isViewSeat ? <> <em>{viewLabel}</em></> : null}</strong>
           <TallyBadges bid={snapshot.bids[seat]} won={tricksWon[seat]} />
         </div>
       </div>
@@ -275,6 +278,7 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
   const [playIndex, setPlayIndex] = useState(0);
   const [trickComplete, setTrickComplete] = useState(false);
   const [view, setView] = useState(() => rebuildReplayState(snapshot, 0, false));
+  const replaySeatNames = snapshot.seatNames ?? SEAT_NAMES;
 
   const applyCursor = (index, complete, nextPhase = 'ready') => {
     setPlayIndex(index);
@@ -361,11 +365,11 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
   if (phase === 'done') {
     statusText = '复盘结束';
   } else if (trickComplete) {
-    statusText = `第 ${activeTrick} 墩由 ${SEAT_NAMES[trickWinner]} 赢下 · 点击下一步收墩`;
+    statusText = `第 ${activeTrick} 墩由 ${replaySeatNames[trickWinner]} 赢下 · 点击下一步收墩`;
   } else if (lastPlay) {
-    statusText = `${SEAT_NAMES[lastPlay.seat]} 出 ${lastPlay.card.rank}${SUIT_SYMBOL[lastPlay.card.suit]}`;
+    statusText = `${replaySeatNames[lastPlay.seat]} 出 ${lastPlay.card.rank}${SUIT_SYMBOL[lastPlay.card.suit]}`;
   } else if (nextPlay) {
-    statusText = `下一步：${SEAT_NAMES[nextPlay.seat]} 出牌`;
+    statusText = `下一步：${replaySeatNames[nextPlay.seat]} 出牌`;
   }
 
   const progress = snapshot.plays.length > 0 ? Math.round((playIndex / snapshot.plays.length) * 100) : 0;
@@ -464,7 +468,7 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
 }
 
 /* ── Mode-select screen ─────────────────────────────────────────────── */
-function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlSeed }) {
+function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onReplayStart, onRemoteStart, urlSeed }) {
   const [seedInput, setSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
   const [testSeedInput, setTestSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
   const [remoteSeedInput, setRemoteSeedInput] = useState(urlSeed != null ? String(urlSeed) : '123');
@@ -476,6 +480,11 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlS
   const [seedError, setSeedError] = useState('');
   const [testSeedError, setTestSeedError] = useState('');
   const [remoteError, setRemoteError] = useState('');
+  const [replayOptions, setReplayOptions] = useState([]);
+  const [replayIndex, setReplayIndex] = useState(0);
+  const [replayViewSeat, setReplayViewSeat] = useState(0);
+  const [replayFileName, setReplayFileName] = useState('');
+  const [replayError, setReplayError] = useState('');
 
   const handleFixedStart = () => {
     const seed = normalizeSeed(seedInput);
@@ -515,6 +524,47 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlS
     }
     setRemoteError('');
     onRemoteStart(url, room.toUpperCase(), seed, remoteSeat);
+  };
+
+  const handleReplayFile = async (event) => {
+    const file = event.target.files?.[0];
+    setReplayOptions([]);
+    setReplayIndex(0);
+    setReplayFileName(file?.name ?? '');
+    setReplayError('');
+    if (!file) return;
+    try {
+      const text = await file.text();
+      let document;
+      try {
+        document = JSON.parse(text);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(`JSON 解析失败：${detail}`);
+      }
+      const options = parseReplayImport(document);
+      setReplayOptions(options);
+      setReplayViewSeat(options[0].snapshot.humanSeat);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      setReplayError(`导入失败：${detail}`);
+    }
+  };
+
+  const handleReplaySelection = (event) => {
+    const nextIndex = Number(event.target.value);
+    setReplayIndex(nextIndex);
+    setReplayViewSeat(replayOptions[nextIndex]?.snapshot.humanSeat ?? 0);
+  };
+
+  const handleReplayStart = () => {
+    const selected = replayOptions[replayIndex];
+    if (!selected) {
+      setReplayError('请先选择有效的复盘记录');
+      return;
+    }
+    setReplayError('');
+    onReplayStart({ ...selected.snapshot, humanSeat: replayViewSeat });
   };
 
   return (
@@ -584,6 +634,44 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlS
           </div>
           {testSeedError ? <p className="seed-form__error">{testSeedError}</p> : null}
         </div>
+        <div className="mode-card mode-card--replay">
+          <span className="mode-card__icon">🎞️</span>
+          <strong>导入复盘</strong>
+          <span className="mode-card__desc">导入 GUI 记录、DeepSeek 队式赛单局或含多局的完整汇总。</span>
+          <div className="seed-form">
+            <label className="seed-form__field">
+              <span>JSON 记录</span>
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => { void handleReplayFile(event); }}
+              />
+            </label>
+            {replayFileName ? <p className="seed-form__hint">已读取：{replayFileName}</p> : null}
+            {replayOptions.length > 0 ? (
+              <>
+                <label className="seed-form__field">
+                  <span>牌局</span>
+                  <select value={replayIndex} onChange={handleReplaySelection}>
+                    {replayOptions.map((option, index) => (
+                      <option key={`${option.snapshot.seed}-${index}`} value={index}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="seed-form__field">
+                  <span>复盘视角</span>
+                  <select value={replayViewSeat} onChange={(event) => setReplayViewSeat(Number(event.target.value))}>
+                    {(replayOptions[replayIndex]?.snapshot.seatNames ?? SEAT_NAMES).map((label, seatIndex) => (
+                      <option key={`${label}-${seatIndex}`} value={seatIndex}>{seatIndex} · {label}</option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="btn-new seed-form__go" onClick={handleReplayStart}>打开复盘</button>
+              </>
+            ) : null}
+          </div>
+          {replayError ? <p className="seed-form__error">{replayError}</p> : null}
+        </div>
         <div className="mode-card mode-card--remote">
           <span className="mode-card__icon">🌐</span>
           <strong>远程对战</strong>
@@ -639,7 +727,7 @@ function ModeMenu({ onPick, onFixedSeedStart, onAiTestStart, onRemoteStart, urlS
 export default function App() {
   const urlSeed = seedFromUrl();
   const [screen, setScreen] = useState('menu');     // 'menu' | 'game' | 'replay'
-  const [mode, setMode] = useState('single');        // 'single' | 'match500' | 'fixedSeed' | 'aiTest'
+  const [mode, setMode] = useState('single');        // 'single' | 'match500' | 'fixedSeed' | 'aiTest' | 'importReplay'
   const [humanSeat, setHumanSeat] = useState(0);
   const [busy, setBusy] = useState(false);
   const [game, setGame] = useState(() => createInitialGame(0, 0));
@@ -740,6 +828,13 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const startImportedReplay = (snapshot) => {
+    setMode('importReplay');
+    setAiError('');
+    setReplaySnapshot(snapshot);
+    setScreen('replay');
   };
 
   // Next hand within a running 500-match (keeps cumulative score).
@@ -1129,6 +1224,7 @@ export default function App() {
           onPick={(m) => { void startMatch(m); }}
           onFixedSeedStart={(seed, seat) => { void startFixedSeedMatch(seed, seat); }}
           onAiTestStart={(seed, viewSeat) => { void startAiTest(seed, viewSeat); }}
+          onReplayStart={startImportedReplay}
           onRemoteStart={(serverUrl, roomCode, seed, seat) => {
             startRemoteGame(serverUrl, roomCode, seed, seat);
           }}
@@ -1139,11 +1235,12 @@ export default function App() {
   }
 
   if (screen === 'replay' && replaySnapshot) {
+    const replayFromMenu = mode === 'aiTest' || mode === 'importReplay';
     return (
       <ReplayScreen
         snapshot={replaySnapshot}
-        viewLabel={mode === 'aiTest' ? '(视角)' : '(You)'}
-        onExit={() => setScreen(mode === 'aiTest' ? 'menu' : 'game')}
+        viewLabel={replayFromMenu ? '(视角)' : '(You)'}
+        onExit={() => setScreen(replayFromMenu ? 'menu' : 'game')}
       />
     );
   }

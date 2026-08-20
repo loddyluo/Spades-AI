@@ -1,0 +1,115 @@
+{
+  "actor_sha256": "6f2f3a143563dd44255d7018883f63cfc089b9656bf0bad273078cb3399a2b87",
+  "deals_trained": 40960,
+  "encoder_schema": "first4-nil-observation-v1-536",
+  "extra": {
+    "ppo_config": {
+      "clip_ratio": 0.2,
+      "entropy_coefficient": 0.0015,
+      "learning_rate": 1e-05,
+      "max_grad_norm": 0.5,
+      "minibatch_size": 1024,
+      "target_kl": 0.01,
+      "update_epochs": 4,
+      "value_coefficient": 0.5
+    },
+    "training_config": {
+      "actor_hidden_dims": [
+        1024,
+        512,
+        512
+      ],
+      "base_shuffle_seed": 1133600000,
+      "bid_policy_seed": null,
+      "champion_checkpoint": "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-convergence-20260817/cycle-006/actors_final.json",
+      "champion_opponent_weight": 0.3,
+      "clip_ratio": 0.2,
+      "critic_hidden_dims": [
+        512,
+        256
+      ],
+      "device": "cpu",
+      "entropy_coefficient": 0.0015,
+      "finetune_from": "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-convergence-20260817/cycle-006/trainer_final.pt",
+      "history_checkpoints": [
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-convergence-20260817/cycle-005/actors_update_000020.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-convergence-20260817/cycle-003/actors_update_000020.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-convergence-20260817/cycle-002/actors_final.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-phase1-20260817/actors_final.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-phase1-20260817/actors_update_000020.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-phase1-20260817/actors_update_000015.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-phase1-20260817/actors_update_000010.json",
+        "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-phase1-20260817/actors_update_000005.json"
+      ],
+      "history_opponent_weight": 0.25,
+      "learning_rate": 1e-05,
+      "max_grad_norm": 0.5,
+      "minibatch_size": 1024,
+      "oversample_factor": 6.5,
+      "resume": null,
+      "rollout_deals": 2048,
+      "rule_opponent_weight": 0.45,
+      "save_dir": "/Users/haorenluo/Desktop/Spades-AI/output/solver-leaf-nil-four-role-convergence-20260817/cycle-007",
+      "save_every_updates": 5,
+      "seed": 1706142,
+      "target_kl": 0.01,
+      "total_games": 100000,
+      "update_epochs": 4,
+      "value_coefficient": 0.5,
+      "workers": 8
+    }
+  },
+  "feature_segments": {
+    "bids": [
+      104,
+      156
+    ],
+    "context": [
+      471,
+      493
+    ],
+    "contract": [
+      509,
+      511
+    ],
+    "hand": [
+      0,
+      52
+    ],
+    "hand_derived": [
+      524,
+      536
+    ],
+    "history": [
+      156,
+      471
+    ],
+    "legal": [
+      52,
+      104
+    ],
+    "spades_broken": [
+      523,
+      524
+    ],
+    "tricks_won": [
+      493,
+      509
+    ],
+    "voids": [
+      511,
+      523
+    ]
+  },
+  "hidden_dims": [
+    1024,
+    512,
+    512
+  ],
+  "input_dim": 536,
+  "output_dim": 52,
+  "residual_checkpoint_sha256": "633ad460961cf64c82a7c7966540d22d123e3461f72fb476ffad1aa4d91c0afc",
+  "role": "nil_lower",
+  "schema": "solver-leaf-nil-role-actor-v1",
+  "training_update": 20
+}

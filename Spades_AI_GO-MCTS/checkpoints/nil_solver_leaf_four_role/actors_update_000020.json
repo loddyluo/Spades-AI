@@ -1,0 +1,36 @@
+{
+  "actors": {
+    "nil_lower": {
+      "metadata_path": "actor_nil_lower_update_000020.pt.json",
+      "path": "actor_nil_lower_update_000020.pt",
+      "sha256": "6f2f3a143563dd44255d7018883f63cfc089b9656bf0bad273078cb3399a2b87"
+    },
+    "nil_partner": {
+      "metadata_path": "actor_nil_partner_update_000020.pt.json",
+      "path": "actor_nil_partner_update_000020.pt",
+      "sha256": "16dfd03ba60b334260829c95af5257abf5fd9ead94eb2c011d8a5ce25ab17125"
+    },
+    "nil_self": {
+      "metadata_path": "actor_nil_self_update_000020.pt.json",
+      "path": "actor_nil_self_update_000020.pt",
+      "sha256": "68fcef245492bbb56cd0ba3e8ef48fb4c3cb483565f6cb8fb96ba9f8d78c2eb4"
+    },
+    "nil_upper": {
+      "metadata_path": "actor_nil_upper_update_000020.pt.json",
+      "path": "actor_nil_upper_update_000020.pt",
+      "sha256": "7589ab223fb0b2aca3539441e2ba461ea94e628d68843e793959efab73715cb0"
+    }
+  },
+  "deals_trained": 40960,
+  "encoder_schema": "first4-nil-observation-v1-536",
+  "input_dim": 536,
+  "output_dim": 52,
+  "roles": [
+    "nil_self",
+    "nil_partner",
+    "nil_upper",
+    "nil_lower"
+  ],
+  "schema": "solver-leaf-nil-four-role-actor-bundle-v1",
+  "training_update": 20
+}

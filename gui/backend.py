@@ -1,18 +1,16 @@
-"""Local Python AI backend for the Spades GUI — powered by rule_exact_first4.
+"""Local Python AI backend for the Spades GUI — MLP first four + exact play.
 
 The frontend (gui/src/game.js) sends ONLY public history plus the current
 player's remaining hand.  This backend reconstructs a partial
-`trick_taking.game_state.GameState` and drives the **rule_exact_first4** player:
+`trick_taking.game_state.GameState` and drives the production play pipeline:
 
-- First 4 tricks (remaining > exact_threshold): RuleBasedFirst4Player
-  (rule-based heuristics, blind to opponents' hands).
+- First 4 tricks (remaining > exact_threshold): the deployed non-Nil MLP or
+  one of four role-specific Nil MLPs, all blind to opponents' hands.
 - Last 36 cards (remaining <= exact_threshold): the exact double-dummy
   solver with importance-sampling determinization.  It RECONSTRUCTS the
   opponents' hidden hands from public history — it never peeks at the
   human's real cards.
-- When someone bids nil/blind_nil: the first 4 tricks switch to a rule-based
-  nil strategy (RuleExactFirst4NilPlayer → RuleBasedFirst4NilPlayer) instead
-  of the rule-based player.
+- Multi-Nil deals use the same deterministic role mapping as single-Nil play.
 
 Bidding uses the selected residual-Q 100k acting bidder.  The original
 bid_nsfp.pt remains frozen inside the late-play importance-sampling belief
@@ -21,8 +19,8 @@ model and as the acting bidder's fail-safe fallback.
 Hyperparameter config defaults to configs/8.yaml.
 
 The HTTP layer is stateless: every request rebuilds the GameState from the
-posted payload and replays the full trick history into the rule-based player,
-so there is no cross-request memory to keep in sync.
+posted payload and replays the full public trick history into the exact-stage
+tracker, so there is no cross-request memory to keep in sync.
 """
 
 from __future__ import annotations
@@ -56,7 +54,20 @@ from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
     ExactDoubleDummyCppFastestSolver,
 )
 
-from strategy.rule_exact_first4_nil_player import RuleExactFirst4NilPlayer  # noqa: E402
+from rl.nil_solver_leaf_deployment import (  # noqa: E402
+    DEFAULT_NIL_ACTOR_BUNDLE_PATH,
+    DEFAULT_NIL_ACTOR_BUNDLE_SHA256,
+    load_deployed_nil_actor_bundle,
+)
+from rl.solver_leaf_deployment import (  # noqa: E402
+    DEFAULT_SOLVER_LEAF_ACTOR_PATH,
+    DEFAULT_SOLVER_LEAF_ACTOR_SHA256,
+    DEFAULT_SOLVER_LEAF_SIDECAR_SHA256,
+    load_deployed_solver_leaf_actor,
+)
+from strategy.solver_leaf_mlp_exact_player import (  # noqa: E402
+    SolverLeafMLPExactPlayer,
+)
 from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
 from residual_bidder.actions import to_local_bid  # noqa: E402
 from residual_bidder.deployment import (  # noqa: E402
@@ -387,10 +398,10 @@ def _load_bid_model(path: str, device: str):
 
 
 class RuleExactProvider:
-    """Holds the shared models and one rule_exact_first4 player per seat.
+    """Holds shared models and one MLP/exact player per seat.
 
     Stateless across HTTP requests: each request rebuilds the GameState and
-    replays the full trick history into the rule-based player's internal state.
+    replays the full public trick history before choosing an action.
     """
 
     def __init__(self, args: argparse.Namespace) -> None:
@@ -399,7 +410,7 @@ class RuleExactProvider:
         self.exact_threshold = int(args.exact_threshold)
         self.seed = args.seed
 
-        print("Loading rule_exact_first4 models ...", flush=True)
+        print("Loading solver-leaf MLP + exact models ...", flush=True)
 
         # Load hyperparam config
         self.hyperparam_config = HyperparamConfig.from_yaml(args.config)
@@ -418,6 +429,28 @@ class RuleExactProvider:
             flush=True,
         )
 
+        self.nonnil_play_actor = load_deployed_solver_leaf_actor(
+            Path(args.nonnil_actor_checkpoint),
+            expected_sha256=args.nonnil_actor_sha256,
+            expected_sidecar_sha256=args.nonnil_actor_sidecar_sha256,
+            device=device,
+        )
+        print(
+            "  [OK] loaded non-Nil play actor: "
+            f"model_id={self.nonnil_play_actor.model_id}",
+            flush=True,
+        )
+        self.nil_play_actors = load_deployed_nil_actor_bundle(
+            Path(args.nil_actor_bundle),
+            expected_sha256=args.nil_actor_bundle_sha256,
+            device=device,
+        )
+        print(
+            "  [OK] loaded four-role Nil play actors: "
+            f"model_id={self.nil_play_actors.model_id}",
+            flush=True,
+        )
+
         # The wrapper serializes entry to the native process-global caches, so
         # this instance can be shared safely across seats.
         self.exact_solver = ExactDoubleDummyCppFastestSolver()
@@ -426,12 +459,16 @@ class RuleExactProvider:
         # threaded, so reset/replay/action selection must be one transaction.
         self._decision_lock = threading.Lock()
 
-        # One player instance per seat (keeps position / trajectory isolated).
-        # RuleExactFirst4NilPlayer: rule-based nil strategy for first 4 tricks
-        # when someone bids nil; non-nil → parent's RuleBasedFirst4Player;
-        # remaining <= threshold → IS pool exact solver.
-        self.players: list[RuleExactFirst4NilPlayer] = [
-            RuleExactFirst4NilPlayer(
+        # One stateful player per seat. All first-four choices and posterior
+        # replay choices use MLPs; remaining <= threshold uses exact search.
+        self.players: list[SolverLeafMLPExactPlayer] = [
+            SolverLeafMLPExactPlayer(
+                nonnil_actor=self.nonnil_play_actor.actor,
+                nonnil_model_id=self.nonnil_play_actor.model_id,
+                nonnil_actor_sha256=self.nonnil_play_actor.sha256,
+                nil_actors=self.nil_play_actors.actors,
+                nil_model_id=self.nil_play_actors.model_id,
+                nil_bundle_sha256=self.nil_play_actors.sha256,
                 exact_solver=self.exact_solver,
                 exact_threshold=self.exact_threshold,
                 # Acting bids are handled by self.acting_bidder.  The card
@@ -443,7 +480,7 @@ class RuleExactProvider:
             )
             for _ in range(4)
         ]
-        self.ai_name = "rule_exact_residual_q_100k"
+        self.ai_name = "solver_leaf_mlp_exact_residual_q_100k"
 
     # ── core dispatch ────────────────────────────────────────────────
     def choose_action(self, payload: dict[str, Any]) -> AiChoice:
@@ -463,9 +500,8 @@ class RuleExactProvider:
         state, seat = build_local_state(payload)
         player = self.players[seat]
 
-        # Reconstruct the AI's original 13-card hand (current hand + already
-        # played cards) so the rule-based player can compute its preference
-        # order correctly from the full starting hand.
+        # Reconstruct the AI's original hand so inherited exact-stage public
+        # replay has the same initial hand identity as the authoritative game.
         ai_played: list[Card] = []
         for trick in state.trick_history:
             for pid, card in trick.cards:
@@ -476,9 +512,7 @@ class RuleExactProvider:
                 ai_played.append(card)
         original_hand = list(state.hands[seat]) + ai_played
 
-        # Reset the player and replay the full public card-play history so the
-        # internal rule-based player (and nil rule player) have up-to-date
-        # tracked state (_history, _opp_led_suits, _our_first_led_suit, etc.).
+        # Reset the stateful exact-stage tracker and replay public history.
         player.start_game(seat, original_hand, 4)
         player.set_teams(state.teams, state.max_bid)
 
@@ -535,13 +569,10 @@ class RuleExactProvider:
                             bid_type="normal", detail="residual_bid")
         raise ValueError(f"deployed acting bidder returned invalid bid {raw!r}")
 
-    def _choose_play(self, player: RuleExactFirst4NilPlayer, state: GameState, seat: int,
+    def _choose_play(self, player: SolverLeafMLPExactPlayer, state: GameState, seat: int,
                      view: dict[str, Any]) -> AiChoice:
-        # Nil detection and rule-based nil setup already done by set_teams() in
-        # choose_action().  RuleExactFirst4NilPlayer.play_card internally routes:
-        #   - nil game + first 4 tricks → RuleBasedFirst4NilPlayer (rule-based)
-        #   - non-nil + first 4 tricks  → RuleBasedFirst4Player (rule-based)
-        #   - remaining <= exact_threshold → IS pool exact solver
+        # SolverLeafMLPExactPlayer internally routes every first-four decision
+        # to a deployed MLP and all later decisions to the exact solver.
 
         legal_cards = self.rules.playable(state, state.hands[seat], seat)
         if not legal_cards:
@@ -607,6 +638,14 @@ def build_response_handler(provider: RuleExactProvider):
                     "ai": provider.ai_name,
                     "seed": provider.seed,
                     "acting_bidder": provider.acting_bidder.describe(),
+                    "nonnil_play_model": {
+                        "model_id": provider.nonnil_play_actor.model_id,
+                        "sha256": provider.nonnil_play_actor.sha256,
+                    },
+                    "nil_play_model": {
+                        "model_id": provider.nil_play_actors.model_id,
+                        "bundle_sha256": provider.nil_play_actors.sha256,
+                    },
                 })
                 return
             self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
@@ -655,7 +694,9 @@ def build_response_handler(provider: RuleExactProvider):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="rule_exact_first4 AI backend for the Spades GUI")
+    parser = argparse.ArgumentParser(
+        description="solver-leaf MLP + exact AI backend for the Spades GUI"
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--ai", default="rule_exact",
@@ -663,14 +704,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--exact-threshold", type=int, default=36,
                         help="remaining cards <= this → exact solver (first "
-                             "52-threshold cards use rule-based / nil policy)")
+                             "52-threshold cards use deployed MLPs)")
     parser.add_argument("--config", type=str,
                         default=str(REPO_ROOT / "configs" / "8.yaml"),
-                        help="path to hyperparam YAML config for RuleExactFirst4NilPlayer")
+                        help="path to hyperparam YAML config for exact-stage sampling")
     parser.add_argument("--checkpoint-nil", type=str,
                         default=str(REPO_ROOT / "55_2nil.pt"),
-                        help="[deprecated] nil strategy now uses RuleBasedFirst4NilPlayer; "
-                             "this arg is ignored")
+                        help="[deprecated] production Nil play uses the four-role "
+                             "actor bundle; this arg is ignored")
+    parser.add_argument(
+        "--nonnil-actor-checkpoint",
+        type=str,
+        default=str(DEFAULT_SOLVER_LEAF_ACTOR_PATH),
+        help="hash-pinned non-Nil solver-leaf actor checkpoint",
+    )
+    parser.add_argument(
+        "--nonnil-actor-sha256",
+        type=str,
+        default=DEFAULT_SOLVER_LEAF_ACTOR_SHA256,
+        help="required SHA-256 for the non-Nil actor",
+    )
+    parser.add_argument(
+        "--nonnil-actor-sidecar-sha256",
+        type=str,
+        default=DEFAULT_SOLVER_LEAF_SIDECAR_SHA256,
+        help="required SHA-256 for the non-Nil actor metadata sidecar",
+    )
+    parser.add_argument(
+        "--nil-actor-bundle",
+        type=str,
+        default=str(DEFAULT_NIL_ACTOR_BUNDLE_PATH),
+        help="hash-pinned four-role Nil actor bundle manifest",
+    )
+    parser.add_argument(
+        "--nil-actor-bundle-sha256",
+        type=str,
+        default=DEFAULT_NIL_ACTOR_BUNDLE_SHA256,
+        help="required SHA-256 for the four-role Nil bundle manifest",
+    )
     parser.add_argument("--bid-checkpoint", type=str,
                         default=str(REPO_ROOT / "Spades_AI_GO-MCTS" / "checkpoints" / "bid_nsfp.pt"),
                         help="[deprecated] bid_nsfp remains the frozen belief bidder")
@@ -712,9 +783,9 @@ def main() -> None:
         set_random_seed(args.seed)
     provider = RuleExactProvider(args)
     server = ThreadingHTTPServer((args.host, args.port), build_response_handler(provider))
-    print(f"rule_exact backend listening on http://{args.host}:{args.port}", flush=True)
+    print(f"solver-leaf MLP backend listening on http://{args.host}:{args.port}", flush=True)
     print(f"  exact_threshold={provider.exact_threshold} "
-          f"(first {52 - provider.exact_threshold} cards use rule-based / nil policy)", flush=True)
+          f"(first {52 - provider.exact_threshold} cards use deployed MLPs)", flush=True)
     print(f"  solver_workers={provider.players[0]._num_workers}", flush=True)
     try:
         server.serve_forever()

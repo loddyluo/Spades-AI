@@ -829,6 +829,12 @@ button { cursor: pointer; }
   cursor: default;
 }
 .mode-card--ai-test:hover { transform: none; }
+.mode-card--replay {
+  background: linear-gradient(180deg, rgba(244, 114, 182, 0.16), rgba(12, 58, 32, 0.95));
+  border-color: rgba(244, 114, 182, 0.35);
+  cursor: default;
+}
+.mode-card--replay:hover { transform: none; }
 
 .seed-form {
   width: 100%;
@@ -857,6 +863,20 @@ button { cursor: pointer; }
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(0, 0, 0, 0.34);
   color: var(--text);
+}
+.seed-form__field input[type="file"] {
+  font-size: 0.72rem;
+  padding: 6px;
+}
+.seed-form__field input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--gold);
+  color: #17321f;
+  font-weight: 700;
+  cursor: pointer;
 }
 .seed-form__go { width: 100%; margin-top: 2px; }
 .seed-form__error {

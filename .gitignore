@@ -49,3 +49,14 @@ id_ed25519
 
 # Local Claude planning notes.
 .claude/plans/
+
+# Local training/evaluation outputs and presentation workspaces.
+/output/
+/tmp/
+/.tmp-*/
+
+# Root-level local papers, slide decks, and meeting notes.
+/*.pdf
+/*.pptx
+/*.pptx.inspect.ndjson
+/Spades-AI_*.txt

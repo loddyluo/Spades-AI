@@ -380,6 +380,7 @@ python rl/both_eval.py --num-games 1500 --seed 61 --num-workers 30 \
 | `evaluate_cheat_mcts_vs_dds.py` | Benchmark: cheating MCTS vs DDS |
 | `evaluate_our_mcts_vs_rule_v2.py` | Benchmark: our MCTS vs rule-based v2 players |
 | `eval_rule_first4_multicpu.py` | Benchmark: rule-based-first4 vs DDS |
+| `deepseek_team_match.py` | Team-match test interface: current production AI (0/2) vs DeepSeek V4 Flash (1/3), with hidden-information prompts and JSON records |
 | `GO-MCTS/` | Bridge to the collaborator models: |
 | `GO-MCTS/models.py` | `load_bid_mlp_model()`, `load_gpt2_policy_value_model()` + player exports |
 | `GO-MCTS/bridge.py` | State/card conversion helpers (`to_go_state`, `normalize_bid`, etc.) |

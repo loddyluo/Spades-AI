@@ -312,9 +312,11 @@ class RuleExactFirst4Player(AIPlayer):
         hyperparam_config: HyperparamConfig | None = None,
         num_workers: int = 0,
         debug: bool = False,
+        first4_player: AIPlayer | None = None,
     ) -> None:
-        # 内部规则式玩家. 不让它处理后 36 张 (我们自己路由)。
-        self._rule_player = RuleBasedFirst4Player()
+        # 默认保留评测所需的规则式前四墩玩家；生产 MLP 子类注入一个
+        # fail-closed sentinel，确保运行时不会调用规则策略。
+        self._rule_player = first4_player or RuleBasedFirst4Player()
         self.exact_threshold = exact_threshold
         self._bid_model = bid_model
         self._bid_device = bid_device
@@ -1543,6 +1545,78 @@ class RuleExactFirst4Player(AIPlayer):
                 return card
         return card
 
+    def _create_first4_replay_player(
+        self,
+        player_id: int,
+        initial_hand: list[Card],
+        max_bid: list[str] | None,
+    ) -> AIPlayer:
+        """Create the policy model used to score public first-four actions.
+
+        The base implementation preserves the historical rule model.  Runtime
+        subclasses can override this hook so posterior replay uses the same
+        policy that actually selected the public cards.
+        """
+
+        has_nil_bid = max_bid is not None and any(
+            bid in ("nil", "blind_nil") for bid in max_bid
+        )
+        if has_nil_bid:
+            from strategy.rule_based_first4_nil_player import (
+                RuleBasedFirst4NilPlayer,
+            )
+
+            replay_player: AIPlayer = RuleBasedFirst4NilPlayer()
+        else:
+            replay_player = RuleBasedFirst4Player()
+        replay_player.start_game(player_id, initial_hand, 4)
+        if has_nil_bid:
+            assert max_bid is not None
+            replay_player.set_teams([0, 1, 0, 1], max_bid)
+        if max_bid is not None:
+            for bidder, bid_value in enumerate(max_bid):
+                try:
+                    replay_player.bid_placed(bidder, bid_value)
+                except Exception:
+                    pass
+        return replay_player
+
+    def _first4_replay_expected_card(
+        self,
+        replay_player: Any,
+        legal_cards: list[Card],
+        state_view: dict[str, Any],
+        *,
+        player_id: int,
+        current_hand: list[Card],
+        prior_plays: list[tuple[int, Card]],
+        max_bid: list[str] | None,
+    ) -> Card:
+        """Return the replay model's deterministic expected card."""
+
+        del player_id, current_hand, prior_plays, max_bid
+        return replay_player.play_card(legal_cards, state_view)
+
+    def _first4_replay_card_played(
+        self,
+        replay_player: Any,
+        player_id: int,
+        card: Card,
+    ) -> None:
+        """Advance a stateful first-four replay model after a public play."""
+
+        replay_player.card_played(player_id, card)
+
+    def _handle_first4_replay_error(self, error: Exception) -> None:
+        """Handle replay-policy failures.
+
+        Historical rule evaluators deliberately ignore these failures. A
+        production subclass can override this hook to fail closed instead of
+        silently dropping its deployed policy from posterior weighting.
+        """
+
+        del error
+
     def _compute_batch_replay_weights(
         self,
         proposals: list[list[list[Card]]],
@@ -1569,11 +1643,6 @@ class RuleExactFirst4Player(AIPlayer):
             for player, card in play_sequence
         )
         teammate = (observer_id + 2) % 4
-        has_nil_bid = (
-            max_bid is not None
-            and any(bid in ("nil", "blind_nil") for bid in max_bid)
-        )
-
         hand_bits = [
             [
                 sum(1 << card.card_id for card in hand)
@@ -1583,35 +1652,14 @@ class RuleExactFirst4Player(AIPlayer):
         ]
         valid = [True] * len(proposals)
         play_weights = [1.0] * len(proposals)
-        rule_players: list[RuleBasedFirst4Player] = []
-
-        for proposal in proposals:
-            if has_nil_bid:
-                from strategy.rule_based_first4_nil_player import (
-                    RuleBasedFirst4NilPlayer,
-                )
-                rule_player = RuleBasedFirst4NilPlayer()
-                rule_player.start_game(
-                    teammate,
-                    list(proposal[teammate]),
-                    4,
-                )
-                assert max_bid is not None
-                rule_player.set_teams([0, 1, 0, 1], max_bid)
-            else:
-                rule_player = RuleBasedFirst4Player()
-                rule_player.start_game(
-                    teammate,
-                    list(proposal[teammate]),
-                    4,
-                )
-            if max_bid is not None:
-                for bidder, bid_value in enumerate(max_bid):
-                    try:
-                        rule_player.bid_placed(bidder, bid_value)
-                    except Exception:
-                        pass
-            rule_players.append(rule_player)
+        replay_players = [
+            self._create_first4_replay_player(
+                teammate,
+                list(proposal[teammate]),
+                max_bid,
+            )
+            for proposal in proposals
+        ]
 
         spades_broken = False
         pos_in_trick = 0
@@ -1674,17 +1722,22 @@ class RuleExactFirst4Player(AIPlayer):
                         "trump_broken": spades_broken,
                     }
                     try:
-                        expected = rule_players[proposal_index].play_card(
+                        expected = self._first4_replay_expected_card(
+                            replay_players[proposal_index],
                             legal,
                             state_view,
+                            player_id=teammate,
+                            current_hand=current_hand,
+                            prior_plays=play_sequence[:step_idx],
+                            max_bid=max_bid,
                         )
                         if (
                             expected is not None
                             and expected.card_id != card.card_id
                         ):
                             play_weights[proposal_index] *= self.config.bad_action_penalty_factor
-                    except Exception:
-                        pass
+                    except Exception as error:
+                        self._handle_first4_replay_error(error)
 
                 if step_idx >= 16 and player == teammate:
                     current_hand = [
@@ -1703,9 +1756,13 @@ class RuleExactFirst4Player(AIPlayer):
                     current_bits & ~card_bit
                 )
                 try:
-                    rule_players[proposal_index].card_played(player, card)
-                except Exception:
-                    pass
+                    self._first4_replay_card_played(
+                        replay_players[proposal_index],
+                        player,
+                        card,
+                    )
+                except Exception as error:
+                    self._handle_first4_replay_error(error)
 
             solver_table.append((player, card))
             if card.suit == Suit.SPADES:
@@ -1822,7 +1879,7 @@ class RuleExactFirst4Player(AIPlayer):
         if observer_id is not None:
             teammate_positions.add((observer_id + 2) % 4)
 
-        rule_players: dict[int, RuleBasedFirst4Player] = {}
+        replay_players: dict[int, Any] = {}
         start_idx = 0
 
         can_resume = (
@@ -1849,38 +1906,13 @@ class RuleExactFirst4Player(AIPlayer):
             replay_tricks_played = replay_snapshot.replay_tricks_played
             replay_tricks_won = list(replay_snapshot.replay_tricks_won)
         else:
-            # ── 为队友创建 rule-based 玩家（前 4 墩检查用）──
-            has_nil_bid = (
-                max_bid is not None
-                and any(bid in ("nil", "blind_nil") for bid in max_bid)
-            )
+            # ── 为队友创建前四墩历史策略模型 ──
             for teammate in teammate_positions:
-                if has_nil_bid:
-                    from strategy.rule_based_first4_nil_player import (
-                        RuleBasedFirst4NilPlayer,
-                    )
-                    rp = RuleBasedFirst4NilPlayer()
-                    rp.start_game(
-                        teammate,
-                        list(initial_hands[teammate]),
-                        4,
-                    )
-                    # 标准 Spades 队伍分配 (0,2) vs (1,3)
-                    rp.set_teams([0, 1, 0, 1], max_bid)
-                else:
-                    rp = RuleBasedFirst4Player()
-                    rp.start_game(
-                        teammate,
-                        list(initial_hands[teammate]),
-                        4,
-                    )
-                if max_bid is not None:
-                    for bidder, bid_val in enumerate(max_bid):
-                        try:
-                            rp.bid_placed(bidder, bid_val)
-                        except Exception:
-                            pass
-                rule_players[teammate] = rp
+                replay_players[teammate] = self._create_first4_replay_player(
+                    teammate,
+                    list(initial_hands[teammate]),
+                    max_bid,
+                )
 
             hands = [list(hand) for hand in initial_hands]
             spades_broken = False
@@ -1926,9 +1958,9 @@ class RuleExactFirst4Player(AIPlayer):
                 if has_led and card.suit != led_suit:
                     return 0.0, None
 
-            # ── 前 4 墩（step < 16）：用 rule_based 检查队友动作 ──
-            if step_idx < 16 and player in rule_players:
-                rp = rule_players[player]
+            # ── 前 4 墩（step < 16）：用当前历史策略模型检查队友动作 ──
+            if step_idx < 16 and player in replay_players:
+                replay_player = replay_players[player]
                 legal = self._compute_legal_cards_for_state(
                     hand, pos_in_trick, led_suit, spades_broken,
                 )
@@ -1939,11 +1971,22 @@ class RuleExactFirst4Player(AIPlayer):
                     "trump_broken": spades_broken,
                 }
                 try:
-                    rp_card = rp.play_card(legal, state_view)
-                    if rp_card is not None and rp_card.card_id != card.card_id:
+                    expected_card = self._first4_replay_expected_card(
+                        replay_player,
+                        legal,
+                        state_view,
+                        player_id=player,
+                        current_hand=list(hand),
+                        prior_plays=play_sequence[:step_idx],
+                        max_bid=max_bid,
+                    )
+                    if (
+                        expected_card is not None
+                        and expected_card.card_id != card.card_id
+                    ):
                         weight *= self.config.bad_action_penalty_factor  # 坏动作
-                except Exception:
-                    pass  # rule player 异常不影响权重
+                except Exception as error:
+                    self._handle_first4_replay_error(error)
 
             # ── 第 5 墩起（step >= 16）：等大牌张检查队友动作 ──
             if step_idx >= 16 and player in teammate_positions:
@@ -2009,12 +2052,16 @@ class RuleExactFirst4Player(AIPlayer):
             hand.pop(idx)
             solver_table.append((player, card))
 
-            # 将本步动作喂给 rule_players（保持内部状态一致，供后续前 4 墩检查）
-            for rp in rule_players.values():
+            # 将本步动作喂给有状态的历史策略模型。
+            for replay_player in replay_players.values():
                 try:
-                    rp.card_played(player, card)
-                except Exception:
-                    pass
+                    self._first4_replay_card_played(
+                        replay_player,
+                        player,
+                        card,
+                    )
+                except Exception as error:
+                    self._handle_first4_replay_error(error)
 
             if card.suit == Suit.SPADES:
                 spades_broken = True

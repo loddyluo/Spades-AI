@@ -4,7 +4,8 @@ Architecture:
 - Each room has a room code + seed. Two human clients connect with matching
   room code and seed, choosing partner seats (0&2 or 1&3).
 - Server owns the authoritative GameState and orchestrates all turns.
-- AI seats use RuleExactFirst4NilPlayer (imported directly, no HTTP).
+- AI seats use deployed solver-leaf MLPs for the first four tricks and the
+  exact solver thereafter (imported directly, no HTTP).
 - Human clients receive private game views (only their own hand visible).
 - Blocking AI calls (_exact_play) run via run_in_executor to not stall the
   async event loop.
@@ -36,8 +37,8 @@ for _p in (str(REPO_ROOT), str(GO_MCTS_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from trick_taking.card import Card, Suit, Rank, _STANDARD_CARDS, cards_to_bitset  # noqa: E402
-from trick_taking.game_state import GameState, Phase, Bid, TrickRecord  # noqa: E402
+from trick_taking.card import Card, Suit, Rank  # noqa: E402
+from trick_taking.game_state import GameState, Phase, Bid  # noqa: E402
 from trick_taking.forced_outcome import (  # noqa: E402
     ShowdownResolution,
     apply_showdown_continuation,
@@ -47,7 +48,20 @@ from trick_taking.games.spades import SpadesRules  # noqa: E402
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (  # noqa: E402
     ExactDoubleDummyCppFastestSolver,
 )
-from strategy.rule_exact_first4_nil_player import RuleExactFirst4NilPlayer  # noqa: E402
+from rl.nil_solver_leaf_deployment import (  # noqa: E402
+    DEFAULT_NIL_ACTOR_BUNDLE_PATH,
+    DEFAULT_NIL_ACTOR_BUNDLE_SHA256,
+    load_deployed_nil_actor_bundle,
+)
+from rl.solver_leaf_deployment import (  # noqa: E402
+    DEFAULT_SOLVER_LEAF_ACTOR_PATH,
+    DEFAULT_SOLVER_LEAF_ACTOR_SHA256,
+    DEFAULT_SOLVER_LEAF_SIDECAR_SHA256,
+    load_deployed_solver_leaf_actor,
+)
+from strategy.solver_leaf_mlp_exact_player import (  # noqa: E402
+    SolverLeafMLPExactPlayer,
+)
 from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
 from residual_bidder.actions import to_local_bid  # noqa: E402
 from residual_bidder.deployment import (  # noqa: E402
@@ -252,19 +266,22 @@ class GameRoom:
     def __init__(self, room_code: str, seed: int,
                  bid_model=None, bid_device: str = "cpu",
                  acting_bidder=None,
+                 nonnil_play_actor=None, nil_play_actors=None,
                  hyperparam_config=None, exact_solver=None,
                  exact_threshold: int = 36, num_workers: int = 0,
                  showdown_checker=None) -> None:
         self.room_code = room_code
         self.seed = seed
         self.connections: dict[int, Any] = {}   # {seat: websocket}
-        self.ai_players: dict[int, RuleExactFirst4NilPlayer] = {}
+        self.ai_players: dict[int, SolverLeafMLPExactPlayer] = {}
         self.state: GameState | None = None
         self.rules = SpadesRules()
         # Shared AI components (loaded once at startup)
         self._bid_model = bid_model
         self._bid_device = bid_device
         self._acting_bidder = acting_bidder
+        self._nonnil_play_actor = nonnil_play_actor
+        self._nil_play_actors = nil_play_actors
         self._hyperparam_config = hyperparam_config
         self._exact_solver = exact_solver
         self._exact_threshold = exact_threshold
@@ -346,8 +363,16 @@ class GameRoom:
         self.state.trick_leader = opener
 
         # ── Create AI players ───────────────────────────────────────
+        if self._nonnil_play_actor is None or self._nil_play_actors is None:
+            raise RuntimeError("deployed card-play MLPs were not initialized")
         for seat in self.ai_seats:
-            player = RuleExactFirst4NilPlayer(
+            player = SolverLeafMLPExactPlayer(
+                nonnil_actor=self._nonnil_play_actor.actor,
+                nonnil_model_id=self._nonnil_play_actor.model_id,
+                nonnil_actor_sha256=self._nonnil_play_actor.sha256,
+                nil_actors=self._nil_play_actors.actors,
+                nil_model_id=self._nil_play_actors.model_id,
+                nil_bundle_sha256=self._nil_play_actors.sha256,
                 exact_solver=self._exact_solver,
                 exact_threshold=self._exact_threshold,
                 bid_model=self._bid_model,
@@ -476,7 +501,6 @@ class GameRoom:
             await self._broadcast_state()
 
         # Set teams for AI players (must happen before playing phase)
-        bid_values = [b.value for b in self.state.bids if not b.is_pass]
         all_bids = [
             next((b.value for b in self.state.bids
                   if b.player_id == pid and not b.is_pass), None)
@@ -647,7 +671,7 @@ class GameRoom:
         """Run AI play_card in executor (may block for exact solver)."""
         ai = self.ai_players[seat]
         view = self.state.get_player_view(seat)
-        view["state"] = self.state  # required by RuleExactFirst4NilPlayer
+        view["state"] = self.state  # required by SolverLeafMLPExactPlayer
 
         loop = asyncio.get_event_loop()
         card = await loop.run_in_executor(
@@ -882,6 +906,8 @@ rooms: dict[str, GameRoom] = {}
 _shared_bid_model = None
 _shared_bid_device = "cpu"
 _shared_acting_bidder = None
+_shared_nonnil_play_actor = None
+_shared_nil_play_actors = None
 _shared_hyperparam_config = None
 _shared_exact_solver = None
 _shared_exact_threshold = 36
@@ -945,6 +971,8 @@ async def handler(ws) -> None:
                         bid_model=_shared_bid_model,
                         bid_device=_shared_bid_device,
                         acting_bidder=_shared_acting_bidder,
+                        nonnil_play_actor=_shared_nonnil_play_actor,
+                        nil_play_actors=_shared_nil_play_actors,
                         hyperparam_config=_shared_hyperparam_config,
                         exact_solver=_shared_exact_solver,
                         exact_threshold=_shared_exact_threshold,
@@ -1038,6 +1066,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=str,
                         default=str(DEFAULT_CONFIG),
                         help="Path to hyperparam YAML config")
+    parser.add_argument(
+        "--nonnil-actor-checkpoint",
+        type=str,
+        default=str(DEFAULT_SOLVER_LEAF_ACTOR_PATH),
+        help="Hash-pinned non-Nil solver-leaf actor checkpoint",
+    )
+    parser.add_argument(
+        "--nonnil-actor-sha256",
+        type=str,
+        default=DEFAULT_SOLVER_LEAF_ACTOR_SHA256,
+        help="Required SHA-256 for the non-Nil actor",
+    )
+    parser.add_argument(
+        "--nonnil-actor-sidecar-sha256",
+        type=str,
+        default=DEFAULT_SOLVER_LEAF_SIDECAR_SHA256,
+        help="Required SHA-256 for the non-Nil actor metadata sidecar",
+    )
+    parser.add_argument(
+        "--nil-actor-bundle",
+        type=str,
+        default=str(DEFAULT_NIL_ACTOR_BUNDLE_PATH),
+        help="Hash-pinned four-role Nil actor bundle manifest",
+    )
+    parser.add_argument(
+        "--nil-actor-bundle-sha256",
+        type=str,
+        default=DEFAULT_NIL_ACTOR_BUNDLE_SHA256,
+        help="Required SHA-256 for the four-role Nil bundle manifest",
+    )
     parser.add_argument("--bid-checkpoint", type=str,
                         default=str(DEFAULT_BID_CKPT),
                         help="[deprecated] bid_nsfp remains the frozen belief bidder")
@@ -1059,6 +1117,7 @@ def parse_args() -> argparse.Namespace:
 async def main() -> None:
     global _shared_bid_model, _shared_bid_device, _shared_hyperparam_config
     global _shared_acting_bidder
+    global _shared_nonnil_play_actor, _shared_nil_play_actors
     global _shared_exact_solver, _shared_exact_threshold, _shared_num_workers
 
     args = parse_args()
@@ -1078,8 +1137,8 @@ async def main() -> None:
             pass
 
     print("Spades game server starting")
-    print(f"  Mode: 2 humans (partners) vs 2 AI (RuleExactFirst4NilPlayer)")
-    print(f"  Humans: connect with matching room code + seed + partner seats")
+    print("  Mode: 2 humans (partners) vs 2 AI (solver-leaf MLP + exact)")
+    print("  Humans: connect with matching room code + seed + partner seats")
     print()
 
     # ── Load shared AI components ──────────────────────────────────────
@@ -1099,8 +1158,8 @@ async def main() -> None:
               flush=True)
         _shared_hyperparam_config = HyperparamConfig()
 
-    # Only the acting bidder changes. RuleExactFirst4NilPlayer continues to
-    # lazy-load bid_nsfp.pt for late-play IS belief weighting.
+    # The residual-Q policy acts only in bidding. The card player continues to
+    # lazy-load bid_nsfp.pt solely for late-play hidden-hand belief weighting.
     _shared_bid_model = None
     _shared_acting_bidder = load_deployed_acting_bidder(
         checkpoint_path=Path(args.acting_bid_checkpoint),
@@ -1115,12 +1174,34 @@ async def main() -> None:
         flush=True,
     )
 
+    _shared_nonnil_play_actor = load_deployed_solver_leaf_actor(
+        Path(args.nonnil_actor_checkpoint),
+        expected_sha256=args.nonnil_actor_sha256,
+        expected_sidecar_sha256=args.nonnil_actor_sidecar_sha256,
+        device=args.device,
+    )
+    print(
+        "  [OK] loaded non-Nil play actor: "
+        f"model_id={_shared_nonnil_play_actor.model_id}",
+        flush=True,
+    )
+    _shared_nil_play_actors = load_deployed_nil_actor_bundle(
+        Path(args.nil_actor_bundle),
+        expected_sha256=args.nil_actor_bundle_sha256,
+        device=args.device,
+    )
+    print(
+        "  [OK] loaded four-role Nil play actors: "
+        f"model_id={_shared_nil_play_actors.model_id}",
+        flush=True,
+    )
+
     # Exact solver (shared read-only across rooms)
     _shared_exact_solver = ExactDoubleDummyCppFastestSolver()
-    print(f"  [OK] exact solver ready", flush=True)
+    print("  [OK] exact solver ready", flush=True)
 
     print(f"  exact_threshold={_shared_exact_threshold} "
-          f"(first {52 - _shared_exact_threshold} cards use rule-based / nil policy)",
+          f"(first {52 - _shared_exact_threshold} cards use deployed MLPs)",
           flush=True)
     print()
 
