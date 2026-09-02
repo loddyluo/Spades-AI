@@ -120,6 +120,7 @@ class SolverLeafMLPExactPlayer(RuleExactFirst4Player):
         bid_device: str = "cpu",
         hyperparam_config: Any | None = None,
         num_workers: int = 0,
+        debug: bool = False,
     ) -> None:
         if not isinstance(nonnil_actor, PolicyMLP):
             raise TypeError("nonnil_actor must be a PolicyMLP")
@@ -144,6 +145,7 @@ class SolverLeafMLPExactPlayer(RuleExactFirst4Player):
             bid_device=bid_device,
             hyperparam_config=hyperparam_config,
             num_workers=num_workers,
+            debug=debug,
             first4_player=_NoRuleFirstFourPlayer(),
         )
         self._nonnil_actor = nonnil_actor.eval()
@@ -269,6 +271,14 @@ class SolverLeafMLPExactPlayer(RuleExactFirst4Player):
                 "action_card_id": action,
                 "chosen_probability": chosen_probability,
             }
+            if self._debug:
+                self.last_play_info["action_probabilities"] = [
+                    {
+                        "action": candidate,
+                        "probability": float(probabilities[candidate.card_id].item()),
+                    }
+                    for candidate in legal_cards
+                ]
         return card
 
     def _create_first4_replay_player(

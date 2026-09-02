@@ -8,7 +8,7 @@
  * a fanned hand, a central trick area, bidding chips, a status pill, the
  * mode-select screen, the cumulative scoreboard, and the result overlays.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   advanceUntilFinished,
   advanceUntilHuman,
@@ -20,7 +20,9 @@ import {
   getHumanLegalCards,
   makeBid,
   parseReplayImport,
+  remoteCompletedTricksFromServer,
   remoteStateFromServer,
+  requestReplayAnalysis,
   showdownWaitingForPartner,
   submitHumanBid,
   submitHumanCard,
@@ -272,12 +274,212 @@ function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode,
   );
 }
 
+const detailCardLabel = (code) => {
+  if (typeof code !== 'string' || code.length < 2) return String(code ?? '—');
+  const rank = code.slice(0, -1);
+  const suit = code.slice(-1);
+  return `${rank}${SUIT_SYMBOL[suit] ?? suit}`;
+};
+
+const detailNumber = (value) => (
+  Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '—'
+);
+
+const detailWeight = (value) => (
+  Number.isFinite(Number(value)) ? Number(value).toFixed(6) : '—'
+);
+
+function ReplayQTable({ rows, playedCard, valueKey = 'value', expectedRows = null, team = 0 }) {
+  const expectedByCard = new Map(
+    (expectedRows || []).map((row) => [row.action, row]),
+  );
+  return (
+    <div className={`replay-q-table ${expectedRows ? 'has-expected' : ''}`} role="table">
+      <div className="replay-q-table__head" role="row">
+        <span>合法动作</span>
+        <span>{valueKey === 'q' ? '明手 Q' : '选牌相对 Q'}</span>
+        {expectedRows ? <span>采样加权 Q</span> : null}
+      </div>
+      {rows.map((row) => {
+        const card = row.action ?? row.card;
+        const value = row[valueKey];
+        const expected = expectedByCard.get(card);
+        const best = row.is_best === true;
+        return (
+          <div
+            className={`replay-q-table__row ${card === playedCard ? 'is-played' : ''} ${best ? 'is-best' : ''}`}
+            role="row"
+            key={card}
+          >
+            <strong>{detailCardLabel(card)}{card === playedCard ? ' · 实战' : ''}</strong>
+            <span>{detailNumber(value)}</span>
+            {expectedRows ? (
+              <span title={expected ? `有效权重 ${detailWeight(expected.covered_weight)}` : ''}>
+                {detailNumber(expected?.value)}
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+      <p className="replay-q-table__note">
+        {team === 0 ? '座位属于 NS：Q 越大越好' : '座位属于 EW：Q 越小越好'}
+      </p>
+    </div>
+  );
+}
+
+function ReplaySample({ sample, seatNames }) {
+  const qRows = Object.entries(sample.action_q_values || {})
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return (
+    <article className="replay-sample">
+      <div className="replay-sample__head">
+        <strong>样本 #{Number(sample.sample_index ?? 0) + 1}</strong>
+        <span>{sample.source === 'importance_sampling' ? '重要性采样' : sample.source === 'diversity_fill' ? '多样性补全' : '均匀确定化'}</span>
+        <span>权重 {detailWeight(sample.norm_weight)}</span>
+      </div>
+      <div className="replay-sample__q">
+        {qRows.map(([card, q]) => <span key={card}>{detailCardLabel(card)} {detailNumber(q)}</span>)}
+      </div>
+      <div className="replay-sample__hands">
+        {[0, 1, 2, 3].map((seat) => (
+          <div key={seat}>
+            <strong>{seatNames[seat]}</strong>
+            <span>{(sample.all_hands?.[seat] || []).map(detailCardLabel).join(' ') || '—'}</span>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ReplayDetailPanel({ play, playIndex, seatNames, godView, onClose }) {
+  const [samplePage, setSamplePage] = useState(0);
+  const analysis = play?.aiAnalysis ?? null;
+  const debug = analysis?.debug ?? null;
+  const samples = Array.isArray(debug?.samples) ? debug.samples : [];
+  const pageSize = 6;
+  const pageCount = Math.max(1, Math.ceil(samples.length / pageSize));
+
+  useEffect(() => setSamplePage(0), [playIndex]);
+  useEffect(() => {
+    if (samplePage >= pageCount) setSamplePage(pageCount - 1);
+  }, [pageCount, samplePage]);
+
+  if (!play) {
+    return (
+      <aside className="replay-detail">
+        <div className="replay-detail__title"><strong>详细回放</strong><button onClick={onClose}>×</button></div>
+        <p className="replay-detail__empty">点击「下一步」后查看该次出牌的决策细节。</p>
+      </aside>
+    );
+  }
+
+  const exactRows = Array.isArray(analysis?.action_scores) ? analysis.action_scores : [];
+  const expectedRows = Array.isArray(analysis?.expected_action_scores)
+    ? analysis.expected_action_scores
+    : [];
+  const policyRows = Array.isArray(analysis?.action_probabilities)
+    ? analysis.action_probabilities
+    : [];
+  const team = play.seat % 2;
+  const visibleSamples = samples.slice(samplePage * pageSize, (samplePage + 1) * pageSize);
+
+  return (
+    <aside className="replay-detail">
+      <div className="replay-detail__title">
+        <div>
+          <strong>第 {play.trickNumber} 墩 · {seatNames[play.seat]}</strong>
+          <span>实战出牌 {detailCardLabel(play.card.code)}</span>
+        </div>
+        <button onClick={onClose} title="关闭详细回放">×</button>
+      </div>
+
+      <section className="replay-detail__section">
+        <h3>AI 当时的视角</h3>
+        {!analysis ? (
+          <p className="replay-detail__empty">这次是玩家/自动摊牌动作，或旧记录未保存 AI 决策数据。</p>
+        ) : analysis.mode === 'exact_is_determinized' ? (
+          <>
+            <div className="replay-detail__stats">
+              <span>求解样本 <strong>{analysis.samples ?? samples.length}</strong></span>
+              <span>有效池 <strong>{debug?.pool?.pool_size ?? '—'}</strong></span>
+              <span>补全 / IS <strong>{debug?.n_fill ?? 0} / {debug?.n_is ?? 0}</strong></span>
+              <span>缓存 <strong>{debug?.pool?.posterior_cache_hit ? '命中' : '未命中'}</strong></span>
+            </div>
+            <ReplayQTable
+              rows={exactRows}
+              expectedRows={expectedRows}
+              playedCard={play.card.code}
+              team={team}
+            />
+            <p className="replay-detail__explain">“选牌相对 Q”是 AI 实际用于选牌的逐样本基线平移/裁剪聚合值；“采样加权 Q”和下方单样本 Q 均为最终 NS−EW 分差。</p>
+            <div className="replay-detail__subhead">
+              <strong>实际送入 solver 的隐藏手牌样本</strong>
+              <span>{samples.length ? `${samplePage + 1} / ${pageCount} 页` : '无样本明细'}</span>
+            </div>
+            {visibleSamples.map((sample) => (
+              <ReplaySample key={`${playIndex}-${sample.sample_index}`} sample={sample} seatNames={seatNames} />
+            ))}
+            {pageCount > 1 ? (
+              <div className="replay-detail__pager">
+                <button onClick={() => setSamplePage((page) => Math.max(0, page - 1))} disabled={samplePage === 0}>上一页</button>
+                <button onClick={() => setSamplePage((page) => Math.min(pageCount - 1, page + 1))} disabled={samplePage + 1 >= pageCount}>下一页</button>
+              </div>
+            ) : null}
+          </>
+        ) : policyRows.length > 0 ? (
+          <>
+            <p className="replay-detail__explain">前四墩使用策略 MLP，没有隐藏手牌采样或 solver Q；下表是当时的合法动作概率。</p>
+            <div className="replay-q-table">
+              {policyRows.map((row) => (
+                <div className={`replay-q-table__row ${row.action === play.card.code ? 'is-played' : ''}`} key={row.action}>
+                  <strong>{detailCardLabel(row.action)}{row.action === play.card.code ? ' · 实战' : ''}</strong>
+                  <span>{(Number(row.probability) * 100).toFixed(2)}%</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="replay-detail__empty">该动作模式为 {analysis.mode || '未知'}；只有一个合法动作或未进入采样求解。</p>
+        )}
+      </section>
+
+      <section className="replay-detail__section">
+        <h3>上帝视角 · 明手 solver</h3>
+        {play.trickNumber < 4 ? (
+          <p className="replay-detail__empty">受计算时间限制，只计算第 4 至第 13 墩（后十墩）。</p>
+        ) : godView?.status === 'loading' ? (
+          <div className="replay-detail__loading"><span className="spinner" /> 正在现场计算该局面的明手 Q…</div>
+        ) : godView?.status === 'error' ? (
+          <p className="replay-detail__error">{godView.error}</p>
+        ) : godView?.status === 'ready' ? (
+          <>
+            <ReplayQTable
+              rows={godView.data.action_q_values || []}
+              playedCard={play.card.code}
+              valueKey="q"
+              team={godView.data.optimize_for_team}
+            />
+            <p className="replay-detail__explain">Q 为最终 NS−EW 分差；本次现场求解耗时 {Math.round(godView.data.elapsed_ms)} ms。</p>
+          </>
+        ) : (
+          <p className="replay-detail__empty">等待计算。</p>
+        )}
+      </section>
+    </aside>
+  );
+}
+
 /* ── Full-hand replay screen (manual step-by-step only) ─────────────── */
-function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
+function ReplayScreen({ snapshot, onExit, onGodViewRequest, viewLabel = '(You)' }) {
   const [phase, setPhase] = useState('ready'); // ready | done
   const [playIndex, setPlayIndex] = useState(0);
   const [trickComplete, setTrickComplete] = useState(false);
   const [view, setView] = useState(() => rebuildReplayState(snapshot, 0, false));
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [godViews, setGodViews] = useState({});
+  const godRequestedRef = useRef(new Set());
   const replaySeatNames = snapshot.seatNames ?? SEAT_NAMES;
 
   const applyCursor = (index, complete, nextPhase = 'ready') => {
@@ -302,6 +504,40 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
   const lastPlay = playIndex > 0 ? snapshot.plays[playIndex - 1] : null;
   const nextPlay = playIndex < snapshot.plays.length ? snapshot.plays[playIndex] : null;
   const highlightCode = lastPlay?.card.code ?? null;
+  const detailPlayIndex = playIndex - 1;
+
+  useEffect(() => {
+    if (
+      !detailOpen
+      || detailPlayIndex < 0
+      || !lastPlay
+      || lastPlay.trickNumber < 4
+      || typeof onGodViewRequest !== 'function'
+      || godRequestedRef.current.has(detailPlayIndex)
+    ) return;
+
+    godRequestedRef.current.add(detailPlayIndex);
+    setGodViews((current) => ({
+      ...current,
+      [detailPlayIndex]: { status: 'loading' },
+    }));
+    Promise.resolve(onGodViewRequest(snapshot, detailPlayIndex))
+      .then((data) => {
+        setGodViews((current) => ({
+          ...current,
+          [detailPlayIndex]: { status: 'ready', data },
+        }));
+      })
+      .catch((error) => {
+        setGodViews((current) => ({
+          ...current,
+          [detailPlayIndex]: {
+            status: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }));
+      });
+  }, [detailOpen, detailPlayIndex, lastPlay, onGodViewRequest, snapshot]);
 
   const resetReplay = () => applyCursor(0, false, 'ready');
 
@@ -373,6 +609,8 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
   }
 
   const progress = snapshot.plays.length > 0 ? Math.round((playIndex / snapshot.plays.length) * 100) : 0;
+  const detailSolving = detailOpen
+    && godViews[detailPlayIndex]?.status === 'loading';
 
   return (
     <div className="felt felt--replay">
@@ -456,10 +694,21 @@ function ReplayScreen({ snapshot, onExit, viewLabel = '(You)' }) {
         </div>
       </main>
 
+      {detailOpen ? (
+        <ReplayDetailPanel
+          play={lastPlay}
+          playIndex={detailPlayIndex}
+          seatNames={replaySeatNames}
+          godView={godViews[detailPlayIndex]}
+          onClose={() => setDetailOpen(false)}
+        />
+      ) : null}
+
       <footer className="replay-controls">
-        <button className="btn-ghost" onClick={resetReplay} disabled={!canStepBack}>重新摊开</button>
-        <button className="btn-ghost" onClick={stepBack} disabled={!canStepBack}>上一步</button>
-        <button className="btn-new" onClick={stepForward} disabled={!canStepForward}>下一步</button>
+        <button className="btn-ghost" onClick={resetReplay} disabled={!canStepBack || detailSolving}>重新摊开</button>
+        <button className="btn-ghost" onClick={stepBack} disabled={!canStepBack || detailSolving}>上一步</button>
+        <button className="btn-new" onClick={stepForward} disabled={!canStepForward || detailSolving}>下一步</button>
+        <button className="btn-ghost" onClick={() => setDetailOpen((open) => !open)}>{detailOpen ? '关闭详情' : '详细回放'}</button>
         <button className="btn-ghost" onClick={exportRecord}>导出记录</button>
         <button className="btn-ghost" onClick={onExit}>{viewLabel === '(视角)' ? '返回菜单' : '返回结算'}</button>
       </footer>
@@ -757,6 +1006,36 @@ export default function App() {
   const sentShowdownRef = useRef(null);
   const remoteCloseExpectedRef = useRef(false);
   const remoteFinishedRef = useRef(false);
+  const replayAnalysisRequestsRef = useRef(new Map());
+  const replayAnalysisRequestIdRef = useRef(0);
+
+  const rejectRemoteReplayRequests = useCallback((message) => {
+    for (const pending of replayAnalysisRequestsRef.current.values()) {
+      pending.reject(new Error(message));
+    }
+    replayAnalysisRequestsRef.current.clear();
+  }, []);
+
+  const requestRemoteReplayAnalysis = useCallback((_snapshot, playIndex) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('远程明手 solver 连接不可用'));
+    }
+    const requestId = `replay-${++replayAnalysisRequestIdRef.current}`;
+    return new Promise((resolve, reject) => {
+      replayAnalysisRequestsRef.current.set(requestId, { resolve, reject });
+      try {
+        ws.send(JSON.stringify({
+          type: 'replay_analysis',
+          requestId,
+          playIndex,
+        }));
+      } catch (error) {
+        replayAnalysisRequestsRef.current.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }, []);
 
   const pauseForAiError = (err) => {
     const message = err instanceof Error ? err.message : String(err);
@@ -935,8 +1214,20 @@ export default function App() {
               phase: 'finished',
               score: msg.score,
               tricksWon: msg.tricksWon || g.tricksWon,
+              completedTricks: msg.completedTricks
+                ? remoteCompletedTricksFromServer(msg.completedTricks)
+                : g.completedTricks,
               showdown: null,
             }));
+            break;
+          }
+          case 'replay_analysis_result': {
+            const requestId = String(msg.requestId ?? '');
+            const pending = replayAnalysisRequestsRef.current.get(requestId);
+            if (!pending) break;
+            replayAnalysisRequestsRef.current.delete(requestId);
+            if (msg.ok && msg.analysis) pending.resolve(msg.analysis);
+            else pending.reject(new Error(msg.error || '远程明手 solver 返回错误'));
             break;
           }
           case 'error':
@@ -949,6 +1240,7 @@ export default function App() {
       };
 
       ws.onclose = () => {
+        rejectRemoteReplayRequests('远程连接已断开，明手分析未完成');
         const interrupted = !remoteCloseExpectedRef.current && !remoteFinishedRef.current;
         setRemote((r) => ({ ...r, status: r.status === 'finished' ? 'finished' : 'idle',
           error: r.status !== 'finished' ? '连接已断开' : '' }));
@@ -971,6 +1263,7 @@ export default function App() {
 
   const disconnectRemote = () => {
     remoteCloseExpectedRef.current = true;
+    rejectRemoteReplayRequests('已断开远程连接');
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -1240,6 +1533,9 @@ export default function App() {
       <ReplayScreen
         snapshot={replaySnapshot}
         viewLabel={replayFromMenu ? '(视角)' : '(You)'}
+        onGodViewRequest={mode === 'remote'
+          ? requestRemoteReplayAnalysis
+          : requestReplayAnalysis}
         onExit={() => setScreen(replayFromMenu ? 'menu' : 'game')}
       />
     );

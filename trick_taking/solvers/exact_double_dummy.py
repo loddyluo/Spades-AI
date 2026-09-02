@@ -29,7 +29,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple, Any
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 from trick_taking.card import Card, Suit
 from trick_taking.game_state import GameState
@@ -40,6 +40,70 @@ from trick_taking.games.spades import SpadesRules
 TT_EXACT = 0       # 精确值（所有子节点搜索完毕）
 TT_LOWER_BOUND = 1  # 上界（MAX节点被beta剪枝，真实值 >= 缓存值）
 TT_UPPER_BOUND = 2  # 下界（MIN节点被alpha剪枝，真实值 <= 缓存值）
+
+
+def expand_equivalent_root_q_values(
+    state: GameState,
+    action_q_values: Mapping[int, float],
+    legal_actions: Sequence[Card] | None = None,
+) -> Dict[int, float]:
+    """Expand native root-Q representatives to every legal card.
+
+    The native solver deliberately removes strategically equivalent lower
+    cards at the root.  That is ideal for search, but replay diagnostics need
+    one Q value for every action the player could click.  Cards in one native
+    equivalence class have the same continuation value, so omitted cards can
+    safely inherit the retained (highest-card) representative's Q value.
+    """
+    current_player = int(state.turn)
+    if legal_actions is None:
+        legal_actions = SpadesRules().playable(
+            state,
+            state.hands[current_player],
+            current_player,
+        )
+
+    expanded = {int(card_id): float(q) for card_id, q in action_q_values.items()}
+    legal_ids = {card.card_id for card in legal_actions}
+    if not legal_ids or legal_ids.issubset(expanded):
+        return {card_id: expanded[card_id] for card_id in legal_ids if card_id in expanded}
+
+    blocking_ids = {
+        card.card_id
+        for player_id, hand in enumerate(state.hands)
+        if player_id != current_player
+        for card in hand
+    }
+    blocking_ids.update(card.card_id for _, card in state.table_cards)
+
+    for suit in Suit:
+        own_cards = sorted(
+            (card for card in state.hands[current_player] if card.suit == suit),
+            key=lambda card: card.rank.value,
+            reverse=True,
+        )
+        if not own_cards:
+            continue
+
+        representative = own_cards[0]
+        if representative.card_id in legal_ids and representative.card_id in expanded:
+            expanded[representative.card_id] = float(expanded[representative.card_id])
+
+        for card in own_cards[1:]:
+            between_is_blocked = any(
+                suit.value * 13 + (rank_value - 2) in blocking_ids
+                for rank_value in range(card.rank.value + 1, representative.rank.value)
+            )
+            if between_is_blocked:
+                representative = card
+
+            if card.card_id not in legal_ids:
+                continue
+            representative_q = expanded.get(representative.card_id)
+            if representative_q is not None:
+                expanded[card.card_id] = float(representative_q)
+
+    return {card_id: expanded[card_id] for card_id in legal_ids if card_id in expanded}
 
 
 class ExactDoubleDummySolver:
@@ -414,8 +478,6 @@ def test_solver():
     """测试求解器"""
     from trick_taking.deck import Deck, STANDARD_52
     from trick_taking.utils.state_tools import create_state_from_hands
-    from trick_taking.card import Rank
-
     print("测试精确双明手求解器...")
 
     # 创建一个简单的测试牌局，每玩家只有2张牌

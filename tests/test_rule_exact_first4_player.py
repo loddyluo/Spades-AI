@@ -995,6 +995,11 @@ def test_max_samples_is_final_solver_sample_cap(
 
     assert len(solver.snapshots) == 5
     assert player.last_play_info["samples"] == 5
+    debug = player.last_play_info["debug"]
+    assert len(debug["samples"]) == 5
+    assert "unique_proposals" not in debug
+    assert set(debug["samples"][0]["action_q_values"]) == {"2H", "4H"}
+    assert {row["action"] for row in player.last_play_info["expected_action_scores"]} == set(legal)
 
 
 def test_exact_fallback_is_canonical_when_solver_is_unavailable() -> None:

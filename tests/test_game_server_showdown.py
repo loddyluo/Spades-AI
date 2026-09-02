@@ -146,6 +146,39 @@ def test_room_rejects_card_play_fallback_and_illegal_card_substitution() -> None
     asyncio.run(scenario())
 
 
+def test_room_records_ai_diagnostics_in_server_side_replay_store() -> None:
+    class DetailedPlayer:
+        def __init__(self) -> None:
+            self.last_play_info = {}
+
+        def play_card(self, legal_cards, view):
+            card = legal_cards[0]
+            self.last_play_info = {
+                "mode": "exact_is_determinized",
+                "action_scores": [{"action": card, "value": 0.0}],
+            }
+            return card
+
+    async def scenario() -> None:
+        room = GameRoom("DETAIL", 2026082102)
+        room.state = _late_state()
+        seat = room.state.turn
+        legal = room.rules.playable(room.state, room.state.hands[seat], seat)
+        room.ai_players = {seat: DetailedPlayer()}
+
+        chosen = await room._run_ai_play(seat, legal)
+        play_index = room.state.tricks_played * 4 + len(room.state.table_cards)
+
+        assert room._play_analyses[play_index]["chosen_card"] == (
+            f"{chosen.rank.short}{chosen.suit.short}"
+        )
+        assert room._play_analyses[play_index]["action_scores"][0]["action"] == (
+            f"{chosen.rank.short}{chosen.suit.short}"
+        )
+
+    asyncio.run(scenario())
+
+
 def test_remote_clients_receive_a_fatal_fallback_message() -> None:
     class FailingRoom(GameRoom):
         async def _bidding_phase(self) -> None:

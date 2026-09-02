@@ -434,7 +434,7 @@ export function applyBid(state, seat, bid, source = null) {
  * felt for a beat (and animate it flying to the winner). `finalizeTrick`
  * performs the actual collection afterwards.
  */
-export function applyCard(state, seat, cardCode, source = null) {
+export function applyCard(state, seat, cardCode, source = null, aiAnalysis = null) {
   const next = cloneState(state);
   const hand = next.hands[seat];
   const cardIndex = hand.findIndex((card) => card.code === cardCode);
@@ -449,7 +449,11 @@ export function applyCard(state, seat, cardCode, source = null) {
   }
 
   hand.splice(cardIndex, 1);
-  next.currentTrick.push({ seat, card });
+  next.currentTrick.push({
+    seat,
+    card,
+    ...(aiAnalysis && typeof aiAnalysis === 'object' ? { aiAnalysis } : {}),
+  });
   next.lastPlayedSeat = seat; // drives the slide-in-from-seat animation
   next.spadesBroken = next.spadesBroken || card.suit === 'S';
   next.log.push({ kind: 'play', seat, text: `${PLAYER_NAMES[seat]} 出牌 ${cardLabel(card)}${source ? ` [${source}]` : ''}` });
@@ -480,7 +484,11 @@ export function finalizeTrick(state) {
   next.completedTricks.push({
     trickNumber: next.trickNumber,
     winner,
-    cards: next.currentTrick.map((entry) => ({ seat: entry.seat, card: entry.card })),
+    cards: next.currentTrick.map((entry) => ({
+      seat: entry.seat,
+      card: entry.card,
+      ...(entry.aiAnalysis ? { aiAnalysis: entry.aiAnalysis } : {}),
+    })),
   });
   next.currentTrick = [];
   next.trickComplete = false;
@@ -633,7 +641,13 @@ export async function advanceUntilHuman(state, onStep = null) {
     if (next.phase === 'playing') {
       const action = await requestAiAction(next);
       if (action.kind !== 'play') throw new Error(`AI 出牌阶段返回了错误动作类型：${action.kind}`);
-      const playState = applyCard(next, next.currentPlayer, action.card, action.ai);
+      const playState = applyCard(
+        next,
+        next.currentPlayer,
+        action.card,
+        action.ai,
+        action.analysis ?? null,
+      );
       emit(playState);
       await sleep(PACE.aiStep);
       if (await collectIfNeeded()) break;
@@ -685,7 +699,13 @@ export async function advanceUntilFinished(state, onStep = null) {
     if (next.phase === 'playing') {
       const action = await requestAiAction(next);
       if (action.kind !== 'play') throw new Error(`AI 出牌阶段返回了错误动作类型：${action.kind}`);
-      const playState = applyCard(next, next.currentPlayer, action.card, action.ai);
+      const playState = applyCard(
+        next,
+        next.currentPlayer,
+        action.card,
+        action.ai,
+        action.analysis ?? null,
+      );
       emit(playState);
       await sleep(PACE.aiStep);
       if (await collectIfNeeded()) break;
@@ -764,6 +784,7 @@ export function buildReplaySnapshot(state) {
       card: { ...entry.card },
       trickNumber: trick.trickNumber,
       winner: trick.winner,
+      aiAnalysis: entry.aiAnalysis ?? null,
     })),
   );
   return {
@@ -777,7 +798,11 @@ export function buildReplaySnapshot(state) {
     completedTricks: state.completedTricks.map((trick) => ({
       trickNumber: trick.trickNumber,
       winner: trick.winner,
-      cards: trick.cards.map((entry) => ({ seat: entry.seat, card: { ...entry.card } })),
+      cards: trick.cards.map((entry) => ({
+        seat: entry.seat,
+        card: { ...entry.card },
+        aiAnalysis: entry.aiAnalysis ?? null,
+      })),
     })),
   };
 }
@@ -845,6 +870,22 @@ function replaySeatNames(rawNames) {
     replayImportError('seats 必须包含四个非空名称');
   }
   return rawNames.map((name) => name.trim());
+}
+
+function replayAiAnalysis(rawAnalysis, context) {
+  if (rawAnalysis == null) return null;
+  if (
+    typeof rawAnalysis !== 'object'
+    || Array.isArray(rawAnalysis)
+    || rawAnalysis.schema_version !== 1
+  ) {
+    replayImportError(`${context} 的 aiAnalysis 格式无效`);
+  }
+  try {
+    return JSON.parse(JSON.stringify(rawAnalysis));
+  } catch {
+    replayImportError(`${context} 的 aiAnalysis 无法序列化`);
+  }
 }
 
 function replaySnapshotFromRecord(record) {
@@ -925,7 +966,15 @@ function replaySnapshotFromRecord(record) {
         replayImportError(`座位 ${seat} 在第 ${trickNumber} 墩非法打出 ${card.code}`);
       }
       remainingHands[seat].splice(cardIndex, 1);
-      currentTrick.push({ seat, card });
+      const aiAnalysis = replayAiAnalysis(
+        rawPlay.aiAnalysis,
+        `第 ${trickNumber} 墩第 ${offset + 1} 次出牌`,
+      );
+      currentTrick.push({
+        seat,
+        card,
+        ...(aiAnalysis ? { aiAnalysis } : {}),
+      });
       spadesBroken = spadesBroken || card.suit === 'S';
     });
 
@@ -936,13 +985,18 @@ function replaySnapshotFromRecord(record) {
     }
     calculatedTricksWon[winner] += 1;
     previousWinner = winner;
-    const cards = currentTrick.map((entry) => ({ seat: entry.seat, card: { ...entry.card } }));
+    const cards = currentTrick.map((entry) => ({
+      seat: entry.seat,
+      card: { ...entry.card },
+      ...(entry.aiAnalysis ? { aiAnalysis: entry.aiAnalysis } : {}),
+    }));
     completedTricks.push({ trickNumber, winner, cards });
     plays.push(...cards.map((entry) => ({
       seat: entry.seat,
       card: { ...entry.card },
       trickNumber,
       winner,
+      aiAnalysis: entry.aiAnalysis ?? null,
     })));
   });
 
@@ -1095,11 +1149,58 @@ export function buildReplayRecord(snapshot) {
       trickNumber: trick.trickNumber,
       leader: trick.cards[0]?.seat ?? null,
       winner: trick.winner,
-      plays: serializeTrickCards(trick.cards),
+      plays: trick.cards.map((entry) => ({
+        seat: entry.seat,
+        card: entry.card.code,
+        ...(entry.aiAnalysis ? { aiAnalysis: entry.aiAnalysis } : {}),
+      })),
     })),
     tricksWon: [...snapshot.tricksWon],
     score: snapshot.score ? { ...snapshot.score } : null,
   };
+}
+
+/** Build the authoritative full-deal payload for one on-demand replay solve. */
+export function buildReplayAnalysisPayload(snapshot, playIndex) {
+  return {
+    seed: snapshot.seed,
+    playIndex,
+    firstLeader: snapshot.plays[0]?.seat ?? 0,
+    bids: snapshot.bids.map((bid) => serializeBid(bid)),
+    initialHands: snapshot.hands.map((hand) => hand.map((card) => card.code)),
+    plays: snapshot.plays.map((play) => ({
+      seat: play.seat,
+      card: play.card.code,
+    })),
+  };
+}
+
+/** Compute full-information Q values for one action through the local backend. */
+export async function requestReplayAnalysis(snapshot, playIndex) {
+  let response;
+  try {
+    response = await fetch('/api/replay-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildReplayAnalysisPayload(snapshot, playIndex)),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`无法连接明手 solver：${detail}`);
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    let detail = text;
+    try {
+      detail = JSON.parse(text).error || text;
+    } catch {
+      // Preserve a non-JSON backend response.
+    }
+    throw new Error(`明手 solver 请求失败（HTTP ${response.status}）：${detail || '无错误详情'}`);
+  }
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || '明手 solver 返回错误');
+  return payload;
 }
 
 /** Replay animation pacing (ms). */
@@ -1120,6 +1221,19 @@ function parseCardCode(code) {
   const rank = code.slice(0, -1);
   const suit = code.slice(-1);
   return { code, rank, suit };
+}
+
+/** Parse the post-game history, including replay-only AI diagnostics. */
+export function remoteCompletedTricksFromServer(rawTricks) {
+  return (rawTricks || []).map((trick) => ({
+    trickNumber: trick.trickNumber,
+    winner: trick.winner,
+    cards: (trick.cards || []).map((entry) => ({
+      seat: entry.seat,
+      card: parseCardCode(entry.card),
+      aiAnalysis: entry.aiAnalysis ?? null,
+    })),
+  }));
 }
 
 /**
@@ -1149,17 +1263,11 @@ export function remoteStateFromServer(msg, mySeat, dealSeed = 0) {
   const currentTrick = (msg.currentTrick || []).map((entry) => ({
     seat: entry.seat,
     card: parseCardCode(entry.card),
+    aiAnalysis: entry.aiAnalysis ?? null,
   }));
 
   // Convert completedTricks cards
-  const completedTricks = (msg.completedTricks || []).map((trick) => ({
-    trickNumber: trick.trickNumber,
-    winner: trick.winner,
-    cards: trick.cards.map((entry) => ({
-      seat: entry.seat,
-      card: parseCardCode(entry.card),
-    })),
-  }));
+  const completedTricks = remoteCompletedTricksFromServer(msg.completedTricks);
 
   const confirmedSeats = remoteShowdown?.confirmedSeats || [];
   const showdown = remoteShowdown ? {

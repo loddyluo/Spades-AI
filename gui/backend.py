@@ -26,6 +26,7 @@ tracker, so there is no cross-request memory to keep in sync.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import sys
@@ -74,6 +75,10 @@ from residual_bidder.deployment import (  # noqa: E402
     DEFAULT_CHECKPOINT_PATH as DEFAULT_ACTING_BID_CHECKPOINT,
     DEFAULT_CONFIG_PATH as DEFAULT_RESIDUAL_BIDDER_CONFIG,
     load_deployed_acting_bidder,
+)
+from gui.replay_detail import (  # noqa: E402
+    analyze_replay_position,
+    serialize_ai_play_info,
 )
 
 
@@ -377,6 +382,7 @@ class AiChoice:
     bid_type: str | None = None
     card: str | None = None
     detail: str = ""
+    analysis: dict[str, Any] | None = None
 
 
 def _load_bid_model(path: str, device: str):
@@ -458,6 +464,8 @@ class RuleExactProvider:
         # RuleExact players keep mutable replay history.  The HTTP server is
         # threaded, so reset/replay/action selection must be one transaction.
         self._decision_lock = threading.Lock()
+        self._replay_analysis_lock = threading.Lock()
+        self._replay_analysis_cache: dict[str, dict[str, Any]] = {}
 
         # One stateful player per seat. All first-four choices and posterior
         # replay choices use MLPs; remaining <= threshold uses exact search.
@@ -477,6 +485,7 @@ class RuleExactProvider:
                 bid_device=device,
                 hyperparam_config=self.hyperparam_config,
                 num_workers=args.num_workers,
+                debug=True,
             )
             for _ in range(4)
         ]
@@ -495,6 +504,72 @@ class RuleExactProvider:
             self.exact_solver,
             time_budget_seconds=1.0,
         ).to_payload()
+
+    def analyze_replay(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Compute one on-demand full-information replay decision."""
+        cache_key = hashlib.blake2b(
+            json.dumps(
+                payload,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+            digest_size=16,
+        ).hexdigest()
+        replay_lock = getattr(self, "_replay_analysis_lock", None)
+        if replay_lock is None:
+            replay_lock = self._replay_analysis_lock = threading.Lock()
+        replay_cache = getattr(self, "_replay_analysis_cache", None)
+        if replay_cache is None:
+            replay_cache = self._replay_analysis_cache = {}
+
+        with replay_lock:
+            cached = replay_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            result = self._analyze_replay_uncached(payload)
+            if len(replay_cache) >= 160:
+                replay_cache.pop(next(iter(replay_cache)))
+            replay_cache[cache_key] = result
+            return result
+
+    def _analyze_replay_uncached(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Validate and solve one replay request while the cache lock is held."""
+        raw_hands = payload.get("initialHands")
+        if not isinstance(raw_hands, list) or len(raw_hands) != 4:
+            raise ValueError("initialHands 必须包含四家手牌")
+        try:
+            initial_hands = [
+                [parse_card_code(str(code)) for code in hand]
+                for hand in raw_hands
+            ]
+        except (TypeError, ValueError, KeyError, IndexError) as exc:
+            raise ValueError("initialHands 包含无效牌码") from exc
+
+        raw_bids = payload.get("bids")
+        if not isinstance(raw_bids, list) or len(raw_bids) != 4:
+            raise ValueError("bids 必须包含四个叫牌")
+        max_bid = [frontend_bid_to_local(entry) for entry in raw_bids]
+
+        raw_plays = payload.get("plays")
+        if not isinstance(raw_plays, list):
+            raise ValueError("plays 必须是出牌数组")
+        try:
+            plays = [
+                (int(entry["seat"]), parse_card_code(str(entry["card"])))
+                for entry in raw_plays
+            ]
+        except (TypeError, ValueError, KeyError, IndexError) as exc:
+            raise ValueError("plays 包含无效出牌") from exc
+
+        return analyze_replay_position(
+            self.exact_solver,
+            initial_hands,
+            max_bid,
+            plays,
+            first_leader=int(payload.get("firstLeader", 0)),
+            play_index=int(payload["playIndex"]),
+        )
 
     def _choose_action_serialized(self, payload: dict[str, Any]) -> AiChoice:
         state, seat = build_local_state(payload)
@@ -591,7 +666,19 @@ class RuleExactProvider:
             raise RuntimeError(
                 "AI card play returned an illegal card; fallback is disabled"
             )
-        return AiChoice(kind="play", card=card_to_code(card), detail=mode)
+        analysis = serialize_ai_play_info(
+            player.last_play_info
+            if isinstance(player.last_play_info, dict)
+            else None,
+            chosen_card=card,
+            seat=seat,
+        )
+        return AiChoice(
+            kind="play",
+            card=card_to_code(card),
+            detail=mode,
+            analysis=analysis,
+        )
 
 
 def choice_to_payload(choice: AiChoice, ai_name: str) -> dict[str, Any]:
@@ -603,13 +690,16 @@ def choice_to_payload(choice: AiChoice, ai_name: str) -> dict[str, Any]:
             "label": "Nil" if choice.bid_type == "nil" else str(choice.value),
             "detail": choice.detail,
         }
-    return {
+    payload = {
         "kind": "play",
         "ai": ai_name,
         "card": choice.card,
         "label": choice.card,
         "detail": choice.detail,
     }
+    if choice.analysis is not None:
+        payload["analysis"] = choice.analysis
+    return payload
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -653,7 +743,8 @@ def build_response_handler(provider: RuleExactProvider):
         def do_POST(self) -> None:  # noqa: N802
             action_paths = {"/api/choose-action", "/choose-action"}
             showdown_paths = {"/api/check-showdown", "/check-showdown"}
-            if self.path not in action_paths | showdown_paths:
+            replay_paths = {"/api/replay-analysis", "/replay-analysis"}
+            if self.path not in action_paths | showdown_paths | replay_paths:
                 self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
                 return
             content_length = int(self.headers.get("Content-Length", "0"))
@@ -669,6 +760,18 @@ def build_response_handler(provider: RuleExactProvider):
                     result = provider.check_showdown(payload)
                     self._send_json(200, {"ok": True, **result})
                 except (ShowdownStateError, KeyError, TypeError, ValueError) as exc:
+                    self._send_json(400, {"ok": False, "error": str(exc)})
+                except Exception as exc:  # pragma: no cover - surfaced to browser
+                    import traceback
+                    traceback.print_exc()
+                    self._send_json(500, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path in replay_paths:
+                try:
+                    result = provider.analyze_replay(payload)
+                    self._send_json(200, {"ok": True, **result})
+                except (KeyError, TypeError, ValueError) as exc:
                     self._send_json(400, {"ok": False, "error": str(exc)})
                 except Exception as exc:  # pragma: no cover - surfaced to browser
                     import traceback

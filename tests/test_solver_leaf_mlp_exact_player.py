@@ -98,6 +98,20 @@ def test_no_nil_first_four_uses_nonnil_actor() -> None:
     assert player.last_play_info["role"] == "nonnil"
 
 
+def test_debug_first_four_records_every_legal_action_probability() -> None:
+    state, legal = _playing_state(seat=0, bids=["bid_3"] * 4)
+    player = _player_for_legal(legal)
+    player._debug = True
+    player.start_game(0, list(state.hands[0]), 4)
+    player.set_teams(state.teams, state.max_bid)
+
+    player.play_card(legal, {"state": state})
+
+    recorded = player.last_play_info["action_probabilities"]
+    assert {row["action"] for row in recorded} == set(legal)
+    assert sum(row["probability"] for row in recorded) == pytest.approx(1.0)
+
+
 @pytest.mark.parametrize(
     ("seat", "bids", "expected_role"),
     [

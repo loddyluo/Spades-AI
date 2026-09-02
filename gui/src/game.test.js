@@ -8,6 +8,7 @@ import {
   applyCard,
   applyShowdownOffer,
   buildAiPayload,
+  buildReplayAnalysisPayload,
   buildReplayRecord,
   buildReplaySnapshot,
   buildShowdownPayload,
@@ -16,8 +17,10 @@ import {
   createInitialGame,
   dealHands,
   determineTrickWinner,
+  finalizeTrick,
   getLegalCards,
   parseReplayImport,
+  remoteCompletedTricksFromServer,
   remoteStateFromServer,
   shouldCheckShowdown,
   showdownWaitingForPartner,
@@ -51,6 +54,56 @@ test('leading a non-spade does not break spades', () => {
   const next = applyCard(state, 0, 'AH');
 
   assert.equal(next.spadesBroken, false);
+});
+
+test('an AI play keeps the exact decision diagnostics on the play record', () => {
+  const state = playingState({ code: 'AH', rank: 'A', suit: 'H' });
+  const analysis = {
+    schema_version: 1,
+    mode: 'exact_is_determinized',
+    chosen_card: 'AH',
+    action_scores: [{ action: 'AH', value: 0 }],
+  };
+
+  const next = applyCard(state, 0, 'AH', 'test-ai', analysis);
+
+  assert.equal(next.currentTrick[0].aiAnalysis, analysis);
+});
+
+test('collecting a trick keeps AI diagnostics for the finished replay', () => {
+  const analysis = {
+    schema_version: 1,
+    mode: 'exact_is_determinized',
+    chosen_card: 'AH',
+    action_scores: [{ action: 'AH', value: 0 }],
+  };
+  const state = {
+    phase: 'playing',
+    currentPlayer: -1,
+    leader: 0,
+    trickNumber: 1,
+    spadesBroken: false,
+    hands: [[], [], [], []],
+    bids: [null, null, null, null],
+    tricksWon: [0, 0, 0, 0],
+    currentTrick: [
+      { seat: 0, card: { code: 'AH', rank: 'A', suit: 'H' }, aiAnalysis: analysis },
+      { seat: 1, card: { code: 'KH', rank: 'K', suit: 'H' } },
+      { seat: 2, card: { code: 'QH', rank: 'Q', suit: 'H' } },
+      { seat: 3, card: { code: 'JH', rank: 'J', suit: 'H' } },
+    ],
+    completedTricks: [],
+    trickComplete: true,
+    trickWinner: 0,
+    lastPlayedSeat: 3,
+    showdown: null,
+    log: [],
+  };
+
+  const next = finalizeTrick(state);
+
+  assert.deepEqual(next.completedTricks[0].cards[0].aiAnalysis, analysis);
+  assert.equal(next.completedTricks[0].cards[1].aiAnalysis, undefined);
 });
 
 test('a non-spade cannot reset an already-broken state', () => {
@@ -633,6 +686,64 @@ function completeReplayRecord(seed = 20260804, viewSeat = 0) {
     score: computeScores(bids, tricksWon),
   };
 }
+
+
+test('detailed AI diagnostics survive replay import and export', () => {
+  const record = completeReplayRecord(20260804, 2);
+  const analysis = {
+    schema_version: 1,
+    seat: record.tricks[4].plays[0].seat,
+    chosen_card: record.tricks[4].plays[0].card,
+    mode: 'exact_is_determinized',
+    samples: 1,
+    action_scores: [{ action: record.tricks[4].plays[0].card, value: 0 }],
+    debug: { samples: [] },
+  };
+  record.tricks[4].plays[0].aiAnalysis = analysis;
+
+  const [option] = parseReplayImport(record);
+  const exported = buildReplayRecord(option.snapshot);
+
+  assert.deepEqual(exported.tricks[4].plays[0].aiAnalysis, analysis);
+  assert.deepEqual(option.snapshot.plays[16].aiAnalysis, analysis);
+});
+
+
+test('replay solver payload identifies one action without resending AI diagnostics', () => {
+  const record = completeReplayRecord(20260804, 2);
+  record.tricks[3].plays[0].aiAnalysis = {
+    schema_version: 1,
+    mode: 'exact_is_determinized',
+  };
+  const [option] = parseReplayImport(record);
+
+  const payload = buildReplayAnalysisPayload(option.snapshot, 12);
+
+  assert.equal(payload.seed, record.seed);
+  assert.equal(payload.playIndex, 12);
+  assert.equal(payload.firstLeader, record.tricks[0].leader);
+  assert.equal(payload.initialHands.flat().length, 52);
+  assert.equal(payload.plays.length, 52);
+  assert.equal('aiAnalysis' in payload.plays[12], false);
+});
+
+
+test('remote hand-over history exposes replay diagnostics only in the final record', () => {
+  const raw = [{
+    trickNumber: 1,
+    winner: 0,
+    cards: [{
+      seat: 0,
+      card: 'AS',
+      aiAnalysis: { schema_version: 1, mode: 'single_action_direct' },
+    }],
+  }];
+
+  const parsed = remoteCompletedTricksFromServer(raw);
+
+  assert.equal(parsed[0].cards[0].card.code, 'AS');
+  assert.equal(parsed[0].cards[0].aiAnalysis.mode, 'single_action_direct');
+});
 
 
 test('portable replay records round-trip through strict import validation', () => {

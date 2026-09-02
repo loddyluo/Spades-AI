@@ -42,11 +42,14 @@ from typing import Any
 import torch
 
 import _exact_solver_worker
-from trick_taking.card import Card, Rank, Suit, _STANDARD_CARDS as STANDARD_52
+from trick_taking.card import Card, Suit, _STANDARD_CARDS as STANDARD_52
 from trick_taking.game_state import GameState
 from trick_taking.player import AIPlayer
 from trick_taking.solvers.exact_double_dummy_cpp_fastest import (
     ExactDoubleDummyCppFastestSolver,
+)
+from trick_taking.solvers.exact_double_dummy import (
+    expand_equivalent_root_q_values,
 )
 from strategy.hyperparam_config import HyperparamConfig
 from strategy.rule_based_first4_player import (
@@ -592,20 +595,29 @@ class RuleExactFirst4Player(AIPlayer):
         )
 
         agg_q: dict[int, float] = {}
+        agg_expected_q: dict[int, float] = {}
+        agg_expected_weight: dict[int, float] = {}
         my_team = 0 if self.position in (0, 2) else 1
 
         # ── debug: 记录 IS pool 原始统计 ──
         _debug_pool_info: dict[str, Any] | None = None
-        _debug_unique_paired: list[dict[str, Any]] | None = None
         _debug_samples: list[dict[str, Any]] | None = None
         _debug_n_fill: int = 0
         _debug_n_is: int = 0
         if self._debug:
             _debug_pool_info = {
                 "pool_size": len(pool_hands),
-                "pool_weights_min": float(min(pool_weights)) if pool_weights else None,
-                "pool_weights_max": float(max(pool_weights)) if pool_weights else None,
-                "pool_weights_mean": float(sum(pool_weights) / len(pool_weights)) if pool_weights else None,
+                "pool_weights_min": (
+                    float(min(pool_weights)) if pool_weights else None
+                ),
+                "pool_weights_max": (
+                    float(max(pool_weights)) if pool_weights else None
+                ),
+                "pool_weights_mean": (
+                    float(sum(pool_weights) / len(pool_weights))
+                    if pool_weights
+                    else None
+                ),
                 "posterior_cache_hit": self._last_pool_cache_hit,
             }
 
@@ -616,20 +628,35 @@ class RuleExactFirst4Player(AIPlayer):
             for _ in range(K):
                 sim_state = copy.deepcopy(state)
                 self._determinize_state(sim_state, state.turn, selection_rng)
-                result = self.exact_solver.solve_with_q_fast(sim_state)
+                result = expand_equivalent_root_q_values(
+                    sim_state,
+                    self.exact_solver.solve_with_q_fast(sim_state),
+                    legal_cards,
+                )
                 counts += 1
                 if self._debug:
                     _debug_fallback_qs.append({
+                        "sample_index": counts - 1,
+                        "source": "uniform_determinization",
                         "norm_weight": 1.0 / K,
-                        "action_q_values": {str(id_to_card.get(cid, Card(Suit.SPADES, Rank.TWO))): float(q)
-                                           for cid, q in result.items()} if result else {},
+                        "action_q_values": {
+                            f"{id_to_card[cid].rank.short}{id_to_card[cid].suit.short}": float(q)
+                            for cid, q in result.items()
+                            if cid in id_to_card
+                        },
                         "all_hands": {
-                            p: [str(c) for c in sim_state.hands[p]]
+                            p: [f"{c.rank.short}{c.suit.short}" for c in sim_state.hands[p]]
                             for p in range(4)
                         },
                     })
                 for cid, q in result.items():
                     agg_q[cid] = agg_q.get(cid, 0.0) + float(q)
+                    agg_expected_q[cid] = (
+                        agg_expected_q.get(cid, 0.0) + float(q) / K
+                    )
+                    agg_expected_weight[cid] = (
+                        agg_expected_weight.get(cid, 0.0) + 1.0 / K
+                    )
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
             n_samples_used = counts
@@ -652,19 +679,11 @@ class RuleExactFirst4Player(AIPlayer):
                     if len(unique_paired) >= 5120:
                         break
 
-            # ── debug: 记录去重后的 proposal pool ──
             if self._debug and _debug_pool_info is not None:
-                _debug_unique_paired = []
-                for hp, w in unique_paired:
-                    _debug_unique_paired.append({
-                        "weight_raw": float(w),
-                        "hands_summary": {
-                            p: [str(c) for c in hp[p][:6]] + (
-                                [f"...({len(hp[p]) - 6} more)"] if len(hp[p]) > 6 else []
-                            )
-                            for p in range(4)
-                        },
-                    })
+                # The full proposal pool can contain thousands of deals.  A
+                # replay records the samples that actually reached the solver,
+                # while retaining only aggregate statistics for the pool.
+                _debug_pool_info["unique_pool_size"] = len(unique_paired)
 
             # 确定要检查分布的花色：
             # 如果不是领出且手中有领出花色，则检查该花色；否则检查黑桃
@@ -729,6 +748,9 @@ class RuleExactFirst4Player(AIPlayer):
                 n_selected = len(top_hands)
                 n_fill = len(fill_indices)
                 n_is = len(is_idx_list) - n_fill
+                sample_sources = ["diversity_fill"] * n_fill + [
+                    "importance_sampling"
+                ] * n_is
                 if self._debug:
                     _debug_n_fill = n_fill
                     _debug_n_is = n_is
@@ -803,6 +825,9 @@ class RuleExactFirst4Player(AIPlayer):
                 n_selected = len(top_hands)
                 n_is = len(is_idx)        # IS 样本数（含重复，可能 > len(is_idx_set)）
                 n_fill = n_selected - n_is
+                sample_sources = ["importance_sampling"] * n_is + [
+                    "diversity_fill"
+                ] * n_fill
                 if self._debug:
                     _debug_n_fill = n_fill
                     _debug_n_is = n_is
@@ -852,20 +877,41 @@ class RuleExactFirst4Player(AIPlayer):
 
             # ── debug: 记录每个采样的 Q 值 ──
             _debug_samples: list[dict[str, Any]] | None = [] if self._debug else None
-            for (hand_proposal, norm_w), worker_result in zip(
-                zip(top_hands, norm_factors), q_results
+            played_by_player: dict[int, set[int]] = {
+                player_id: set() for player_id in range(4)
+            }
+            if self._debug:
+                for record in state.trick_history:
+                    for player_id, card in record.cards:
+                        played_by_player[player_id].add(card.card_id)
+                for player_id, card in state.table_cards:
+                    played_by_player[player_id].add(card.card_id)
+
+            for sample_index, (hand_proposal, norm_w, source, worker_result) in enumerate(
+                zip(top_hands, norm_factors, sample_sources, q_results)
             ):
                 # worker_result is {card_id: q_value} from the worker
-                action_q_dict = worker_result
+                action_q_dict = expand_equivalent_root_q_values(
+                    state,
+                    worker_result,
+                    legal_cards,
+                )
                 if self._debug and _debug_samples is not None:
                     _debug_samples.append({
+                        "sample_index": sample_index,
+                        "source": source,
                         "norm_weight": float(norm_w),
                         "action_q_values": {
-                            str(id_to_card.get(cid, Card(Suit.SPADES, Rank.TWO))): float(q)
+                            f"{id_to_card[cid].rank.short}{id_to_card[cid].suit.short}": float(q)
                             for cid, q in action_q_dict.items()
+                            if cid in id_to_card
                         } if action_q_dict else {},
                         "all_hands": {
-                            p: [str(c) for c in hand_proposal[p]]
+                            p: [
+                                f"{card.rank.short}{card.suit.short}"
+                                for card in hand_proposal[p]
+                                if card.card_id not in played_by_player[p]
+                            ]
                             for p in range(4)
                         },
                     })
@@ -873,6 +919,13 @@ class RuleExactFirst4Player(AIPlayer):
                     max_q = max(action_q_dict.values())
                     min_q = min(action_q_dict.values())
                     for card_id, q in action_q_dict.items():
+                        agg_expected_q[card_id] = (
+                            agg_expected_q.get(card_id, 0.0)
+                            + norm_w * float(q)
+                        )
+                        agg_expected_weight[card_id] = (
+                            agg_expected_weight.get(card_id, 0.0) + norm_w
+                        )
                         if my_team == 0:
                             multiplier = q - max_q
                             if multiplier < -self.config.multiplier_clip:
@@ -943,7 +996,21 @@ class RuleExactFirst4Player(AIPlayer):
             action_scores = sorted(
                 [{"action": card, "value": float(q)}
                  for card, q in action_q_values.items()],
-                key=lambda x: x["value"], reverse=True,
+                key=lambda x: x["value"], reverse=my_team == 0,
+            )
+            expected_action_scores = sorted(
+                [
+                    {
+                        "action": id_to_card[card_id],
+                        "value": float(weighted_q / covered_weight),
+                        "covered_weight": float(covered_weight),
+                    }
+                    for card_id, weighted_q in agg_expected_q.items()
+                    if card_id in id_to_card
+                    and (covered_weight := agg_expected_weight.get(card_id, 0.0)) > 0
+                ],
+                key=lambda item: item["value"],
+                reverse=my_team == 0,
             )
             best_value = float(action_q_values.get(best_action, 0.0))
             info = {
@@ -951,18 +1018,22 @@ class RuleExactFirst4Player(AIPlayer):
                 "samples": n_samples_used,
                 "best_value": best_value,
                 "action_scores": action_scores,
+                "expected_action_scores": expected_action_scores,
             }
             if self._debug and _debug_pool_info is not None:
                 info["debug"] = {
                     "pool": _debug_pool_info,
-                    "unique_proposals": _debug_unique_paired,
                     "samples": _debug_samples,
                     "n_fill": _debug_n_fill,
                     "n_is": _debug_n_is,
                     "remaining_cards": sum(len(h) for h in state.hands),
                     "my_team": my_team,
-                    "agg_q_raw": {str(id_to_card.get(aid, Card(Suit.SPADES, Rank.TWO))): float(q)
-                                  for aid, q in agg_q.items()},
+                    "decision_seed": f"{decision_seed:032x}",
+                    "agg_q_raw": {
+                        f"{id_to_card[aid].rank.short}{id_to_card[aid].suit.short}": float(q)
+                        for aid, q in agg_q.items()
+                        if aid in id_to_card
+                    },
                 }
             self.last_play_info = info
             return best_action

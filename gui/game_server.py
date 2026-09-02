@@ -69,6 +69,10 @@ from residual_bidder.deployment import (  # noqa: E402
     DEFAULT_CONFIG_PATH as DEFAULT_RESIDUAL_BIDDER_CONFIG,
     load_deployed_acting_bidder,
 )
+from gui.replay_detail import (  # noqa: E402
+    analyze_replay_position,
+    serialize_ai_play_info,
+)
 
 # ── Constants ────────────────────────────────────────────────────────────
 TRICK_HOLD_SECONDS = 1.5  # pause after trick completes for animation
@@ -275,6 +279,10 @@ class GameRoom:
         self.connections: dict[int, Any] = {}   # {seat: websocket}
         self.ai_players: dict[int, SolverLeafMLPExactPlayer] = {}
         self.state: GameState | None = None
+        self._initial_hands: list[list[Card]] | None = None
+        self._play_analyses: dict[int, dict[str, Any]] = {}
+        self._replay_analysis_cache: dict[int, dict[str, Any]] = {}
+        self._replay_analysis_lock = asyncio.Lock()
         self.rules = SpadesRules()
         # Shared AI components (loaded once at startup)
         self._bid_model = bid_model
@@ -348,6 +356,9 @@ class GameRoom:
 
         # ── Deal (frontend-compatible PRNG → same hands as local mode) ─
         hands = _deal_hands_frontend_compat(self.seed)
+        self._initial_hands = [list(hand) for hand in hands]
+        self._play_analyses.clear()
+        self._replay_analysis_cache.clear()
 
         self.state = GameState()
         self.state.init_for_deal(4, hands, [], _FRONTEND_DECK)
@@ -379,6 +390,7 @@ class GameRoom:
                 bid_device=self._bid_device,
                 hyperparam_config=self._hyperparam_config,
                 num_workers=self._num_workers,
+                debug=True,
             )
             player.start_game(seat, list(hands[seat]), 4)
             self.ai_players[seat] = player
@@ -690,6 +702,12 @@ class GameRoom:
             raise AiFallbackError(
                 f"座位 {seat} 的 AI 返回非法牌，拒绝替换为默认合法牌"
             )
+        play_index = self.state.tricks_played * 4 + len(self.state.table_cards)
+        self._play_analyses[play_index] = serialize_ai_play_info(
+            play_info if isinstance(play_info, dict) else None,
+            chosen_card=card,
+            seat=seat,
+        )
         return card
 
     # ── State broadcast ─────────────────────────────────────────────
@@ -815,13 +833,25 @@ class GameRoom:
 
         # Completed tricks for frontend replay
         completed_tricks = []
-        for tr in self.state.trick_history:
+        for trick_index, tr in enumerate(self.state.trick_history):
             completed_tricks.append({
                 "trickNumber": len(completed_tricks) + 1,
                 "winner": tr.winner,
                 "cards": [
-                    {"seat": seat, "card": _card_to_str(card)}
-                    for seat, card in tr.cards
+                    {
+                        "seat": seat,
+                        "card": _card_to_str(card),
+                        **(
+                            {"aiAnalysis": analysis}
+                            if (
+                                analysis := self._play_analyses.get(
+                                    trick_index * 4 + offset
+                                )
+                            ) is not None
+                            else {}
+                        ),
+                    }
+                    for offset, (seat, card) in enumerate(tr.cards)
                 ],
             })
 
@@ -838,6 +868,40 @@ class GameRoom:
         }
         for ws in self.connections.values():
             await self._safe_send(ws, score_msg)
+
+    async def analyze_replay_play(self, play_index: int) -> dict[str, Any]:
+        """Compute and cache one post-game full-information replay analysis."""
+        if (
+            self.state is None
+            or self.state.phase != Phase.SCORING
+            or len(self.state.trick_history) != 13
+            or self._initial_hands is None
+        ):
+            raise RuntimeError("牌局尚未完整结束，不能计算详细复盘")
+        if play_index in self._replay_analysis_cache:
+            return self._replay_analysis_cache[play_index]
+
+        async with self._replay_analysis_lock:
+            if play_index in self._replay_analysis_cache:
+                return self._replay_analysis_cache[play_index]
+            plays = [
+                (seat, card)
+                for trick in self.state.trick_history
+                for seat, card in trick.cards
+            ]
+            first_leader = self.state.trick_history[0].cards[0][0]
+            call = functools.partial(
+                analyze_replay_position,
+                self._exact_solver,
+                self._initial_hands,
+                self.state.max_bid,
+                plays,
+                first_leader=first_leader,
+                play_index=play_index,
+            )
+            result = await asyncio.get_running_loop().run_in_executor(None, call)
+            self._replay_analysis_cache[play_index] = result
+            return result
 
     # ── Human action wait ───────────────────────────────────────────
 
@@ -1023,6 +1087,33 @@ async def handler(ws) -> None:
                 # If both connected, start game
                 if room.is_ready():
                     asyncio.create_task(room.start_game())
+
+            elif msg_type == "replay_analysis":
+                if my_room is None:
+                    await GameRoom._safe_send(ws, {
+                        "type": "replay_analysis_result",
+                        "requestId": msg.get("requestId"),
+                        "ok": False,
+                        "error": "请先加入房间",
+                    })
+                    continue
+                try:
+                    result = await my_room.analyze_replay_play(
+                        int(msg.get("playIndex", -1))
+                    )
+                    await GameRoom._safe_send(ws, {
+                        "type": "replay_analysis_result",
+                        "requestId": msg.get("requestId"),
+                        "ok": True,
+                        "analysis": result,
+                    })
+                except Exception as exc:
+                    await GameRoom._safe_send(ws, {
+                        "type": "replay_analysis_result",
+                        "requestId": msg.get("requestId"),
+                        "ok": False,
+                        "error": str(exc),
+                    })
 
             elif msg_type in ("bid", "play", "showdown_confirm"):
                 # ── Human action ─────────────────────────────────
