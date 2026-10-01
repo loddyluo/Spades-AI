@@ -313,6 +313,174 @@ class SolverLeafMLPExactPlayer(RuleExactFirst4Player):
             record_diagnostics=False,
         )
 
+    def _first4_replay_expected_cards_batch(
+        self,
+        replay_players: Sequence[Any],
+        legal_batch: Sequence[list[Card]],
+        state_views: Sequence[dict[str, Any]],
+        *,
+        player_id: int,
+        hands: Sequence[list[Card]],
+        prior_plays: Sequence[tuple[int, Card]],
+        max_bid: list[str] | None,
+    ) -> list[Card | None]:
+        """Judge every proposal of one replay step with a single MLP forward.
+
+        Why one forward is enough: both observation builders only touch
+        concealed cards through ``hand_card_ids`` / ``legal_card_ids`` (plus
+        the 12 hand-derived encoder columns); every other column comes from
+        public state that all proposals of a step share (same ``prior_plays``
+        and ``max_bid``).  So one template observation supplies every public
+        column, and only those three blocks are rewritten per row.  The actor
+        is deterministic (argmax over masked logits) and stateless, so batching
+        cannot change any verdict.
+
+        Cost: the previous code ran this decision ``len(hands)`` times, once
+        per proposal, paying a full Python/torch call overhead per row; this
+        runs it once.
+        """
+
+        del state_views
+        if max_bid is None or len(max_bid) != 4:
+            raise RuntimeError("MLP replay requires all four public bids")
+        if not hands:
+            return []
+        if not (len(replay_players) == len(legal_batch) == len(hands)):
+            raise RuntimeError("batch replay received mismatched proposal lists")
+        for replay_player in replay_players:
+            if not isinstance(replay_player, _MLPReplayContext):
+                raise RuntimeError("production replay received a non-MLP policy")
+        nil_seats = self._nil_bid_seats(max_bid)
+
+        # ── 1. 用第 0 份提案建一个模板观测（只取公开列）──
+        template_state = self._build_replay_state(
+            player_id=player_id,
+            current_hand=list(hands[0]),
+            prior_plays=prior_plays,
+            max_bid=max_bid,
+        )
+        if nil_seats:
+            template_observation = build_nil_first_four_observation(
+                template_state,
+                player_id,
+                legal_batch[0],
+            )
+            encoder = self._nil_encoder
+            actor = self._nil_actors[
+                role_for_nil_configuration(nil_seats, player_id)
+            ]
+        else:
+            template_observation = build_first_four_observation(
+                template_state,
+                player_id,
+                legal_batch[0],
+            )
+            encoder = self._nonnil_encoder
+            actor = self._nonnil_actor
+
+        base = np.array(encoder.encode(template_observation), dtype=np.float32)
+        # 抹掉三块与提案相关的列：hand、legal、hand_derived
+        base[encoder.HAND_START : encoder.BIDS_START] = 0.0
+        base[encoder.HAND_DERIVED_START : encoder.TOTAL_DIM] = 0.0
+
+        # ── 2. 逐提案只写那三块（整批向量化，不做逐行 numpy 调用）──
+        rows = len(hands)
+        features = np.repeat(base[None, :], rows, axis=0)
+        masks = np.zeros((rows, 52), dtype=np.bool_)
+
+        hand_id_rows = [
+            [card.card_id for card in hand]
+            for hand in hands
+        ]
+        legal_id_rows = [
+            [card.card_id for card in legal]
+            for legal in legal_batch
+        ]
+        hand_widths = np.fromiter(
+            (len(row_ids) for row_ids in hand_id_rows),
+            dtype=np.int64,
+            count=rows,
+        )
+        legal_widths = np.fromiter(
+            (len(row_ids) for row_ids in legal_id_rows),
+            dtype=np.int64,
+            count=rows,
+        )
+        # Every proposal of one replay step gives the acting seat the same
+        # number of cards (they all started from a 13-card deal and share the
+        # observed play sequence), so the hand block reshapes to a rectangle.
+        if rows and int(hand_widths.min()) != int(hand_widths.max()):
+            raise RuntimeError("replay hands must have a uniform width per step")
+        hand_ids = np.fromiter(
+            (cid for row_ids in hand_id_rows for cid in row_ids),
+            dtype=np.int64,
+            count=int(hand_widths.sum()),
+        ).reshape(rows, -1)
+        legal_ids = np.fromiter(
+            (cid for row_ids in legal_id_rows for cid in row_ids),
+            dtype=np.int64,
+            count=int(legal_widths.sum()),
+        )
+        legal_row_index = np.repeat(np.arange(rows), legal_widths)
+
+        features[np.repeat(np.arange(rows), hand_widths), hand_ids.ravel()] = 1.0
+        features[legal_row_index, encoder.LEGAL_START + legal_ids] = 1.0
+        masks[legal_row_index, legal_ids] = True
+
+        suits = hand_ids // 13
+        rank_index = hand_ids % 13
+        derived = encoder.HAND_DERIVED_START
+        suit_slots = [suits == suit for suit in range(4)]
+        features[:, derived : derived + 4] = np.stack(
+            [slot.sum(axis=1) for slot in suit_slots], axis=1
+        ) / 13.0
+        features[:, derived + 4 : derived + 8] = np.stack(
+            [(slot & (rank_index >= 10)).sum(axis=1) for slot in suit_slots],
+            axis=1,
+        ) / 3.0
+        features[:, derived + 8 : derived + 12] = np.stack(
+            [(slot & (rank_index == 12)).any(axis=1) for slot in suit_slots],
+            axis=1,
+        ).astype(np.float32)
+
+        encoded_masks = features[
+            :, encoder.LEGAL_START : encoder.LEGAL_START + 52
+        ].astype(np.bool_)
+        if not np.array_equal(masks, encoded_masks):
+            raise RuntimeError("MLP observation and action legal masks disagree")
+
+        # ── 3. 一次前向，整批出结果 ──
+        try:
+            actor_device = next(actor.parameters()).device
+        except StopIteration as error:
+            raise RuntimeError("MLP actor has no parameters") from error
+        with torch.inference_mode():
+            logits = actor(
+                torch.from_numpy(features).to(
+                    device=actor_device,
+                    dtype=torch.float32,
+                )
+            )
+            if logits.shape != (rows, 52) or not bool(
+                torch.isfinite(logits).all().item()
+            ):
+                raise RuntimeError("MLP actor returned invalid logits")
+            masked_logits = mask_policy_logits(
+                logits,
+                torch.from_numpy(masks).to(device=actor_device),
+            )
+            actions = torch.argmax(masked_logits, dim=-1).tolist()
+
+        # ── 4. 每行映射回合法牌 ──
+        verdicts: list[Card | None] = []
+        for row, legal in enumerate(legal_batch):
+            action = int(actions[row])
+            card = {candidate.card_id: candidate for candidate in legal}.get(action)
+            if card is None:
+                raise RuntimeError("MLP actor selected an illegal card")
+            verdicts.append(card)
+        return verdicts
+
     def _first4_replay_card_played(
         self,
         replay_player: Any,

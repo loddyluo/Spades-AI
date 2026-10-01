@@ -8,6 +8,7 @@ import {
   applyCard,
   applyShowdownOffer,
   buildAiPayload,
+  buildRegretRecord,
   buildReplayRecord,
   buildReplaySnapshot,
   buildShowdownPayload,
@@ -16,11 +17,20 @@ import {
   createInitialGame,
   dealHands,
   determineTrickWinner,
+  fetchRegretJob,
+  formatRegret,
   getLegalCards,
   parseReplayImport,
+  REGRET_EPSILON,
+  regretBadges,
+  regretDecisionAt,
+  regretSummary,
+  regretTeamOf,
   remoteStateFromServer,
   shouldCheckShowdown,
   showdownWaitingForPartner,
+  sortHandByRegret,
+  startRegretAnalysis,
 } from './game.js';
 
 function playingState(card) {
@@ -750,4 +760,275 @@ test('replay import rejects illegal cards and index-only summaries with actionab
     }),
     /只含统计索引/,
   );
+});
+
+/* ── 完整复盘 (full replay regret) helpers ──────────────────────────── */
+
+function regretDecisionFixture() {
+  return {
+    playIndex: 20,
+    trickNumber: 6,
+    seat: 1,
+    forced: false,
+    actualCard: 'QS',
+    legalCards: ['AS', 'KS', 'QS'],
+    bestCard: 'AS',
+    playedQ: 4,
+    playedRegret: 8,
+    actions: [
+      { card: 'AS', q: 12, regret: 0, source: 'solver' },
+      { card: 'QS', q: 4, regret: 8, source: 'solver' },
+      { card: 'KS', q: 2, regret: 10, source: 'equivalent:AS' },
+    ],
+    proposals: [{ weight: 1, q: { AS: 12, KS: 2, QS: 4 } }],
+  };
+}
+
+test('regret team split follows the fixed partnership seats', () => {
+  assert.deepEqual([0, 1, 2, 3].map(regretTeamOf), [0, 1, 0, 1]);
+});
+
+test('regretDecisionAt finds the decision that precedes a play index', () => {
+  const analysis = { decisions: [{ playIndex: 16 }, { playIndex: 20 }] };
+  assert.equal(regretDecisionAt(analysis, 20).playIndex, 20);
+  assert.equal(regretDecisionAt(analysis, 19), null);
+  assert.equal(regretDecisionAt(null, 20), null);
+  assert.equal(regretDecisionAt({}, 20), null);
+});
+
+test('formatRegret renders zero, small losses and missing values', () => {
+  assert.equal(formatRegret(0), '0');
+  assert.equal(formatRegret(-0.0000001), '0');
+  assert.equal(formatRegret(12.345), '12.3');
+  assert.equal(formatRegret(12.345, 0), '12');
+  assert.equal(formatRegret(null), '—');
+  assert.equal(formatRegret(undefined), '—');
+  assert.equal(formatRegret(Number.NaN), '—');
+});
+
+test('regretBadges marks the zero-regret action as best', () => {
+  const badges = regretBadges(regretDecisionFixture());
+  assert.equal(badges.AS.best, true);
+  assert.equal(badges.QS.best, false);
+  assert.equal(badges.QS.regret, 8);
+  assert.equal(badges.KS.source, 'equivalent:AS');
+  assert.deepEqual(regretBadges(null), {});
+});
+
+test('regretBadges never marks a card without a Q as best', () => {
+  const decision = {
+    actions: [{ card: 'AS', q: null, regret: 0, source: 'forced' }],
+  };
+  assert.equal(regretBadges(decision).AS.best, false);
+});
+
+test('sortHandByRegret puts the best card first and keeps unknowns last', () => {
+  const cards = ['QS', '2H', 'AS', 'KS'].map((code) => ({
+    code,
+    rank: code.slice(0, -1),
+    suit: code.slice(-1),
+  }));
+  const sorted = sortHandByRegret(cards, regretDecisionFixture());
+  // 2H is not in the analysed action set, so it sinks to the end.
+  assert.deepEqual(sorted.map((card) => card.code), ['AS', 'QS', 'KS', '2H']);
+  // The input array is left untouched.
+  assert.deepEqual(cards.map((card) => card.code), ['QS', '2H', 'AS', 'KS']);
+});
+
+test('sortHandByRegret is a no-op without an analysed decision', () => {
+  const cards = [{ code: 'QS' }, { code: 'AS' }];
+  assert.deepEqual(sortHandByRegret(cards, null).map((card) => card.code), ['QS', 'AS']);
+  assert.deepEqual(sortHandByRegret(cards, { actions: [] }).map((card) => card.code), ['QS', 'AS']);
+});
+
+test('regretSummary defends against a partial analysis result', () => {
+  assert.deepEqual(regretSummary(null), {
+    totalRegret: 0,
+    analyzedActions: 0,
+    totalDecisions: 0,
+    meanRegret: 0,
+    perSeat: [],
+    worst: [],
+  });
+  const summary = regretSummary({
+    summary: { totalRegret: 12.5, analyzedActions: 26, totalDecisions: 36, perSeat: [{ seat: 0 }] },
+  });
+  assert.equal(summary.totalRegret, 12.5);
+  assert.equal(summary.perSeat.length, 1);
+  assert.deepEqual(summary.worst, []);
+});
+
+test('startRegretAnalysis posts the record and returns the job id', async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ ok: true, jobId: 'abc123' }) };
+  };
+  try {
+    const jobId = await startRegretAnalysis({ format: 'spades-ai-replay', version: 1 });
+    assert.equal(jobId, 'abc123');
+    assert.equal(calls[0].url, '/api/analyze-replay');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.match(calls[0].options.body, /spades-ai-replay/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('startRegretAnalysis surfaces backend failures instead of silently continuing', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    text: async () => JSON.stringify({ error: '复盘记录无效' }),
+  });
+  try {
+    await assert.rejects(() => startRegretAnalysis({}), /复盘记录无效/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('fetchRegretJob reports the running progress and the finished result', async () => {
+  const original = globalThis.fetch;
+  const responses = [
+    { ok: true, json: async () => ({ ok: true, status: 'running', progress: { done: 3, total: 36 } }) },
+    { ok: true, json: async () => ({ ok: true, status: 'done', result: { decisions: [] } }) },
+  ];
+  globalThis.fetch = async () => responses.shift();
+  try {
+    const running = await fetchRegretJob('job1');
+    assert.equal(running.status, 'running');
+    assert.equal(running.progress.done, 3);
+    const done = await fetchRegretJob('job1');
+    assert.equal(done.status, 'done');
+    assert.deepEqual(done.result, { decisions: [] });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('fetchRegretJob rejects when the backend reports an error payload', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: false, error: '未知的 jobId' }) });
+  try {
+    await assert.rejects(() => fetchRegretJob('nope'), /未知的 jobId/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+/* ── 完整复盘导出的文件必须能被自己读回来 ──────────────────────────── */
+
+function regretAnalysisFixture() {
+  return {
+    ok: true,
+    exactThreshold: 36,
+    decisions: [{ playIndex: 16, seat: 2, actualCard: '6D', actions: [] }],
+    summary: { analyzedActions: 1, totalRegret: 0 },
+  };
+}
+
+test('a regret export round-trips back through parseReplayImport', () => {
+  const record = completeReplayRecord(20260804);
+  const snapshot = parseReplayImport(record)[0].snapshot;
+  const analysis = regretAnalysisFixture();
+
+  const exported = buildRegretRecord(snapshot, analysis);
+  assert.equal(exported.format, 'spades-ai-regret-replay');
+  assert.equal(exported.version, 1);
+  assert.equal(exported.replay.format, 'spades-ai-replay');
+
+  // Read the file back the way the menu does: JSON in, options out.
+  const options = parseReplayImport(JSON.parse(JSON.stringify(exported)));
+  assert.equal(options.length, 1);
+  assert.deepEqual(options[0].analysis, analysis);
+  assert.equal(options[0].snapshot.plays.length, 52);
+  assert.equal(options[0].snapshot.seed, 20260804);
+  assert.match(options[0].label, /含遗憾分析/);
+});
+
+test('a regret export keeps the exact replay record it was built from', () => {
+  const record = completeReplayRecord(20260804);
+  const snapshot = parseReplayImport(record)[0].snapshot;
+  const exported = buildRegretRecord(snapshot, regretAnalysisFixture());
+
+  // The option carries the inner record so the backend gets the same bytes,
+  // not a snapshot re-serialisation.
+  assert.deepEqual(exported.replay.initialHands, record.initialHands);
+  assert.deepEqual(exported.replay.tricks, record.tricks);
+  const options = parseReplayImport(exported);
+  assert.equal(options[0].record.format, 'spades-ai-replay');
+});
+
+test('the unversioned regret file written by earlier builds still imports', () => {
+  const record = completeReplayRecord(20260804);
+  const legacy = { replay: record, analysis: regretAnalysisFixture() };
+
+  const options = parseReplayImport(legacy);
+  assert.equal(options.length, 1);
+  assert.deepEqual(options[0].analysis, regretAnalysisFixture());
+  assert.equal(options[0].snapshot.seed, 20260804);
+});
+
+test('a legacy regret file without an analysis imports as a plain replay', () => {
+  const record = completeReplayRecord(20260804);
+  const options = parseReplayImport({ replay: record, analysis: null });
+  assert.equal(options[0].analysis, null);
+  assert.equal(options[0].snapshot.plays.length, 52);
+});
+
+test('a bundled replay is validated as strictly as a bare one', () => {
+  const broken = structuredClone(completeReplayRecord(20260804));
+  broken.tricks[0].winner = (broken.tricks[0].winner + 1) % 4;
+
+  assert.throws(
+    () => parseReplayImport({
+      format: 'spades-ai-regret-replay',
+      version: 1,
+      replay: broken,
+      analysis: regretAnalysisFixture(),
+    }),
+    /赢家/,
+  );
+});
+
+test('a malformed regret bundle fails loudly instead of importing quietly', () => {
+  const record = completeReplayRecord(20260804);
+  assert.throws(
+    () => parseReplayImport({ format: 'spades-ai-regret-replay', version: 2, replay: record, analysis: regretAnalysisFixture() }),
+    /版本/,
+  );
+  assert.throws(
+    () => parseReplayImport({ format: 'spades-ai-regret-replay', version: 1, analysis: regretAnalysisFixture() }),
+    /缺少 replay/,
+  );
+  assert.throws(
+    () => parseReplayImport({ format: 'spades-ai-regret-replay', version: 1, replay: record }),
+    /analysis\.decisions/,
+  );
+  assert.throws(
+    () => parseReplayImport({ format: 'spades-ai-regret-replay', version: 1, replay: record, analysis: { decisions: 'nope' } }),
+    /analysis\.decisions/,
+  );
+  assert.throws(
+    () => parseReplayImport({ replay: record, analysis: { decisions: 3 } }),
+    /analysis\.decisions/,
+  );
+});
+
+test('regretBadges treats float noise as the best action', () => {
+  const decision = {
+    actions: [
+      { card: 'AS', q: 10, regret: 0, source: 'solver' },
+      { card: 'KS', q: 10 - 1e-13, regret: 1e-13, source: 'solver' },
+      { card: 'QS', q: 4, regret: 6, source: 'solver' },
+    ],
+  };
+  const badges = regretBadges(decision);
+  assert.equal(badges.AS.best, true);
+  assert.equal(badges.KS.best, true, 'a 1e-13 difference is not a real loss');
+  assert.equal(badges.QS.best, false);
+  assert.ok(REGRET_EPSILON === 1e-9);
 });

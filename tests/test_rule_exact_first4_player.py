@@ -647,13 +647,24 @@ class _ProposalSensitiveSolver:
 
 
 class _CountingBidEncoder:
+    """Counts encoded *rows*; the production path encodes each row once, batched."""
+
     def __init__(self) -> None:
         self.calls = 0
+        self.rows = 0
 
-    def encode(self, hand, previous_bids, position):
+    def encode_indices_batch(self, hand_indices, bid_slots, positions):
         self.calls += 1
+        self.rows += len(positions)
         return torch.tensor(
-            [float(len(hand)), float(len(previous_bids)), float(position)],
+            [
+                [
+                    float(len(hand)),
+                    float(len([slot for slot in slots if slot >= 0])),
+                    float(position),
+                ]
+                for hand, slots, position in zip(hand_indices, bid_slots, positions)
+            ],
             dtype=torch.float32,
         )
 
@@ -689,7 +700,10 @@ def test_batch_bid_likelihood_deduplicates_and_caches_hand_features() -> None:
     second = player._compute_batch_bid_prods([copy.deepcopy(proposal)], bids)
 
     assert first == pytest.approx([second[0], second[0]])
-    assert encoder.calls == 4
+    # Four distinct (bids, seat, hand) rows are encoded once in total: the
+    # first call encodes all four, the second one is served by the LRU cache,
+    # and the model still runs exactly one batched forward.
+    assert encoder.rows == 4
     assert model.calls == 1
 
 

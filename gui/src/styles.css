@@ -931,3 +931,290 @@ button { cursor: pointer; }
 .ctl__disc:hover {
   background: rgba(239, 68, 68, 0.25);
 }
+
+/* ── 完整复盘：牌面遗憾角标 + 侧栏明细 ─────────────────────────────── */
+/* 角标贴在右上角：手牌是向右扇开的，右侧被压住的是下一张牌的左半边，
+   右上角始终露在外面；右下角的 --br 角标反而会被压掉。 */
+.pcard__badge {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  min-width: 22px;
+  padding: 1px 5px;
+  border-radius: 7px;
+  font-size: calc(var(--card-w) * 0.19);
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: 0.01em;
+  color: #0d1a12;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 3;
+}
+.pcard__badge.is-best { background: #46d17f; border-color: #1f7d49; }
+.pcard__badge.is-small-loss { background: #ffe08a; border-color: #b98b1c; }
+.pcard__badge.is-loss { background: #ffab68; border-color: #b85f11; color: #2a1200; }
+.pcard__badge.is-blunder { background: #ff6b6b; border-color: #9d1f1f; color: #2a0000; }
+.pcard__badge.is-unknown,
+.pcard__badge.is-blocked {
+  background: rgba(20, 26, 22, 0.78);
+  color: #cfd8d0;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* 侧栏让位：完整复盘在右列多开一栏放明细面板 */
+.stage--regret {
+  /* 四家的手牌要平铺不重叠，所以两侧栏比普通复盘宽，顶上那家横跨整行。 */
+  grid-template-columns:
+    minmax(150px, 1.05fr) minmax(300px, 1.5fr) minmax(150px, 1.05fr) minmax(300px, 1.05fr);
+  grid-template-areas:
+    "top  top   top   panel"
+    "left table right panel"
+    "hand hand  hand  panel";
+  column-gap: 14px;
+  padding-bottom: 8px;
+}
+.stage--regret .stage__top { align-self: start; margin-top: 2px; }
+.stage--regret .stage__hand { align-self: end; }
+.stage--regret .regret-panel { grid-area: panel; }
+
+@media (max-width: 1400px) {
+  .stage--regret {
+    grid-template-columns: minmax(130px, 1fr) minmax(260px, 1.4fr) minmax(130px, 1fr) minmax(280px, 1.05fr);
+  }
+}
+
+.regret-panel {
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 8px;
+  border-radius: 16px;
+  background: rgba(6, 20, 13, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+.regret-panel__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.regret-panel__summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.regret-panel__summary span { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.04em; }
+.regret-panel__summary strong { font-size: 1.02rem; color: var(--gold-soft); }
+
+.regret-panel__seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.regret-panel__seats span {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.regret-panel__seats span.team-0 { color: var(--team0); }
+.regret-panel__seats span.team-1 { color: var(--team1); }
+
+.regret-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.regret-panel__list::-webkit-scrollbar { width: 8px; }
+.regret-panel__list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+
+.regret-row {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+.regret-row.is-selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-dim), 0 0 16px rgba(231, 193, 104, 0.22);
+  background: rgba(231, 193, 104, 0.12);
+}
+.regret-row__main {
+  display: grid;
+  grid-template-columns: 58px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  font-size: 0.76rem;
+}
+.regret-row__main:hover { background: rgba(255, 255, 255, 0.06); }
+.regret-row__where { color: var(--muted); font-size: 0.68rem; }
+.regret-row__seat.team-0 { color: var(--team0); }
+.regret-row__seat.team-1 { color: var(--team1); }
+.regret-row__cards { font-variant-numeric: tabular-nums; }
+.regret-row__cards em { color: var(--muted); font-style: normal; margin-left: 4px; }
+.regret-row__value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border-radius: 7px;
+  font-size: 0.72rem;
+}
+.regret-row__value.is-best { color: #46d17f; background: rgba(70, 209, 127, 0.14); }
+.regret-row__value.is-small-loss { color: #ffe08a; background: rgba(255, 224, 138, 0.13); }
+.regret-row__value.is-loss { color: #ffab68; background: rgba(255, 171, 104, 0.14); }
+.regret-row__value.is-blunder { color: #ff8080; background: rgba(255, 107, 107, 0.16); }
+.regret-row__value.is-flat { color: var(--muted); background: rgba(255, 255, 255, 0.06); font-weight: 500; }
+
+.regret-row__toggle {
+  width: 100%;
+  padding: 3px 9px 6px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  text-align: left;
+  text-decoration: underline dotted;
+}
+.regret-row__toggle:hover { color: var(--gold-soft); }
+
+.regret-detail {
+  padding: 2px 9px 9px;
+  font-size: 0.68rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.regret-detail table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.regret-detail th,
+.regret-detail td {
+  padding: 2px 4px;
+  text-align: right;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+.regret-detail th:first-child,
+.regret-detail td:first-child { text-align: left; }
+.regret-detail tr.is-actual td { color: var(--gold-soft); font-weight: 700; }
+.regret-detail th { color: var(--muted); font-weight: 500; }
+.regret-detail__proposals { margin-top: 6px; }
+.regret-detail__proposals summary { cursor: pointer; color: var(--muted); }
+
+.regret-panel__hint {
+  margin: 0;
+  font-size: 0.62rem;
+  line-height: 1.45;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.mode-card--full-replay {
+  background: linear-gradient(180deg, rgba(111, 176, 255, 0.16), rgba(4, 26, 44, 0.95));
+  border-color: rgba(111, 176, 255, 0.4);
+}
+.mode-card--full-replay:hover { transform: none; }
+
+/* ── 完整复盘：手牌平铺（不叠、不遮角标） ───────────────────────────── */
+/* 扇形布局把每张牌压在下一张下面，正好盖住角标，所以完整复盘改成普通文档流：
+   一张挨一张、放不下就换行、容器不够高就滚动，任何视口下都不会重叠。 */
+.replay-hand.is-flat {
+  width: 100%;
+  height: auto;
+  max-height: min(40vh, 330px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 2px 0;
+  z-index: auto;
+}
+.replay-hand.is-flat::-webkit-scrollbar { width: 6px; }
+.replay-hand.is-flat::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+/* 抵消扇形模式给每张牌设的绝对定位、旋转与负外边距，让它们回到普通文档流。
+   这里必须写成 `position: relative` 而不是 `static`：卡面里的点数/花色角标
+   （.pcard__corner）、中央花色（.pcard__pip）和遗憾角标（.pcard__badge）
+   都是 absolute，靠 .pcard 自身当定位锚点；一旦变成 static，它们就会跑到
+   最近的已定位祖先（整个桌面）上去，牌面变空白、符号散落一地。 */
+.replay-hand.is-flat .replay-hand__card {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  margin: 0;
+  transform: none;
+  transition: box-shadow 160ms ease;
+}
+/* 平铺时用稍大的牌，角标数字才读得清。 */
+.replay-hand.is-flat .pcard.size-sm { --card-w: 62px; --card-h: 88px; }
+.replay-hand.is-flat .pcard.size-lg { --card-w: 76px; --card-h: 108px; }
+/* 顶上那家横跨三栏，标签贴着手牌下沿居中即可。 */
+.replay-seat--top.is-flat { width: 100%; }
+
+/* 平铺模式下座位要真正占满所在网格列：`.replay-seat` 默认是 shrink-to-fit，
+   里面的 `width: 100%` 会算不出宽度而塌缩成一张牌。 */
+.stage--regret .stage__top,
+.stage--regret .stage__left,
+.stage--regret .stage__right,
+.stage--regret .stage__hand {
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+}
+.replay-seat.is-flat {
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
+}
+
+/* 完整复盘侧栏的出处行：这些数字是哪份超参配置算出来的 */
+.regret-panel__provenance {
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 9px;
+  font-size: 0.62rem;
+  line-height: 1.45;
+  color: var(--gold-soft);
+  background: rgba(231, 193, 104, 0.1);
+  border: 1px solid rgba(231, 193, 104, 0.24);
+  flex-shrink: 0;
+}

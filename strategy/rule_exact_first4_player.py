@@ -37,7 +37,7 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import torch
 
@@ -58,6 +58,16 @@ from strategy.rule_based_first4_player import (
 # ── parallel solver worker (module-level for multiprocessing picklability) ──
 
 _WORKER_SOLVER: ExactDoubleDummyCppFastestSolver | None = None
+
+
+def card_to_compact_code(card: Card) -> str:
+    """Return the frontend card code ("AS", "TH", ...) for a Card.
+
+    ``str(card)`` renders suit *symbols* ("A♠"); the GUI, the replay record and
+    the regret analysis all speak the two-character code instead, so anything
+    that crosses that boundary must use this helper.
+    """
+    return f"{card.rank.short}{card.suit.short}"
 
 
 def _initialize_solver_worker() -> None:
@@ -144,7 +154,26 @@ def _solve_proposal_safely(
 
 # ── minimum batch size to trigger parallel solving ──
 _MIN_PARALLEL_BATCH = 8
+# Posterior-replay solver queries are uniformly tiny (sub-millisecond), so the
+# batch dispatcher hands the pool several per chunk instead of one, which keeps
+# the main process' per-item pickling/IPC cost off the critical path.
+_SOLVER_PAYLOAD_CHUNKSIZE = 16
 _BID_LIKELIHOOD_CACHE_SIZE = 65_536
+# (checkpoint path, device) -> (BidMLP, BidEncoder); every seat shares one copy.
+_BID_BELIEF_MODEL_CACHE: dict[tuple[str, str], tuple[Any, Any]] = {}
+
+
+def _go_card_index(card_id: int) -> int:
+    """Translate a ``trick_taking`` card id into the bid encoder's index.
+
+    The two Suit enums run in opposite orders (``trick_taking``: spades, hearts,
+    diamonds, clubs; GO-MCTS encoder: clubs, diamonds, hearts, spades), so the
+    same ``suit * 13 + rank`` formula yields a different index.  Flipping the
+    suit nibble reproduces the per-card ``GoSuit[card.suit.name]`` lookup the
+    scalar path used to perform.
+    """
+
+    return (3 - (card_id // 13)) * 13 + (card_id % 13)
 
 # ``fork`` from the threaded HTTP/WebSocket servers can inherit a locked
 # Python mutex or partially initialized torch/native runtime.  ``spawn``
@@ -206,22 +235,65 @@ def _discard_persistent_solver_pool(
 def _map_persistent_solver_pool(
     num_workers: int,
     work_items: list[tuple],
+    func: Any = None,
+    chunksize: int = 1,
 ) -> list[dict[int, float]]:
-    """Map solver work through the reusable pool, serializing pool clients."""
+    """Map solver work through the reusable pool, serializing pool clients.
+
+    ``func`` defaults to the determinization worker.  Batch callers that submit
+    many uniformly tiny queries (the posterior-replay weighting) pass their own
+    top-level worker plus a larger ``chunksize``: exact-search runtimes are
+    highly skewed, so one item per chunk lets an idle worker steal the next
+    determinization instead of waiting behind a slow item, but that reasoning
+    does not apply to thousands of sub-millisecond payload solves.
+    """
     entry = _get_persistent_solver_pool(num_workers)
+    worker = func if func is not None else _exact_solver_worker.parallel_solve_worker
     try:
         with entry.map_lock:
-            # Exact-search runtimes are highly skewed.  One item per chunk lets
-            # an idle worker steal the next determinization instead of waiting
-            # behind a slow item bundled with otherwise cheap work.
             return entry.pool.map(
-                _exact_solver_worker.parallel_solve_worker,
+                worker,
                 work_items,
-                chunksize=1,
+                chunksize=max(1, int(chunksize)),
             )
     except Exception:
         _discard_persistent_solver_pool(num_workers, entry)
         raise
+
+
+def warm_up_exact_stage(num_workers: int) -> None:
+    """Boot the persistent solver pool ahead of the first exact-stage decision.
+
+    Filling the pool means spawning ``num_workers`` interpreters that each load
+    the native solver, which costs several seconds.  Left lazy, that bill lands
+    on the first card of trick five, inside the player's turn; paid at boot,
+    nobody is waiting for it.  Best-effort: a failure here only means the first
+    request pays the cost as before.
+    """
+
+    if num_workers <= 1:
+        return
+    try:
+        _map_persistent_solver_pool(
+            num_workers,
+            [None] * num_workers,
+            func=_exact_solver_worker.solver_ready_probe,
+            chunksize=1,
+        )
+    except Exception:
+        pass
+    try:
+        # The posterior-replay dispatcher uses a second worker entry point;
+        # sending one (rejected) payload per worker now means the first
+        # solver-weighted decision does not pay its first-use import cost.
+        _map_persistent_solver_pool(
+            num_workers,
+            [None] * num_workers,
+            func=_exact_solver_worker.solve_native_payload_worker,
+            chunksize=1,
+        )
+    except Exception:
+        pass
 
 
 def _shutdown_persistent_solver_pools() -> None:
@@ -336,6 +408,11 @@ class RuleExactFirst4Player(AIPlayer):
         self.last_play_info: dict[str, Any] = {}
         self.last_bid_info: dict[str, Any] | None = None
         self._debug = debug  # 调试模式：在 last_play_info 中记录采样提案和 Q 值
+        # 复盘分析开关：打开后 exact 阶段额外把「每个合法动作的期望 Q」
+        # （用与选牌完全相同的重要性采样权重聚合的未裁剪 Q 均值）以及
+        # 逐个提案的 Q 值写进 last_play_info，供遗憾分析使用。
+        # 默认关闭，因此对局/评测行为与耗时完全不变。
+        self.collect_action_q: bool = False
         self._deal_key: tuple[int, tuple[int, ...]] | None = None
         self._posterior_cache: _PosteriorCache | None = None
         self._last_pool_cache_hit = False
@@ -594,6 +671,11 @@ class RuleExactFirst4Player(AIPlayer):
         agg_q: dict[int, float] = {}
         my_team = 0 if self.position in (0, 2) else 1
 
+        # ── 复盘分析：未裁剪的期望 Q 与逐提案 Q（默认不采集） ──
+        collect_q = bool(getattr(self, "collect_action_q", False))
+        expected_q: dict[int, float] = {}
+        proposal_samples: list[dict[str, Any]] = []
+
         # ── debug: 记录 IS pool 原始统计 ──
         _debug_pool_info: dict[str, Any] | None = None
         _debug_unique_paired: list[dict[str, Any]] | None = None
@@ -632,6 +714,10 @@ class RuleExactFirst4Player(AIPlayer):
                     agg_q[cid] = agg_q.get(cid, 0.0) + float(q)
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
+            if collect_q:
+                # 均匀 determinization fallback 下权重是 1/K。
+                for cid, q in agg_q.items():
+                    expected_q[cid] = float(q)
             n_samples_used = counts
             if self._debug:
                 _debug_samples = _debug_fallback_qs
@@ -883,6 +969,22 @@ class RuleExactFirst4Player(AIPlayer):
                             if multiplier > self.config.multiplier_clip:
                                 multiplier *= self.config.multiplier_clip_factor
                             agg_q[card_id] = agg_q.get(card_id, 0.0) + norm_w * multiplier
+                    if collect_q:
+                        # 与上面选牌用的是同一批提案、同一组归一化权重，
+                        # 但不做 (q - max_q) 平移与裁剪，聚合出真正的期望 Q。
+                        for card_id, q in action_q_dict.items():
+                            expected_q[card_id] = (
+                                expected_q.get(card_id, 0.0) + float(norm_w) * float(q)
+                            )
+                        proposal_samples.append({
+                            "weight": float(norm_w),
+                            "q": {
+                                card_to_compact_code(
+                                    id_to_card.get(cid, Card(Suit.SPADES, Rank.TWO))
+                                ): round(float(q), 6)
+                                for cid, q in action_q_dict.items()
+                            },
+                        })
 
         # Reconstruct action -> q using Card objects
         action_q_values: dict[Card, float] = {}
@@ -952,6 +1054,14 @@ class RuleExactFirst4Player(AIPlayer):
                 "best_value": best_value,
                 "action_scores": action_scores,
             }
+            if collect_q:
+                info["my_team"] = my_team
+                info["expected_q"] = {
+                    card_to_compact_code(id_to_card[cid]): float(value)
+                    for cid, value in expected_q.items()
+                    if cid in id_to_card
+                }
+                info["proposal_samples"] = proposal_samples
             if self._debug and _debug_pool_info is not None:
                 info["debug"] = {
                     "pool": _debug_pool_info,
@@ -967,7 +1077,16 @@ class RuleExactFirst4Player(AIPlayer):
             self.last_play_info = info
             return best_action
 
-        self.last_play_info = {"mode": "exact_no_match_fallback"}
+        info = {"mode": "exact_no_match_fallback"}
+        if collect_q:
+            info["my_team"] = my_team
+            info["expected_q"] = {
+                card_to_compact_code(id_to_card[cid]): float(value)
+                for cid, value in expected_q.items()
+                if cid in id_to_card
+            }
+            info["proposal_samples"] = proposal_samples
+        self.last_play_info = info
         return self._canonical_card_choice(legal_cards)
 
     def _determinize_state(
@@ -1080,19 +1199,29 @@ class RuleExactFirst4Player(AIPlayer):
                     ckpt = str(p.resolve())
                     break
             if ckpt:
+                # Respect the explicitly configured device. Probing CUDA here
+                # can emit driver-version warnings and silently switch the
+                # late-play belief model away from the caller's CPU setting.
                 device = getattr(self, "_bid_device", "cpu")
-                if device == "cpu" and torch.cuda.is_available():
-                    device = "cuda"
-                self._bid_model_is = BidMLP().to(device)
-                sd = torch.load(ckpt, weights_only=True, map_location=device)
-                self._bid_model_is.load_state_dict(sd)
-                self._bid_model_is.eval()
-                if device != "cpu":
-                    self._bid_model_is = torch.jit.optimize_for_inference(
-                        torch.jit.script(self._bid_model_is)
-                    )  # JIT compile for GPU inference
+                # One frozen eval-mode model is shared by every seat: each
+                # provider builds four players, and loading (and holding) four
+                # identical copies costs a checkpoint load per seat inside the
+                # first exact-stage turn of that seat.
+                cache_key = (ckpt, str(device))
+                shared = _BID_BELIEF_MODEL_CACHE.get(cache_key)
+                if shared is None:
+                    model = BidMLP().to(device)
+                    state = torch.load(ckpt, weights_only=True, map_location=device)
+                    model.load_state_dict(state)
+                    model.eval()
+                    if device != "cpu":
+                        model = torch.jit.optimize_for_inference(
+                            torch.jit.script(model)
+                        )  # JIT compile for GPU inference
+                    shared = (model, BidEncoder())
+                    _BID_BELIEF_MODEL_CACHE[cache_key] = shared
+                self._bid_model_is, self._bid_encoder_is = shared
                 self._bid_device_is = device   # 存储实际 device，避免 JIT 冻结后 parameters() 为空
-                self._bid_encoder_is = BidEncoder()
                 return True
             else:
                 self._bid_model_is = None
@@ -1123,23 +1252,6 @@ class RuleExactFirst4Player(AIPlayer):
         if not self._ensure_bid_model_loaded():
             return [1.0] * len(proposals)
 
-        go_dir = Path(__file__).resolve().parents[1] / "Spades_AI_GO-MCTS"
-        if str(go_dir) not in sys.path:
-            sys.path.insert(0, str(go_dir))
-        from spades_ai.game.card import Card as GoCard
-        from spades_ai.game.card import Rank as GoRank, Suit as GoSuit
-        from spades_ai.game.state import Bid as GoBid
-        from spades_ai.game.scoring import BidType as GoBidType
-
-        def _to_go_bid(bid_str: str) -> GoBid:
-            if bid_str == "nil":
-                return GoBid(value=0, bid_type=GoBidType.NIL)
-            if bid_str == "blind_nil":
-                return GoBid(value=0, bid_type=GoBidType.BLIND_NIL)
-            if bid_str.startswith("bid_"):
-                return GoBid(value=int(bid_str.split("_")[1]), bid_type=GoBidType.NORMAL)
-            return GoBid(value=0, bid_type=GoBidType.NORMAL)
-
         bids_key = tuple(max_bid)
         flat_keys: list[tuple[Any, ...]] = []
         missing: OrderedDict[
@@ -1160,27 +1272,36 @@ class RuleExactFirst4Player(AIPlayer):
                     missing[key] = (player_id, initial_hands[player_id])
 
         if missing:
-            go_bids = [_to_go_bid(bid) for bid in max_bid]
-            go_cards = {
-                card.card_id: GoCard(
-                    GoRank(card.rank.value),
-                    GoSuit[card.suit.name],
-                )
-                for card in STANDARD_52
-            }
             missing_items = list(missing.items())
-            features = []
-            for _, (player_id, hand) in missing_items:
-                go_hand = [go_cards[card.card_id] for card in hand]
-                features.append(
-                    self._bid_encoder_is.encode(
-                        go_hand,
-                        go_bids[:player_id],
-                        min(player_id, 2),
-                    )
-                )
+            # Bid slots per seat: seat k's bid is only visible to a bidder who
+            # comes after it, which is exactly the prefix the single-row
+            # encoder was handed (``go_bids[:player_id]``).
+            slots_by_seat = [
+                [
+                    -1 if seat >= player_id
+                    else self._bid_str_to_mlp_index(max_bid[seat])
+                    for seat in range(4)
+                ]
+                for player_id in range(4)
+            ]
+            hand_indices = [
+                [_go_card_index(card.card_id) for card in hand]
+                for _, (_, hand) in missing_items
+            ]
+            bid_slots = [slots_by_seat[player_id] for _, (player_id, _) in missing_items]
+            positions = [
+                min(player_id, 2)
+                for _, (player_id, _) in missing_items
+            ]
+            # One vectorised encode for the whole batch instead of one tiny
+            # torch-driven encode per hand; bit-identical (see the encoder's
+            # encode_indices_batch).
+            x = self._bid_encoder_is.encode_indices_batch(
+                hand_indices,
+                bid_slots,
+                positions,
+            ).to(self._bid_device_is)
 
-            x = torch.stack(features, dim=0).to(self._bid_device_is)
             with torch.no_grad():
                 logits = self._bid_model_is(x)
             probs = torch.softmax(logits, dim=-1)
@@ -1597,6 +1718,51 @@ class RuleExactFirst4Player(AIPlayer):
         del player_id, current_hand, prior_plays, max_bid
         return replay_player.play_card(legal_cards, state_view)
 
+    def _first4_replay_expected_cards_batch(
+        self,
+        replay_players: Sequence[Any],
+        legal_batch: Sequence[list[Card]],
+        state_views: Sequence[dict[str, Any]],
+        *,
+        player_id: int,
+        hands: Sequence[list[Card]],
+        prior_plays: Sequence[tuple[int, Card]],
+        max_bid: list[str] | None,
+    ) -> list[Card | None]:
+        """Judge one whole replay step (all proposals of one public action).
+
+        The default implementation keeps the historical per-proposal behaviour:
+        every proposal is judged on its own, and a proposal whose replay model
+        raises simply receives no verdict, so the caller applies no penalty to
+        it.  Subclasses may override this to evaluate the batch with a single
+        policy forward; an override must return one verdict per proposal, in
+        the same order, or raise.
+        """
+
+        verdicts: list[Card | None] = []
+        for replay_player, legal, state_view, hand in zip(
+            replay_players,
+            legal_batch,
+            state_views,
+            hands,
+        ):
+            try:
+                verdicts.append(
+                    self._first4_replay_expected_card(
+                        replay_player,
+                        legal,
+                        state_view,
+                        player_id=player_id,
+                        current_hand=hand,
+                        prior_plays=prior_plays,
+                        max_bid=max_bid,
+                    )
+                )
+            except Exception as error:
+                self._handle_first4_replay_error(error)
+                verdicts.append(None)
+        return verdicts
+
     def _first4_replay_card_played(
         self,
         replay_player: Any,
@@ -1680,6 +1846,17 @@ class RuleExactFirst4Player(AIPlayer):
                 else 0
             )
 
+            # ── 第 1 遍：合法性检查 + 收集本步要判定的提案 ──
+            # 判定本身是纯函数（每份提案相互独立、无隐藏状态），所以可以攒成
+            # 一批交给 _first4_replay_expected_cards_batch，生产实现会用一次
+            # 神经网络前向覆盖全部提案。收集时用的 current_bits /
+            # completed_ranks_by_suit 都还是本步推进之前的值，与逐提案版本一致。
+            judge_indices: list[int] = []
+            judge_hands: list[list[Card]] = []
+            judge_legal: list[list[Card]] = []
+            judge_state_views: list[dict[str, Any]] = []
+            judge_teammate_action = step_idx < 16 and player == teammate
+
             for proposal_index, proposal in enumerate(proposals):
                 if not valid[proposal_index]:
                     continue
@@ -1703,41 +1880,59 @@ class RuleExactFirst4Player(AIPlayer):
                     valid[proposal_index] = False
                     continue
 
-                if step_idx < 16 and player == teammate:
+                if judge_teammate_action:
                     current_hand = [
                         candidate
                         for candidate in proposal[player]
                         if current_bits & (1 << candidate.card_id)
                     ]
-                    legal = self._compute_legal_cards_for_state(
-                        current_hand,
-                        pos_in_trick,
-                        led_suit,
-                        spades_broken,
+                    judge_indices.append(proposal_index)
+                    judge_hands.append(current_hand)
+                    judge_legal.append(
+                        self._compute_legal_cards_for_state(
+                            current_hand,
+                            pos_in_trick,
+                            led_suit,
+                            spades_broken,
+                        )
                     )
-                    state_view: dict[str, Any] = {
+                    judge_state_views.append({
                         "table_cards": list(solver_table),
                         "tricks_played": replay_tricks_played,
                         "spades_broken": spades_broken,
                         "trump_broken": spades_broken,
-                    }
-                    try:
-                        expected = self._first4_replay_expected_card(
-                            replay_players[proposal_index],
-                            legal,
-                            state_view,
-                            player_id=teammate,
-                            current_hand=current_hand,
-                            prior_plays=play_sequence[:step_idx],
-                            max_bid=max_bid,
+                    })
+
+            # ── 整批判定队友动作（生产实现 = 一次 MLP 前向算完全部提案）──
+            if judge_indices:
+                try:
+                    expected_batch = self._first4_replay_expected_cards_batch(
+                        [replay_players[i] for i in judge_indices],
+                        judge_legal,
+                        judge_state_views,
+                        player_id=teammate,
+                        hands=judge_hands,
+                        prior_plays=play_sequence[:step_idx],
+                        max_bid=max_bid,
+                    )
+                    if len(expected_batch) != len(judge_indices):
+                        raise RuntimeError(
+                            "batch replay hook returned "
+                            f"{len(expected_batch)} verdicts for "
+                            f"{len(judge_indices)} proposals"
                         )
-                        if (
-                            expected is not None
-                            and expected.card_id != card.card_id
-                        ):
-                            play_weights[proposal_index] *= self.config.bad_action_penalty_factor
-                    except Exception as error:
-                        self._handle_first4_replay_error(error)
+                except Exception as error:
+                    self._handle_first4_replay_error(error)
+                    expected_batch = [None] * len(judge_indices)
+                for proposal_index, expected in zip(judge_indices, expected_batch):
+                    if expected is not None and expected.card_id != card.card_id:
+                        play_weights[proposal_index] *= self.config.bad_action_penalty_factor
+
+            # ── 第 2 遍：第 5 墩起的等大牌张检查 + 推进手牌与回放模型 ──
+            for proposal_index, proposal in enumerate(proposals):
+                if not valid[proposal_index]:
+                    continue
+                current_bits = hand_bits[proposal_index][player]
 
                 if step_idx >= 16 and player == teammate:
                     current_hand = [
@@ -1815,6 +2010,379 @@ class RuleExactFirst4Player(AIPlayer):
                 (
                     play_weights[proposal_index]
                     * bid_prods[proposal_index],
+                    snapshot,
+                )
+            )
+        return results
+
+    def _solve_solver_payloads(
+        self,
+        payloads: list[tuple],
+    ) -> list[dict[int, float]]:
+        """Solve compact native payloads, on the worker pool when available.
+
+        Falls back to the calling process on any pool failure (or when only one
+        worker is configured), so behaviour never depends on multiprocessing
+        being healthy.
+        """
+
+        if not payloads:
+            return []
+        if len(payloads) >= _MIN_PARALLEL_BATCH and self._num_workers > 1:
+            num_workers = min(self._num_workers, len(payloads))
+            try:
+                return _map_persistent_solver_pool(
+                    num_workers,
+                    payloads,
+                    func=_exact_solver_worker.solve_native_payload_worker,
+                    chunksize=_SOLVER_PAYLOAD_CHUNKSIZE,
+                )
+            except Exception:
+                pass
+        return [
+            self.exact_solver.solve_native_with_q_payload(payload)
+            for payload in payloads
+        ]
+
+    def _compute_importance_weights_slow_batch(
+        self,
+        proposals: list[list[list[Card]]],
+        play_sequence: list[tuple[int, Card]],
+        bid_prods: list[float],
+        max_bid: list[str] | None,
+        observer_id: int,
+        original_state: GameState | None,
+    ) -> list[tuple[float, _ReplaySnapshot | None]]:
+        """Solver-weighted posterior replay for the whole proposal batch.
+
+        Semantically identical to calling
+        :meth:`_compute_importance_weight_with_snapshot` once per proposal, but
+        organised step-major so that every per-proposal cost becomes a batched
+        one:
+
+        * the step ``step < 16`` partner verdict is one policy forward for the
+          whole batch instead of one per proposal;
+        * the solved state is a 35-integer native payload drawn from the
+          bitsets this loop already maintains, so the per-proposal
+          ``copy.deepcopy(GameState)`` disappears entirely;
+        * the payloads of one step go to the worker pool in a single batch.
+
+        Only the public part of the replay advances globally; concealed hands
+        stay per-proposal bitsets.
+        """
+
+        if len(proposals) != len(bid_prods):
+            raise ValueError("proposal and bid-product counts differ")
+        if not proposals:
+            return []
+
+        solver_threshold = max(0, self.config.trick_num_threshold)
+        needs_solver_weighting = (
+            self.exact_solver is not None
+            and original_state is not None
+            and solver_threshold * 4 < len(play_sequence)
+        )
+        if needs_solver_weighting and not hasattr(
+            self.exact_solver, "solve_native_with_q_payload"
+        ):
+            # A solver without the compact-payload API keeps the historical
+            # per-proposal implementation, so behaviour never depends on which
+            # solver implementation is injected.
+            return [
+                self._compute_importance_weight_with_snapshot(
+                    initial_hands,
+                    play_sequence,
+                    max_bid=max_bid,
+                    bid_prod=bid_prod,
+                    original_state=original_state,
+                    observer_id=observer_id,
+                )
+                for initial_hands, bid_prod in zip(proposals, bid_prods)
+            ]
+
+        sequence_key = tuple(
+            (int(player), int(card.card_id))
+            for player, card in play_sequence
+        )
+        teammate = (observer_id + 2) % 4
+        hand_bits = [
+            [
+                sum(1 << card.card_id for card in hand)
+                for hand in proposal
+            ]
+            for proposal in proposals
+        ]
+        hand_counts = [
+            [bin(bits).count("1") for bits in row]
+            for row in hand_bits
+        ]
+        valid = [True] * len(proposals)
+        weights = [1.0] * len(proposals)
+        replay_players = [
+            self._create_first4_replay_player(
+                teammate,
+                list(proposal[teammate]),
+                max_bid,
+            )
+            for proposal in proposals
+        ]
+
+        spades_broken = False
+        pos_in_trick = 0
+        led_suit: Suit | None = None
+        completed_ranks_by_suit = {suit: set() for suit in Suit}
+        solver_table: list[tuple[int, Card]] = []
+        replay_tricks_played = 0
+        replay_tricks_won = [0, 0, 0, 0]
+
+        solver_enabled = needs_solver_weighting
+        teams = tuple(
+            int(team)
+            for team in getattr(original_state, "teams", (0, 1, 0, 1))
+        )
+        max_bid_native = tuple(
+            self.exact_solver._bid_to_native(value)
+            for value in (max_bid or (None, None, None, None))
+        )
+        num_players = int(getattr(original_state, "num_players", 4))
+
+        for step_idx, (player, card) in enumerate(play_sequence):
+            if pos_in_trick == 0:
+                led_suit = card.suit
+
+            card_bit = 1 << card.card_id
+            led_mask = (
+                0x1FFF << (int(led_suit.value) * 13)
+                if led_suit is not None
+                else 0
+            )
+            judge_teammate_action = step_idx < 16 and player == teammate
+            check_equal_magnitude = step_idx >= 16 and player == teammate
+            solve_this_step = (
+                solver_enabled and step_idx // 4 >= solver_threshold
+            )
+
+            # ── 第 1 遍：合法性检查 + 收集本步的整批判定与求解请求 ──
+            judge_indices: list[int] = []
+            judge_hands: list[list[Card]] = []
+            judge_legal: list[list[Card]] = []
+            judge_state_views: list[dict[str, Any]] = []
+            equal_magnitude_indices: list[tuple[int, list[Card]]] = []
+            payloads: list[tuple] = []
+            payload_indices: list[int] = []
+
+            for proposal_index, proposal in enumerate(proposals):
+                if not valid[proposal_index]:
+                    continue
+                current_bits = hand_bits[proposal_index][player]
+                if not current_bits & card_bit:
+                    valid[proposal_index] = False
+                    continue
+                if (
+                    pos_in_trick == 0
+                    and not spades_broken
+                    and card.suit == Suit.SPADES
+                    and current_bits & ~0x1FFF
+                ):
+                    valid[proposal_index] = False
+                    continue
+                if (
+                    pos_in_trick != 0
+                    and current_bits & led_mask
+                    and card.suit != led_suit
+                ):
+                    valid[proposal_index] = False
+                    continue
+
+                if judge_teammate_action:
+                    current_hand = [
+                        candidate
+                        for candidate in proposal[player]
+                        if current_bits & (1 << candidate.card_id)
+                    ]
+                    judge_indices.append(proposal_index)
+                    judge_hands.append(current_hand)
+                    judge_legal.append(
+                        self._compute_legal_cards_for_state(
+                            current_hand,
+                            pos_in_trick,
+                            led_suit,
+                            spades_broken,
+                        )
+                    )
+                    judge_state_views.append({
+                        "table_cards": list(solver_table),
+                        "tricks_played": replay_tricks_played,
+                        "spades_broken": spades_broken,
+                        "trump_broken": spades_broken,
+                    })
+
+                if check_equal_magnitude:
+                    equal_magnitude_indices.append((
+                        proposal_index,
+                        [
+                            candidate
+                            for candidate in proposal[player]
+                            if current_bits & (1 << candidate.card_id)
+                        ],
+                    ))
+
+                if solve_this_step:
+                    payload_indices.append(proposal_index)
+                    payloads.append(
+                        self.exact_solver.pack_native_payload(
+                            hand_bits[proposal_index],
+                            hand_counts[proposal_index],
+                            tuple(
+                                (pid, entry_card.suit.value, entry_card.rank.value)
+                                for pid, entry_card in solver_table
+                            ),
+                            turn=player,
+                            trick_leader=(
+                                solver_table[0][0] if solver_table else player
+                            ),
+                            spades_broken=spades_broken,
+                            tricks_played=replay_tricks_played,
+                            tricks_won=replay_tricks_won,
+                            max_bid_native=max_bid_native,
+                            teams=teams,
+                            num_players=num_players,
+                        )
+                    )
+
+            # ── 队友动作判定：整批一次前向 ──
+            if judge_indices:
+                try:
+                    expected_batch = self._first4_replay_expected_cards_batch(
+                        [replay_players[i] for i in judge_indices],
+                        judge_legal,
+                        judge_state_views,
+                        player_id=teammate,
+                        hands=judge_hands,
+                        prior_plays=play_sequence[:step_idx],
+                        max_bid=max_bid,
+                    )
+                    if len(expected_batch) != len(judge_indices):
+                        raise RuntimeError(
+                            "batch replay hook returned "
+                            f"{len(expected_batch)} verdicts for "
+                            f"{len(judge_indices)} proposals"
+                        )
+                except Exception as error:
+                    self._handle_first4_replay_error(error)
+                    expected_batch = [None] * len(judge_indices)
+                for proposal_index, expected in zip(judge_indices, expected_batch):
+                    if expected is not None and expected.card_id != card.card_id:
+                        weights[proposal_index] *= (
+                            self.config.bad_action_penalty_factor
+                        )
+
+            # ── 第 5 墩起：等大牌张检查 ──
+            for proposal_index, current_hand in equal_magnitude_indices:
+                if self._card_has_larger_equal_magnitude(
+                    card,
+                    current_hand,
+                    completed_ranks_by_suit,
+                ):
+                    weights[proposal_index] *= self.config.bad_action_penalty_factor
+
+            # ── 第 9 墩起：求解器 Q 值判定（整批下发 worker）──
+            if payloads:
+                results = self._solve_solver_payloads(payloads)
+                if len(results) != len(payloads):
+                    raise RuntimeError(
+                        "solver batch returned "
+                        f"{len(results)} results for {len(payloads)} payloads"
+                    )
+                for proposal_index, action_q in zip(payload_indices, results):
+                    if not action_q:
+                        continue
+                    acting_team = teams[player]
+                    best_q_val = (
+                        max(action_q.values())
+                        if acting_team == 0
+                        else min(action_q.values())
+                    )
+                    good_count = sum(
+                        1 for value in action_q.values() if value == best_q_val
+                    )
+                    bad_count = len(action_q) - good_count
+                    q_val = action_q.get(card.card_id)
+                    if q_val is None:
+                        valid[proposal_index] = False
+                        weights[proposal_index] = 0.0
+                        continue
+                    if q_val == best_q_val:
+                        continue
+                    if good_count + bad_count > 0:
+                        expr = self.config.bad_action_weight.strip()
+                        try:
+                            mult = float(expr)
+                        except ValueError:
+                            mult = bad_count / (good_count + bad_count)
+                        weights[proposal_index] *= mult
+
+            # ── 推进手牌 bitset 与公开状态 ──
+            for proposal_index in range(len(proposals)):
+                if not valid[proposal_index]:
+                    continue
+                hand_bits[proposal_index][player] &= ~card_bit
+                hand_counts[proposal_index][player] -= 1
+                try:
+                    self._first4_replay_card_played(
+                        replay_players[proposal_index],
+                        player,
+                        card,
+                    )
+                except Exception as error:
+                    self._handle_first4_replay_error(error)
+
+            solver_table.append((player, card))
+            if card.suit == Suit.SPADES:
+                spades_broken = True
+            pos_in_trick = (pos_in_trick + 1) % 4
+            if pos_in_trick == 0:
+                winner, _ = _trick_current_winner(solver_table, Suit.SPADES)
+                replay_tricks_won[winner] += 1
+                replay_tricks_played += 1
+                for _, completed_card in solver_table:
+                    completed_ranks_by_suit[completed_card.suit].add(
+                        completed_card.rank.value
+                    )
+                solver_table.clear()
+                led_suit = None
+
+        results: list[tuple[float, _ReplaySnapshot | None]] = []
+        for proposal_index, proposal in enumerate(proposals):
+            if not valid[proposal_index] or weights[proposal_index] <= 0.0:
+                results.append((0.0, None))
+                continue
+            remaining_hands = [
+                [
+                    card
+                    for card in proposal[player]
+                    if hand_bits[proposal_index][player] & (1 << card.card_id)
+                ]
+                for player in range(4)
+            ]
+            snapshot = _ReplaySnapshot(
+                sequence_key=sequence_key,
+                hands=remaining_hands,
+                spades_broken=spades_broken,
+                pos_in_trick=pos_in_trick,
+                led_suit=led_suit,
+                play_weight=weights[proposal_index],
+                completed_ranks_by_suit={
+                    suit: set(ranks)
+                    for suit, ranks in completed_ranks_by_suit.items()
+                },
+                solver_table=list(solver_table),
+                replay_tricks_played=replay_tricks_played,
+                replay_tricks_won=list(replay_tricks_won),
+            )
+            results.append(
+                (
+                    weights[proposal_index] * bid_prods[proposal_index],
                     snapshot,
                 )
             )
@@ -2321,20 +2889,14 @@ class RuleExactFirst4Player(AIPlayer):
                     observer_id,
                 )
             else:
-                weighted_replays = [
-                    self._compute_importance_weight_with_snapshot(
-                        initial_hands,
-                        play_sequence,
-                        max_bid=max_bid,
-                        bid_prod=bid_prod,
-                        original_state=state,
-                        observer_id=observer_id,
-                    )
-                    for initial_hands, bid_prod in zip(
-                        batch_proposals,
-                        bid_prods,
-                    )
-                ]
+                weighted_replays = self._compute_importance_weights_slow_batch(
+                    batch_proposals,
+                    play_sequence,
+                    bid_prods,
+                    max_bid,
+                    observer_id,
+                    state,
+                )
 
             # Filter zero-weight proposals.
             for initial_hands, bid_prod, (weight, replay) in zip(

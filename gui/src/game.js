@@ -1031,18 +1031,89 @@ function replayOption(record, index, label = null) {
     label: label || (typeof record.label === 'string' && record.label.trim()) || `种子 ${snapshot.seed}`,
     snapshot,
     index,
+    // The portable record survives on the option so 完整复盘 can hand the very
+    // same bytes back to the backend instead of re-serialising the snapshot.
+    record,
+  };
+}
+
+/** Format identifier for the bundle 完整复盘 exports (record + analysis). */
+export const REGRET_REPLAY_FORMAT = 'spades-ai-regret-replay';
+
+/**
+ * Package a replay record together with its regret analysis.
+ * Input: the replay snapshot and a finished analysis (may be null).
+ * Output: a versioned document that both 导入复盘 and 完整复盘 can read back.
+ */
+export function buildRegretRecord(snapshot, analysis) {
+  return {
+    format: REGRET_REPLAY_FORMAT,
+    version: 1,
+    replay: buildReplayRecord(snapshot),
+    analysis: analysis ?? null,
+  };
+}
+
+/**
+ * Recognise a 完整复盘 export and split it back into its parts.
+ * Accepts the versioned format and the unversioned `{replay, analysis}` shape
+ * written by earlier builds, so already-exported files keep working.
+ * Output: `{ replay, analysis }`, or null when the document is not a bundle.
+ */
+function regretBundle(document) {
+  if (document.format === REGRET_REPLAY_FORMAT) {
+    if (document.version !== 1) {
+      replayImportError(`不支持的完整复盘版本 ${JSON.stringify(document.version)}`);
+    }
+    if (!document.replay || typeof document.replay !== 'object' || Array.isArray(document.replay)) {
+      replayImportError('完整复盘文件缺少 replay 记录');
+    }
+    if (
+      !document.analysis
+      || typeof document.analysis !== 'object'
+      || Array.isArray(document.analysis)
+      || !Array.isArray(document.analysis.decisions)
+    ) {
+      replayImportError('完整复盘文件缺少有效的 analysis.decisions');
+    }
+    return { replay: document.replay, analysis: document.analysis };
+  }
+  if (document.format === undefined && document.replay && typeof document.replay === 'object') {
+    const analysis = document.analysis;
+    if (
+      analysis != null
+      && (typeof analysis !== 'object' || Array.isArray(analysis) || !Array.isArray(analysis.decisions))
+    ) {
+      replayImportError('完整复盘文件的 analysis.decisions 无效');
+    }
+    return { replay: document.replay, analysis: analysis ?? null };
+  }
+  return null;
+}
+
+function regretOption(bundle, index) {
+  const option = replayOption(bundle.replay, index);
+  return {
+    ...option,
+    analysis: bundle.analysis,
+    label: bundle.analysis ? `${option.label} · 含遗憾分析` : option.label,
   };
 }
 
 /**
  * Parse an imported replay JSON document.
- * Supports the GUI's portable record, DeepSeek team-match output, and a
- * summary/bundle containing portable records. Every hand is fully validated
- * before it is returned to the replay screen.
+ * Supports the GUI's portable record, DeepSeek team-match output, a
+ * summary/bundle containing portable records, and the regret bundle that
+ * 完整复盘 itself exports. Every hand is fully validated before it is
+ * returned to the replay screen.
  */
 export function parseReplayImport(document) {
   if (!document || typeof document !== 'object' || Array.isArray(document)) {
     replayImportError('顶层必须是 JSON 对象');
+  }
+  const bundle = regretBundle(document);
+  if (bundle) {
+    return [regretOption(bundle, 0)];
   }
   if (document.format === 'spades-ai-replay') {
     return [replayOption(document, 0)];
@@ -1107,6 +1178,174 @@ export const REPLAY_PACE = {
   cardStep: 650,
   trickHold: 1200,
 };
+
+/* ───────────────────────────────────────────────────────────────────
+ * 完整复盘 (full replay regret) — backend job client + pure helpers
+ * ─────────────────────────────────────────────────────────────────── */
+
+/** Team that owns a seat: team 0 = seats 0 & 2, team 1 = seats 1 & 3. */
+export function regretTeamOf(seat) {
+  return seat % 2;
+}
+
+/**
+ * Ask the AI backend to analyse a replay record's last nine tricks.
+ * Input: a portable replay record (same shape 导入复盘 accepts).
+ * Output: the backend job id, polled with fetchRegretJob.
+ */
+export async function startRegretAnalysis(record) {
+  let response;
+  try {
+    response = await fetch('/api/analyze-replay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`无法连接 AI 后端：${detail}`);
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    let detail = text;
+    try {
+      detail = JSON.parse(text).error || text;
+    } catch {
+      // Keep the raw body when the backend did not return JSON.
+    }
+    throw new Error(`分析请求失败（HTTP ${response.status}）：${detail || '无错误详情'}`);
+  }
+
+  const payload = await response.json();
+  if (!payload.ok || !payload.jobId) {
+    throw new Error(payload.error || 'AI 后端没有返回作业编号');
+  }
+  return payload.jobId;
+}
+
+/**
+ * Poll one regret-analysis job.
+ * Input: the job id returned by startRegretAnalysis.
+ * Output: { status, progress, error, result }; status ∈ queued|running|done|error.
+ */
+export async function fetchRegretJob(jobId) {
+  let response;
+  try {
+    response = await fetch(`/api/analyze-replay?jobId=${encodeURIComponent(jobId)}`);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`无法连接 AI 后端：${detail}`);
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    let detail = text;
+    try {
+      detail = JSON.parse(text).error || text;
+    } catch {
+      // Keep the raw body when the backend did not return JSON.
+    }
+    throw new Error(`查询分析进度失败（HTTP ${response.status}）：${detail || '无错误详情'}`);
+  }
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || 'AI 后端返回错误');
+  return payload;
+}
+
+/**
+ * Look up the analysed decision that precedes the play at `playIndex`.
+ * Input: an analysis result and a replay cursor (0..52).
+ * Output: the decision object, or null when that play was not analysed.
+ */
+export function regretDecisionAt(analysis, playIndex) {
+  if (!analysis || !Array.isArray(analysis.decisions)) return null;
+  return analysis.decisions.find((decision) => decision.playIndex === playIndex) ?? null;
+}
+
+/**
+ * Format one regret value for display.
+ * Input: a number of points (or null) and a digit count.
+ * Output: a short string such as "12.3", "0" or "—".
+ */
+export function formatRegret(value, digits = 1) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  // Round first so a tiny negative float cannot render as "-0.0".
+  const rounded = Number(value.toFixed(digits));
+  if (rounded === 0) return '0';
+  return rounded.toFixed(digits);
+}
+
+/**
+ * Regrets at or below this are float noise between two equivalent aggregations
+ * of the same expected Q, not a real loss. Shared with the analysis engine.
+ */
+export const REGRET_EPSILON = 1e-9;
+
+/**
+ * Build the per-card annotation for one analysed decision.
+ * Input: a decision object.
+ * Output: { [cardCode]: { regret, q, best, source } } for every legal card.
+ */
+export function regretBadges(decision) {
+  const badges = {};
+  if (!decision || !Array.isArray(decision.actions)) return badges;
+  for (const action of decision.actions) {
+    badges[action.card] = {
+      regret: action.regret ?? null,
+      q: action.q ?? null,
+      best: action.q != null && action.regret != null && action.regret <= REGRET_EPSILON,
+      source: action.source ?? '',
+    };
+  }
+  return badges;
+}
+
+/**
+ * Order a hand so the lowest-regret card comes first.
+ * Input: the seat's cards and the decision being annotated (may be null).
+ * Output: a new array; cards without an analysed regret keep their relative
+ *         order at the end, so an unannotated seat renders exactly as before.
+ */
+export function sortHandByRegret(cards, decision) {
+  if (!decision || !Array.isArray(decision.actions) || decision.actions.length === 0) {
+    return [...cards];
+  }
+  const regrets = new Map();
+  decision.actions.forEach((action, index) => {
+    regrets.set(action.card, {
+      regret: action.regret == null ? Number.POSITIVE_INFINITY : action.regret,
+      index,
+    });
+  });
+  return cards
+    .map((card, index) => ({ card, index, entry: regrets.get(card.code) }))
+    .sort((a, b) => {
+      if (!a.entry && !b.entry) return a.index - b.index;
+      if (!a.entry) return 1;
+      if (!b.entry) return -1;
+      if (a.entry.regret !== b.entry.regret) return a.entry.regret - b.entry.regret;
+      return a.entry.index - b.entry.index;
+    })
+    .map((entry) => entry.card);
+}
+
+/**
+ * Normalise an analysis result for the side panel.
+ * Input: a completed analysis result (possibly partial).
+ * Output: { totalRegret, analyzedActions, totalDecisions, meanRegret, perSeat, worst }.
+ */
+export function regretSummary(analysis) {
+  const summary = analysis?.summary ?? {};
+  const finite = (value) => (Number.isFinite(value) ? value : 0);
+  return {
+    totalRegret: finite(summary.totalRegret),
+    analyzedActions: finite(summary.analyzedActions),
+    totalDecisions: finite(summary.totalDecisions),
+    meanRegret: finite(summary.meanRegret),
+    perSeat: Array.isArray(summary.perSeat) ? summary.perSeat : [],
+    worst: Array.isArray(summary.worst) ? summary.worst : [],
+  };
+}
 
 /* ───────────────────────────────────────────────────────────────────
  * Remote (networked) game client — WebSocket to game_server.py

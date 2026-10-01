@@ -25,8 +25,9 @@ Derived features (30 total, zeros past the 16 meaningful values):
 """
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Sequence
 
+import numpy as np
 import torch
 
 from spades_ai.game.card import Card, Suit, Rank
@@ -41,6 +42,7 @@ _BID_DIM = 64       # 4*16
 _POS_DIM = 3
 _DERIVED_DIM = 30
 INPUT_DIM = _HAND_DIM + _BID_DIM + _POS_DIM + _DERIVED_DIM  # 149
+_SPADES_SLOT = _SUITS.index(Suit.SPADES)  # spade power reads this suit block
 
 
 def _bid_index(bid: Bid) -> int:
@@ -99,6 +101,95 @@ class BidEncoder:
 
         return vec
 
+    def encode_indices_batch(
+        self,
+        hand_indices: Sequence[Sequence[int]],
+        bid_slots: Sequence[Sequence[int]],
+        positions: Sequence[int],
+    ) -> torch.Tensor:
+        """Vectorised :meth:`encode` for a whole batch at once.
+
+        ``encode`` builds each row with ~25 tiny torch ops (a ``zeros`` fill,
+        then one scalar assignment per card, per bid, per position, plus the 30
+        derived slots), which costs far more in dispatch than in arithmetic.
+        This twin computes the identical 149-vector per row with numpy and
+        converts once, so the cost stops being proportional to the row count.
+
+        Args:
+            hand_indices: per row, the 0..51 card indices in the player's hand.
+            bid_slots:    per row, the four seats' bid slot indices (0..15); a
+                          negative entry means that seat has not bid yet.
+            positions:    per row, the relative bidding position.
+
+        Returns:
+            float32 tensor of shape (N, 149), bit-identical to stacking
+            :meth:`encode` over the same rows.
+        """
+
+        rows = len(positions)
+        if len(hand_indices) != rows or len(bid_slots) != rows:
+            raise ValueError("hand, bid and position batches must be the same length")
+
+        feats = np.zeros((rows, INPUT_DIM), dtype=np.float64)
+
+        for row, indices in enumerate(hand_indices):
+            ids = np.asarray(indices, dtype=np.int64)
+            if ids.size:
+                if ids.min() < 0 or ids.max() >= _HAND_DIM:
+                    raise ValueError("hand indices must be in [0, 51]")
+                feats[row, ids] = 1.0
+
+        filled_slots = np.full((rows, 4), -1, dtype=np.int64)
+        for row, slots in enumerate(bid_slots):
+            for seat in range(min(4, len(slots))):
+                slot = int(slots[seat])
+                if slot < 0:
+                    continue
+                if slot >= 16:
+                    raise ValueError("bid slots must be in [0, 15]")
+                filled_slots[row, seat] = slot
+                feats[row, _HAND_DIM + seat * 16 + slot] = 1.0
+
+        for row, position in enumerate(positions):
+            position = int(position)
+            if 0 <= position < _POS_DIM:
+                feats[row, _HAND_DIM + _BID_DIM + position] = 1.0
+
+        # Derived block, read back out of the hand one-hot block so the suit
+        # layout can never drift from the one above.
+        suit_bases = np.arange(4) * 13
+        suit_lengths = np.stack(
+            [feats[:, base : base + 13].sum(axis=1) for base in suit_bases],
+            axis=1,
+        )
+        high_counts = np.stack(
+            [feats[:, base + 10 : base + 13].sum(axis=1) for base in suit_bases],
+            axis=1,
+        )
+        ace_counts = np.stack(
+            [feats[:, base + 12] for base in suit_bases],
+            axis=1,
+        )
+
+        derived = np.zeros((rows, _DERIVED_DIM), dtype=np.float64)
+        derived[:, 0:4] = suit_lengths / 13.0
+        derived[:, 4:8] = high_counts / 3.0
+        derived[:, 8:12] = ace_counts
+        derived[:, 12] = suit_lengths[:, _SPADES_SLOT] / 13.0
+        derived[:, 13] = (suit_lengths == 0).sum(axis=1) / 4.0
+
+        partner = filled_slots[:, 2]
+        derived[:, 14] = np.where(partner >= 0, partner / 15.0, -1.0)
+        opponent_known = (filled_slots[:, 1] >= 0) & (filled_slots[:, 3] >= 0)
+        opponent_total = (
+            np.where(filled_slots[:, 1] >= 0, filled_slots[:, 1], 0)
+            + np.where(filled_slots[:, 3] >= 0, filled_slots[:, 3], 0)
+        )
+        derived[:, 15] = np.where(opponent_known, opponent_total / 26.0, -1.0)
+
+        feats[:, _HAND_DIM + _BID_DIM + _POS_DIM :] = derived
+        return torch.from_numpy(feats.astype(np.float32))
+
     def batch_encode(
         self,
         items: Iterable[tuple[list[Card], list[Bid], int]],
@@ -108,8 +199,16 @@ class BidEncoder:
         Returns:
             float32 tensor of shape (N, 149).
         """
-        rows = [self.encode(h, b, p) for h, b, p in items]
-        return torch.stack(rows, dim=0)
+        hands = []
+        slots = []
+        positions = []
+        for hand, prev_bids, position in items:
+            hands.append([card.index for card in hand])
+            row = [_bid_index(bid) for bid in prev_bids[:4]]
+            row.extend([-1] * (4 - len(row)))
+            slots.append(row)
+            positions.append(position)
+        return self.encode_indices_batch(hands, slots, positions)
 
 
 # ── helper ────────────────────────────────────────────────────────────────────

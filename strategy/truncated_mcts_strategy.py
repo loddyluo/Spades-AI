@@ -772,16 +772,28 @@ class TruncatedMCTSStrategy:
         go_bids = [_to_go_bid(b) for b in max_bid]
 
         # Encode each player's hand with appropriate prev_bids in seat order.
-        # initial_hands contains local Card objects -> convert to Go Card via .card_id
-        features_list = []
-        for p in range(4):
-            hand = [GoCard(GoRank(c.rank.value), GoSuit[c.suit.name]) for c in initial_hands[p]]
-            prev = go_bids[:p]  # seat order 0→1→2→3
-            position = min(p, 2)  # 0, 1, 2 for players 0,1,2; player 3 gets 2
-            features = self._bid_encoder.encode(hand, prev, position)
-            features_list.append(features.unsqueeze(0))
+        # One vectorised encode for all four seats instead of four per-row
+        # encodes (each costing ~25 tiny torch ops), and no per-card Go object
+        # construction: ``_go_card_index`` flips the suit nibble that separates
+        # the two card orderings.
+        from strategy.rule_exact_first4_player import _go_card_index
 
-        x = torch.cat(features_list, dim=0)  # (4, 149)
+        hand_indices = [
+            [_go_card_index(card.card_id) for card in initial_hands[p]]
+            for p in range(4)
+        ]
+        bid_slots = [
+            [
+                (-1 if seat >= p else self._bid_str_to_mlp_index(max_bid[seat]))
+                for seat in range(4)
+            ]
+            for p in range(4)
+        ]
+        x = self._bid_encoder.encode_indices_batch(
+            hand_indices,
+            bid_slots,
+            [min(p, 2) for p in range(4)],
+        )
         with torch.no_grad():
             logits = self._bid_model(x)  # (4, 16)
 

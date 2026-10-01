@@ -76,3 +76,27 @@ def parallel_solve_worker(args: tuple) -> dict[int, float]:
     except Exception:
         return {}
     return solve_proposal_safely(args, solver)
+
+
+def solve_native_payload_worker(payload: tuple) -> dict[int, float]:
+    """Spawn-safe entry point for compact native payloads.
+
+    The posterior replay already tracks hand bitsets, so its solver weighting
+    can ship 35 plain integers per query instead of a whole ``GameState`` (and
+    never deepcopies one).
+    """
+    try:
+        solver = _get_worker_solver()
+        return solver.solve_native_with_q_payload(payload)
+    except Exception:
+        return {}
+
+
+def solver_ready_probe(_payload: object = None) -> bool:
+    """Round-trip barrier used to boot the pool during server start-up.
+
+    Mapping this once over ``num_workers`` items forces every worker to finish
+    its initializer (and therefore load the native solver) before the first
+    real exact-stage request arrives, instead of during a player's turn.
+    """
+    return _get_worker_solver() is not None

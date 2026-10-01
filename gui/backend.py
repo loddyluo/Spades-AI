@@ -26,14 +26,18 @@ tracker, so there is no cross-request memory to keep in sync.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import random
+import subprocess
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 # ── Import paths ─────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +45,8 @@ GO_MCTS_DIR = REPO_ROOT / "evaluate" / "GO-MCTS"
 for _p in (str(REPO_ROOT), str(GO_MCTS_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+import gui.regret_jobs as regret_jobs  # noqa: E402
 
 from trick_taking.card import Card, Rank, Suit, _STANDARD_CARDS, cards_to_bitset  # noqa: E402
 from trick_taking.game_state import Bid, GameState, Phase, TrickRecord  # noqa: E402
@@ -68,6 +74,7 @@ from rl.solver_leaf_deployment import (  # noqa: E402
 from strategy.solver_leaf_mlp_exact_player import (  # noqa: E402
     SolverLeafMLPExactPlayer,
 )
+from strategy.rule_exact_first4_player import warm_up_exact_stage  # noqa: E402
 from strategy.hyperparam_config import HyperparamConfig  # noqa: E402
 from residual_bidder.actions import to_local_bid  # noqa: E402
 from residual_bidder.deployment import (  # noqa: E402
@@ -379,6 +386,28 @@ class AiChoice:
     detail: str = ""
 
 
+def sha256_file(path: Path) -> str | None:
+    """SHA-256 of a file, or None when it cannot be read."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def describe_play_config(provider: "RuleExactProvider") -> dict[str, Any]:
+    """Report exactly which hyperparameters produced a play decision.
+
+    Provenance matters here: ``multiplier_clip``/``multiplier_clip_factor``
+    change how the exact stage ranks actions, so a regret number is only
+    meaningful next to the config that generated it.
+    """
+    return {
+        "path": str(provider.config_path),
+        "sha256": provider.config_sha256,
+        "effective": asdict(provider.hyperparam_config),
+    }
+
+
 def _load_bid_model(path: str, device: str):
     """Load the GO-MCTS MLP bid model; None → heuristic fallback."""
     cp = Path(path)
@@ -413,8 +442,25 @@ class RuleExactProvider:
         print("Loading solver-leaf MLP + exact models ...", flush=True)
 
         # Load hyperparam config
+        self.config_path = Path(args.config)
         self.hyperparam_config = HyperparamConfig.from_yaml(args.config)
-        print(f"  [OK] loaded config: {args.config}", flush=True)
+        self.config_sha256 = sha256_file(self.config_path)
+        print(
+            f"  [OK] loaded config: {args.config} "
+            f"(sha256={self.config_sha256})",
+            flush=True,
+        )
+        print(
+            "       multiplier_clip="
+            f"{self.hyperparam_config.multiplier_clip} x "
+            f"{self.hyperparam_config.multiplier_clip_factor}"
+            + (
+                " (no-op)"
+                if self.hyperparam_config.multiplier_clip_factor == 1.0
+                else " (ACTIVE: tail losses are rescaled)"
+            ),
+            flush=True,
+        )
 
         self.acting_bidder = load_deployed_acting_bidder(
             checkpoint_path=Path(args.acting_bid_checkpoint),
@@ -482,6 +528,21 @@ class RuleExactProvider:
         ]
         self.ai_name = "solver_leaf_mlp_exact_residual_q_100k"
 
+        # Both of these are lazy in the normal path, and both are expensive the
+        # first time: the belief MLP has to be loaded and the solver pool has to
+        # spawn ten interpreters.  Without this, that bill lands inside the
+        # player's turn on the first card of trick five (~5s); here it lands at
+        # boot, where nothing is waiting.  All four seats are primed because
+        # otherwise each one pays it on its own first exact-stage turn.
+        # Failures are non-fatal.
+        try:
+            for player in self.players:
+                player._ensure_bid_model_loaded()
+        except Exception as error:  # pragma: no cover - diagnostics only
+            print(f"  [WARN] belief model preload failed: {error}", flush=True)
+        print("  warming solver pool ...", flush=True)
+        warm_up_exact_stage(self.players[0]._num_workers)
+
     # ── core dispatch ────────────────────────────────────────────────
     def choose_action(self, payload: dict[str, Any]) -> AiChoice:
         with self._decision_lock:
@@ -495,6 +556,75 @@ class RuleExactProvider:
             self.exact_solver,
             time_budget_seconds=1.0,
         ).to_payload()
+
+    def analyze_play_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Replay one decision and return the pipeline's per-action Q table.
+
+        This is the analysis twin of the play branch of
+        :meth:`_choose_action_serialized`: the same ``build_local_state``
+        reconstruction (own hand real, opponents' counts right, identities
+        never read), the same public-history replay, the same per-seat player
+        and therefore the same observer perspective (`state.turn` / `position`
+        decide which team's Q the exact stage optimizes).
+
+        The only difference is ``collect_action_q``: the exact stage then also
+        reports the *uncropped* expected Q it aggregated for each legal action,
+        which the live path throws away in favour of the clipped multiplier
+        sum.  Nothing about the chosen card changes.
+        """
+        with self._decision_lock:
+            state, seat = build_local_state(payload)
+            if state.phase != Phase.PLAYING:
+                raise ValueError(
+                    f"regret analysis only covers card play, got phase {state.phase}"
+                )
+            player = self.players[seat]
+
+            # Reconstruct the AI's original hand so inherited exact-stage public
+            # replay has the same initial hand identity as the live request.
+            ai_played: list[Card] = []
+            for trick in state.trick_history:
+                for pid, card in trick.cards:
+                    if pid == seat:
+                        ai_played.append(card)
+            for pid, card in state.table_cards:
+                if pid == seat:
+                    ai_played.append(card)
+            original_hand = list(state.hands[seat]) + ai_played
+
+            player.start_game(seat, original_hand, 4)
+            player.set_teams(state.teams, state.max_bid)
+            for trick in state.trick_history:
+                for pid, card in trick.cards:
+                    player.card_played(pid, card)
+            for pid, card in state.table_cards:
+                player.card_played(pid, card)
+
+            legal_cards = self.rules.playable(state, state.hands[seat], seat)
+            if not legal_cards:
+                raise ValueError(f"seat {seat} has no legal cards to play")
+
+            view = state.get_player_view(seat)
+            view["state"] = state
+
+            was_collecting = player.collect_action_q
+            player.collect_action_q = True
+            try:
+                card = player.play_card(legal_cards, view)
+            finally:
+                player.collect_action_q = was_collecting
+
+            info = (
+                dict(player.last_play_info)
+                if isinstance(player.last_play_info, dict)
+                else {}
+            )
+            return {
+                "seat": seat,
+                "chosenCard": card_to_code(card),
+                "legalCards": [card_to_code(c) for c in legal_cards],
+                "info": info,
+            }
 
     def _choose_action_serialized(self, payload: dict[str, Any]) -> AiChoice:
         state, seat = build_local_state(payload)
@@ -613,6 +743,53 @@ def choice_to_payload(choice: AiChoice, ai_name: str) -> dict[str, Any]:
 
 
 # ────────────────────────────────────────────────────────────────────────
+# 「完整复盘」分析作业
+# ────────────────────────────────────────────────────────────────────────
+# 分析子进程必须用与父进程完全相同的 CLI 参数重建同一条 pipeline，
+# 因此 main() 启动时把命令行原文记下来转发过去。
+_BACKEND_ARGV: list[str] = []
+
+
+def start_regret_job(record: Any) -> str:
+    """持久化复盘记录并拉起一个独立进程做遗憾分析，返回 job id。
+
+    为什么用子进程而不是线程：
+    - 一次完整分析要做 30 多轮 3456 份 IS 提案 + 最多 256 次精确求解，耗时
+      以十分钟计；放进 HTTP 进程会长时间占住 GIL，把正在进行的对局卡死。
+    - 求解器的 native 全局缓存与 torch 权重都在子进程里重新初始化，天然与
+      线上对局互不干扰；父进程只读磁盘上的作业文件，随时可以重启。
+    """
+    job_id = regret_jobs.create_job()
+    regret_jobs.write_job_record(job_id, record)
+
+    log_path = regret_jobs.worker_log_path(job_id)
+    command = [
+        sys.executable,
+        "-m",
+        "gui.regret_analysis",
+        "--job-id",
+        job_id,
+        *_BACKEND_ARGV,
+    ]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(REPO_ROOT), env["PYTHONPATH"]] if env.get("PYTHONPATH") else [str(REPO_ROOT)]
+    )
+    env["SPADES_REGRET_JOB_ROOT"] = str(regret_jobs.job_root())
+
+    with open(log_path, "ab") as log_handle:
+        subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            command,
+            cwd=str(REPO_ROOT),
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            env=env,
+            start_new_session=True,
+        )
+    return job_id
+
+
+# ────────────────────────────────────────────────────────────────────────
 # HTTP server
 # ────────────────────────────────────────────────────────────────────────
 def build_response_handler(provider: RuleExactProvider):
@@ -632,11 +809,23 @@ def build_response_handler(provider: RuleExactProvider):
             self._send_json(204, {"ok": True})
 
         def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path in {"/api/analyze-replay", "/analyze-replay"}:
+                query = parse_qs(parsed.query)
+                job_id = (query.get("jobId") or [""])[0]
+                try:
+                    snapshot = regret_jobs.job_snapshot(job_id)
+                except regret_jobs.JobNotFoundError as exc:
+                    self._send_json(404, {"ok": False, "error": str(exc)})
+                    return
+                self._send_json(200, {"ok": True, **snapshot})
+                return
             if self.path in {"/", "/health", "/api/health"}:
                 self._send_json(200, {
                     "ok": True,
                     "ai": provider.ai_name,
                     "seed": provider.seed,
+                    "play_hyperparams": describe_play_config(provider),
                     "acting_bidder": provider.acting_bidder.describe(),
                     "nonnil_play_model": {
                         "model_id": provider.nonnil_play_actor.model_id,
@@ -653,7 +842,8 @@ def build_response_handler(provider: RuleExactProvider):
         def do_POST(self) -> None:  # noqa: N802
             action_paths = {"/api/choose-action", "/choose-action"}
             showdown_paths = {"/api/check-showdown", "/check-showdown"}
-            if self.path not in action_paths | showdown_paths:
+            regret_paths = {"/api/analyze-replay", "/analyze-replay"}
+            if self.path not in action_paths | showdown_paths | regret_paths:
                 self._send_json(404, {"ok": False, "error": f"unknown path: {self.path}"})
                 return
             content_length = int(self.headers.get("Content-Length", "0"))
@@ -662,6 +852,17 @@ def build_response_handler(provider: RuleExactProvider):
                 payload = json.loads(raw.decode("utf-8")) if raw else {}
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                 self._send_json(400, {"ok": False, "error": str(exc)})
+                return
+
+            if self.path in regret_paths:
+                try:
+                    job_id = start_regret_job(payload)
+                except Exception as exc:  # pragma: no cover - surfaced to browser
+                    import traceback
+                    traceback.print_exc()
+                    self._send_json(500, {"ok": False, "error": str(exc)})
+                    return
+                self._send_json(200, {"ok": True, "jobId": job_id})
                 return
 
             if self.path in showdown_paths:
@@ -778,7 +979,9 @@ def set_random_seed(seed: int) -> None:
 
 
 def main() -> None:
+    global _BACKEND_ARGV
     args = parse_args()
+    _BACKEND_ARGV = list(sys.argv[1:])
     if args.seed is not None:
         set_random_seed(args.seed)
     provider = RuleExactProvider(args)

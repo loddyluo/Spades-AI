@@ -9,7 +9,7 @@ Paper reference: Section 3 "Data Structures"
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, unique
 from typing import Sequence
 
@@ -84,10 +84,25 @@ class Card:
     suit: Suit
     rank: Rank
 
+    # ``card_id`` is read millions of times per exact-stage decision (bitset
+    # construction, posterior-replay keys, feature encoding).  Computing it on
+    # demand costs two IntEnum lookups plus a property call every time, so it
+    # is derived once at construction instead.  ``init=False`` keeps the public
+    # constructor ``Card(suit, rank)`` unchanged, and ``compare=False`` keeps
+    # equality/hashing on (suit, rank) only.
+    _card_id: int = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "_card_id",
+            self.suit.value * 13 + (self.rank.value - 2),
+        )
+
     @property
     def card_id(self) -> int:
         """Unique integer 0..51 for standard deck: suit * 13 + (rank - 2)."""
-        return self.suit.value * 13 + (self.rank.value - 2)
+        return self._card_id
 
     @property
     def bit(self) -> int:

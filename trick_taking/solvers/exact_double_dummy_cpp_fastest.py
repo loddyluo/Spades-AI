@@ -22,7 +22,7 @@ import os
 import sys
 import threading
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 from trick_taking.card import Card, Rank, Suit
 from trick_taking.game_state import GameState
@@ -221,6 +221,103 @@ class ExactDoubleDummyCppFastestSolver(ExactDoubleDummySolver):
             "current_player": int(out.current_player),
             "optimize_for_team": optimize_for_team,
         }
+
+    @staticmethod
+    def pack_native_payload(
+        hand_bitsets: Sequence[int],
+        hand_counts: Sequence[int],
+        table_cards: Sequence[tuple[int, int, int]],
+        *,
+        turn: int,
+        trick_leader: int,
+        spades_broken: bool,
+        tricks_played: int,
+        tricks_won: Sequence[int],
+        max_bid_native: Sequence[int],
+        teams: Sequence[int],
+        num_players: int = 4,
+    ) -> tuple:
+        """Pack everything ``solve_native_with_q`` reads into plain ints.
+
+        The native solver needs 35 integers and nothing else, so a caller that
+        already tracks bitsets (the posterior replay) can hand work to a worker
+        process without pickling a whole ``GameState``.
+        """
+
+        return (
+            tuple(int(value) for value in hand_bitsets),
+            tuple(int(value) for value in hand_counts),
+            tuple((int(pid), int(suit), int(rank)) for pid, suit, rank in table_cards),
+            int(turn),
+            int(trick_leader),
+            int(bool(spades_broken)),
+            int(tricks_played),
+            tuple(int(value) for value in tricks_won),
+            tuple(int(value) for value in max_bid_native),
+            tuple(int(value) for value in teams),
+            int(num_players),
+        )
+
+    def solve_native_with_q_payload(self, payload: tuple) -> Dict[int, float]:
+        """Root Q values straight from a :meth:`pack_native_payload` tuple.
+
+        This is the worker-side twin of :meth:`solve_with_q_fast`: it skips the
+        ``GameState`` (and therefore the per-call ``deepcopy``) and fills the
+        native struct directly.
+        """
+
+        if not self.native_available:
+            raise RuntimeError("极速 C++ 求解器不可用")
+
+        (
+            hand_bits,
+            hand_counts,
+            table,
+            turn,
+            trick_leader,
+            spades_broken,
+            tricks_played,
+            tricks_won,
+            max_bid_native,
+            teams,
+            num_players,
+        ) = payload
+
+        ns = _NativeState()
+        ns.num_players = num_players
+        for idx in range(4):
+            ns.hand_bits[idx] = hand_bits[idx]
+            ns.hand_counts[idx] = hand_counts[idx]
+            ns.tricks_won[idx] = tricks_won[idx]
+            ns.max_bid[idx] = max_bid_native[idx]
+            ns.teams[idx] = teams[idx]
+
+        ns.table_count = len(table)
+        for idx in range(4):
+            if idx < ns.table_count:
+                pid, suit, rank = table[idx]
+                ns.table_pids[idx] = pid
+                ns.table_suits[idx] = suit
+                ns.table_ranks[idx] = rank
+            else:
+                ns.table_pids[idx] = 0
+                ns.table_suits[idx] = 0
+                ns.table_ranks[idx] = 2
+
+        ns.turn = turn
+        ns.trick_leader = trick_leader
+        ns.spades_broken = 1 if spades_broken else 0
+        ns.tricks_played = tricks_played
+
+        out = _RootQResult()
+        with _NATIVE_SOLVER_LOCK:
+            self._lib.solve_native_with_q(ctypes.byref(ns), ctypes.byref(out))
+
+        result: Dict[int, float] = {}
+        for idx in range(int(out.count)):
+            card_id = int(out.actions[idx])
+            result[card_id] = float(out.q_values[idx])
+        return result
 
     def solve_with_q_fast(self, state: GameState) -> Dict[int, float]:
         """返回 {card_id: q_value} 的简化格式，供 rule_based 并行 solver 使用。"""

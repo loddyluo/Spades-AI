@@ -151,6 +151,43 @@ belief weighting and as the acting bidder's per-decision fallback. Startup
 fails if the selected checkpoint, model ID, config, NSFP model, or frozen play
 pipeline hashes do not match.
 
+### GUI — 完整复盘 (per-action expected regret)
+
+The mode menu also offers **🔍 完整复盘**, a copy of 导入复盘 that additionally
+scores every action of the **last nine tricks** (the `exact_threshold=36` stage)
+with the same pipeline that plays the game in 人机对战:
+
+- For each of the ~36 decisions the replay record is turned back into the
+  payload the frontend would have sent at that moment (own hand real, opponents'
+  counts right, public history replayed), so each action is judged **from the
+  seat that made it** and from that seat's team objective.
+- `RuleExactProvider.analyze_play_action` then runs the production exact stage
+  (`SolverLeafMLPExactPlayer` → IS determinization → double-dummy solver) with
+  `collect_action_q` on, which reports the uncropped expected Q of every legal
+  action under exactly the IS proposals and weights the live path uses.
+- Regret is `maxQ − Q(a)` for team 0 (seats 0/2) and `Q(a) − minQ` for team 1
+  (seats 1/3), in points of `team0_score − team1_score`. Cards the solver merged
+  away as equivalent inherit their group representative's Q and are marked
+  `equivalent:<card>`.
+
+The analysis runs as a **detached child process** (`gui/regret_analysis.py`)
+spawned by `POST /api/analyze-replay`; `GET /api/analyze-replay?jobId=…` returns
+progress and, once finished, the result. Job state lives on disk
+(`$SPADES_REGRET_JOB_ROOT`, default `$TMPDIR/spades-regret-jobs`) so any backend
+worker — the Docker image runs several behind Caddy — can answer a status poll.
+A full four-seat analysis is heavy (roughly one exact `_exact_play` per
+decision); pass `--config` to a smaller config for a quick look, or run the
+engine directly:
+
+```bash
+python -m gui.regret_analysis --record replay.json --out regret.json
+```
+
+The GUI paints the regret on the acting player's cards (hand sorted best-first,
+non-playable cards marked `×`), badges the card already on the table, and lists
+every decision — with the per-action Q table and the per-proposal Q values — in
+the side panel.
+
 ### Evaluation — rl_exact vs DDS
 
 ```bash
@@ -390,8 +427,11 @@ python rl/both_eval.py --num-games 1500 --seed 61 --num-workers 30 \
 
 | File | Purpose |
 |------|---------|
-| `backend.py` | Python HTTP server (no framework — uses `http.server`). Reconstructs `GameState` from frontend payload and calls `RuleExactFirst4NilPlayer` (nil-aware rules for the first 4 tricks, then importance-sampled exact play) |
+| `backend.py` | Python HTTP server (no framework — uses `http.server`). Reconstructs `GameState` from frontend payload and calls `RuleExactFirst4NilPlayer` (nil-aware rules for the first 4 tricks, then importance-sampled exact play). Also serves `POST/GET /api/analyze-replay` for 完整复盘 |
+| `regret_analysis.py` | 完整复盘 engine: validates a replay record, rebuilds each last-nine-trick decision from the acting seat's perspective, drives the production pipeline with `collect_action_q`, and turns expected Q into expected regret |
+| `regret_jobs.py` | Stdlib-only on-disk job store for the 完整复盘 child process (progress + result survive round-robin load balancing across backend workers) |
 | `game_server.py` | Authoritative WebSocket game server. Uses the same `RuleExactFirst4NilPlayer` play pipeline directly |
+| `scripts/regret-render-smoke.mjs` | SSR smoke test for the 完整复盘 screen (`npm run smoke`) — builds a legal record, synthesizes an analysis, and asserts the card badges and side panel really render |
 | `src/game.js` | React-based card game UI with drag-to-play, animations, dual-mode (play alone or vs AI) |
 | `src/styles.css` | Card table styling |
 | `vite.config.js` | Vite dev server config |
