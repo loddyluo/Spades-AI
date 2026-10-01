@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   REGRET_EPSILON,
+  actionOutcomeDistribution,
   advanceUntilFinished,
   advanceUntilHuman,
   bidLabel,
@@ -24,6 +25,7 @@ import {
   getHumanLegalCards,
   makeBid,
   parseReplayImport,
+  qSamplesForCard,
   regretBadges,
   regretDecisionAt,
   regretSummary,
@@ -72,7 +74,7 @@ const normalizeSeed = (value) => {
 
 /* ── A single rendered playing card (face up or face down) ──────────── */
 function PlayingCard({ card, faceDown = false, size = 'md', legal = false,
-                       disabled = false, onPlay = null, style = null,
+                       disabled = false, onPlay = null, onSelect = null, style = null,
                        className = '', static: isStatic = false, badge = null }) {
   if (faceDown || !card) {
     return <div className={`pcard pcard--back size-${size} ${className}`} style={style} />;
@@ -97,7 +99,27 @@ function PlayingCard({ card, faceDown = false, size = 'md', legal = false,
       {chip}
     </>
   );
-  const cls = `pcard size-${size} ${SUIT_CLASS[card.suit] ?? 'suit-spade'} ${legal ? 'is-legal' : ''} ${className}`;
+  // `onSelect` is the 完整复盘 「点开这张牌的期望结果分布」钩子；它与对局里的
+  // `onPlay`（合法牌才能点）不同，只要这张牌算出了 Q 就可以点开。
+  const selectable = Boolean(onSelect) && !disabled;
+  const cls = `pcard size-${size} ${SUIT_CLASS[card.suit] ?? 'suit-spade'} `
+    + `${legal ? 'is-legal' : ''} ${selectable ? 'is-selectable' : ''} ${className}`;
+  // 这一支必须排在 `static` 之前：完整复盘的手牌本来就是 static（不做翻转动效），
+  // 但依然要能点开分布。之前它排在后面，牌全被渲染成 div，点了没有任何反应。
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        className={cls}
+        style={style}
+        disabled={!selectable}
+        onClick={selectable ? () => onSelect(card.code) : undefined}
+        aria-label={`${card.rank}${card.suit}`}
+      >
+        {body}
+      </button>
+    );
+  }
   if (isStatic || !onPlay) {
     return <div className={cls} style={style} aria-label={`${card.rank}${card.suit}`}>{body}</div>;
   }
@@ -176,7 +198,7 @@ function AiSeat({ pos, seat, summary, game, active, revealedCards = null }) {
 }
 
 /* ── The played card for a seat sitting at screen position `pos` ────── */
-function TrickSlot({ pos, entry, justPlayed, collecting, winnerPos, badge = null }) {
+function TrickSlot({ pos, entry, justPlayed, collecting, winnerPos, badge = null, onSelect = null }) {
   if (!entry) return <div className={`slot slot--${pos}`} />;
   const cls = [
     'slot__card',
@@ -185,14 +207,21 @@ function TrickSlot({ pos, entry, justPlayed, collecting, winnerPos, badge = null
   ].join(' ');
   return (
     <div className={`slot slot--${pos}`}>
-      <PlayingCard card={entry.card} size="md" static className={cls} badge={badge} />
+      <PlayingCard
+        card={entry.card}
+        size="md"
+        static
+        className={cls}
+        badge={badge}
+        onSelect={onSelect}
+      />
     </div>
   );
 }
 
 /* ── Face-up hand spread for replay (all seats show their cards) ────── */
 function ReplayHandSpread({ cards, pos, size = 'sm', highlightCode = null, badges = null,
-                            flat = false }) {
+                            flat = false, selectableCodes = null, onSelectCard = null }) {
   // 完整复盘要读每张牌角上的遗憾数字，重叠扇形会挡掉它们，所以走平铺模式：
   // 牌按普通文档流一张挨一张排，放不下就换行，永不重叠，也永不遮挡角标。
   if (flat) {
@@ -206,6 +235,9 @@ function ReplayHandSpread({ cards, pos, size = 'sm', highlightCode = null, badge
             static
             className={`replay-hand__card ${highlightCode === card.code ? 'is-highlight' : ''}`}
             badge={badges ? badges[card.code] ?? null : null}
+            onSelect={onSelectCard && selectableCodes?.has(card.code)
+              ? (code) => onSelectCard(code)
+              : null}
           />
         ))}
       </div>
@@ -289,7 +321,8 @@ function replayTricksWonAt(snapshot, playIndex, trickComplete) {
   return won;
 }
 
-function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode, badges = null, flat = false, isViewSeat = false, viewLabel = '(You)' }) {
+function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode, badges = null, flat = false,
+                          selectableCodes = null, onSelectCard = null, isViewSeat = false, viewLabel = '(You)' }) {
   const seatName = snapshot.seatNames?.[seat] ?? SEAT_NAMES[seat];
   return (
     <div className={`replay-seat replay-seat--${pos} ${flat ? 'is-flat' : ''}`}>
@@ -307,6 +340,8 @@ function ReplaySeatPanel({ seat, snapshot, tricksWon, pos, cards, highlightCode,
         highlightCode={highlightCode}
         badges={badges}
         flat={flat}
+        selectableCodes={selectableCodes}
+        onSelectCard={onSelectCard}
       />
     </div>
   );
@@ -558,7 +593,12 @@ function RegretDecisionRow({ decision, seatName, selected, onSelect }) {
   return (
     <li className={`regret-row ${selected ? 'is-selected' : ''} ${tone}`}>
       <button type="button" className="regret-row__main" onClick={() => onSelect(decision.playIndex)}>
-        <span className="regret-row__where">第 {decision.trickNumber} 墩</span>
+        <span className="regret-row__where">
+          第 {decision.trickNumber} 墩
+          {decision.uniformDeterminization
+            ? <em className="regret-row__flag" title="这一步的 IS 池为空，pipeline 退回了均匀 determinization，遗憾建立在均匀信念上">均匀</em>
+            : null}
+        </span>
         <span className={`regret-row__seat team-${teamOf(decision.seat)}`}>{seatName}</span>
         <span className="regret-row__cards">
           {decision.actualCard}
@@ -636,6 +676,160 @@ function RegretDecisionRow({ decision, seatName, selected, onSelect }) {
   );
 }
 
+/* ── 点开一张牌：把它的期望 Q 反推成「我方得墩数 / Nil 打成」分布 ───── */
+export function OutcomeDistribution({ decision, seat, bids, seatNames, cardCode, onClose }) {
+  const samples = useMemo(() => qSamplesForCard(decision, cardCode), [decision, cardCode]);
+  const distribution = useMemo(
+    () => actionOutcomeDistribution({ bids, seat, qSamples: samples }),
+    [bids, seat, samples],
+  );
+  const action = (decision.actions ?? []).find((entry) => entry.card === cardCode) ?? null;
+  const equivalents = (decision.actions ?? []).filter(
+    (entry) => entry.card !== cardCode && entry.q != null && action?.q != null && entry.q === action.q,
+  );
+  const pct = (value) => `${(value * 100).toFixed(1)}%`;
+
+  const ourBidLabel = distribution.ourSeats
+    .map((s) => `${seatNames[s]} ${bidText(bids[s])}`)
+    .join(' + ');
+  const theirBidLabel = distribution.theirSeats
+    .map((s) => `${seatNames[s]} ${bidText(bids[s])}`)
+    .join(' + ');
+
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
+      <section className="overlay__card outcome" onClick={(event) => event.stopPropagation()}>
+        <p className="overlay__eyebrow">
+          第 {decision.trickNumber} 墩 · {seatNames[seat]} 出 {cardCode}
+          {decision.seat === seat && decision.actualCard === cardCode ? '（实际出牌）' : ''}
+        </p>
+
+        <div className="outcome__q">
+          <div>
+            <span>该动作期望 Q</span>
+            <strong>{distribution.meanQ == null ? '—' : distribution.meanQ.toFixed(1)}</strong>
+          </div>
+          <div>
+            <span>期望遗憾</span>
+            <strong>{formatRegret(action?.regret)}</strong>
+          </div>
+          <div>
+            <span>采样份数</span>
+            <strong>{distribution.sampleCount}</strong>
+          </div>
+        </div>
+
+        <p className="outcome__formula">
+          叫牌 — 我方（队 {distribution.team}）：{ourBidLabel} ／ 对方：{theirBidLabel}
+        </p>
+        <p className="outcome__formula">
+          反推方式：把该动作在每一份采样对局里的精确 Q 值，与「13 墩在四家之间
+          的所有分法会得到什么分」逐一比对，取分数相符的终局，再按采样权重加权。
+        </p>
+
+        {distribution.coveredWeight > 0 ? (
+          <>
+            <h4 className="outcome__title">
+              我方最终得墩数分布
+              {distribution.meanTricks != null
+                ? `（期望 ${distribution.meanTricks.toFixed(2)} 墩，最可能 ${distribution.mostLikelyTricks} 墩）`
+                : ''}
+            </h4>
+            <div className="outcome-chart">
+              {distribution.trickDistribution.map((row) => (
+                <div
+                  key={row.tricks}
+                  className={`outcome-chart__col ${row.tricks === distribution.mostLikelyTricks ? 'is-mode' : ''}`}
+                  title={`${row.tricks} 墩：${pct(row.probability)}`}
+                >
+                  <span className="outcome-chart__pct">
+                    {row.probability >= 0.005 ? `${Math.round(row.probability * 100)}%` : ''}
+                  </span>
+                  <div className="outcome-chart__track">
+                    <div
+                      className="outcome-chart__bar"
+                      style={{ height: `${Math.max(row.probability * 100, row.probability > 0 ? 2 : 0)}%` }}
+                    />
+                  </div>
+                  <span className="outcome-chart__tick">{row.tricks}</span>
+                </div>
+              ))}
+            </div>
+            <p className="outcome__axis">横轴 = 我方最终吃到的墩数（0–13）</p>
+
+            {distribution.nil.length > 0 ? (
+              <div className="outcome__nil">
+                {distribution.nil.map((entry) => (
+                  <div key={entry.seat} className="outcome__nil-row">
+                    <span>{seatNames[entry.seat]} 的 Nil</span>
+                    <strong className={entry.madeProbability >= 0.5 ? 'is-made' : 'is-broken'}>
+                      打成 {pct(entry.madeProbability)}
+                    </strong>
+                    <em>破掉 {pct(entry.failedProbability)}</em>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="outcome__note">我方这一局没人叫 Nil，因此没有 Nil 分布。</p>
+            )}
+
+            {decision.uniformDeterminization ? (
+              <p className="outcome__note is-warn">
+                这一步的 IS 池为空，pipeline 退回了<strong>均匀 determinization</strong>：
+                这些采样不是按叫牌似然加权的，分布与遗憾都建立在均匀信念上，可信度低于其他决策。
+              </p>
+            ) : null}
+            {distribution.opponentNilSeats.length > 0 ? (
+              <p className="outcome__note">
+                对方 {distribution.opponentNilSeats.map((s) => seatNames[s]).join('、')} 也叫了 Nil，
+                其成败无法从单一 Q 分辨，已作为干扰项边缘化（同一 Q 的多种终局按等概率分摊）。
+              </p>
+            ) : null}
+            {equivalents.length > 0 ? (
+              <p className="outcome__note">
+                与 {equivalents.map((entry) => entry.card).join('、')} 的 Q 完全相同（双明手等大牌张），
+                分布也相同。
+              </p>
+            ) : null}
+            {distribution.coveredWeight < distribution.totalWeight - 1e-9 ? (
+              <p className="outcome__note is-warn">
+                只有 {pct(distribution.coveredWeight / distribution.totalWeight)} 的采样权重能被整数终局解释，
+                其余采样未参与统计。
+              </p>
+            ) : null}
+            {distribution.ambiguityShare > 0.001 ? (
+              <p className="outcome__note">
+                其中 {pct(distribution.ambiguityShare)} 的采样权重对应的 Q 可以由多种终局产生，
+                已在这些终局之间按等概率分摊。
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="outcome__note is-warn">
+            这份决策没有可用的逐提案 Q 值，无法反推分布。
+          </p>
+        )}
+
+        <button type="button" className="btn-new outcome__close" onClick={onClose}>关闭</button>
+      </section>
+    </div>
+  );
+}
+
+/** Compact bid label for the distribution header. */
+function bidText(bid) {
+  if (!bid) return '未叫';
+  if (typeof bid === 'string') {
+    if (bid === 'nil') return 'Nil';
+    if (bid === 'blind_nil') return 'Blind Nil';
+    const match = /^bid_(\d+)$/.exec(bid);
+    return match ? match[1] : bid;
+  }
+  if (bid.type === 'blind_nil') return 'Blind Nil';
+  if (bid.type === 'nil') return 'Nil';
+  return String(bid.value ?? '—');
+}
+
 export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)' }) {
   // 打开就直接停在后 9 墩的第一个决策点上：前 4 墩没有遗憾可看，
   // 让用户手动点 16 次「下一步」毫无意义。
@@ -644,6 +838,8 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
   const [playIndex, setPlayIndex] = useState(startIndex);
   const [trickComplete, setTrickComplete] = useState(false);
   const [view, setView] = useState(() => rebuildReplayState(snapshot, startIndex, false));
+  // 点开的牌 → 反推出来的「我方得墩数 / Nil 打成」分布
+  const [opened, setOpened] = useState(null);
   const replaySeatNames = snapshot.seatNames ?? SEAT_NAMES;
   const summary = useMemo(() => regretSummary(analysis), [analysis]);
 
@@ -699,6 +895,20 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
     [currentDecision, actingSeat, playIndex, trickComplete],
   );
   const playedBadge = lastPlay ? playedChip(playedDecision, lastPlay.card.code) : null;
+
+  // 只有算出了 Q 的合法牌能点开；本墩不能出的牌没有分布可言。
+  const selectableCodes = useMemo(() => {
+    if (!currentDecision) return null;
+    const codes = new Set(
+      (currentDecision.actions ?? [])
+        .filter((action) => action.q != null)
+        .map((action) => action.card),
+    );
+    return codes.size > 0 ? codes : null;
+  }, [currentDecision]);
+  const openOutcome = currentDecision && actingSeat >= 0
+    ? (cardCode) => setOpened({ decision: currentDecision, seat: actingSeat, card: cardCode })
+    : null;
 
   const trickByPos = {};
   for (const entry of currentTrick) trickByPos[posOf(entry.seat)] = entry;
@@ -813,6 +1023,8 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
             cards={seatAt('top') === actingSeat ? sortHandByRegret(remainingHands[seatAt('top')], currentDecision) : remainingHands[seatAt('top')]}
             highlightCode={highlightCode}
             badges={seatAt('top') === actingSeat ? chips : null}
+            selectableCodes={seatAt('top') === actingSeat ? selectableCodes : null}
+            onSelectCard={seatAt('top') === actingSeat ? openOutcome : null}
             flat
           />
         </div>
@@ -826,6 +1038,8 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
             cards={seatAt('left') === actingSeat ? sortHandByRegret(remainingHands[seatAt('left')], currentDecision) : remainingHands[seatAt('left')]}
             highlightCode={highlightCode}
             badges={seatAt('left') === actingSeat ? chips : null}
+            selectableCodes={seatAt('left') === actingSeat ? selectableCodes : null}
+            onSelectCard={seatAt('left') === actingSeat ? openOutcome : null}
             flat
           />
         </div>
@@ -841,6 +1055,13 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
                 collecting={trickComplete}
                 winnerPos={winnerPos}
                 badge={p === justPlayedPos ? playedBadge : null}
+                onSelect={p === justPlayedPos && playedDecision && lastPlay
+                  ? () => setOpened({
+                    decision: playedDecision,
+                    seat: lastPlay.seat,
+                    card: lastPlay.card.code,
+                  })
+                  : null}
               />
             ))}
             <div className="status">
@@ -859,6 +1080,8 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
             cards={seatAt('right') === actingSeat ? sortHandByRegret(remainingHands[seatAt('right')], currentDecision) : remainingHands[seatAt('right')]}
             highlightCode={highlightCode}
             badges={seatAt('right') === actingSeat ? chips : null}
+            selectableCodes={seatAt('right') === actingSeat ? selectableCodes : null}
+            onSelectCard={seatAt('right') === actingSeat ? openOutcome : null}
             flat
           />
         </div>
@@ -904,6 +1127,8 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
           <p className="regret-panel__hint">
             遗憾 = 同一批 IS 提案下，期望 Q 与最优动作之差（0 队分数 − 1 队分数，单位：分）。
             牌角数字为该动作的期望遗憾，手牌按遗憾从小到大排序。
+            <strong>点任意一张带数字的牌</strong>（会浮起并镶金边），
+            可看它反推出来的「我方得墩数分布 / Nil 打成概率」。
           </p>
         </aside>
 
@@ -918,12 +1143,25 @@ export function RegretScreen({ snapshot, analysis, onExit, viewLabel = '(视角)
               : remainingHands[snapshot.humanSeat]}
             highlightCode={highlightCode}
             badges={snapshot.humanSeat === actingSeat ? chips : null}
+            selectableCodes={snapshot.humanSeat === actingSeat ? selectableCodes : null}
+            onSelectCard={snapshot.humanSeat === actingSeat ? openOutcome : null}
             flat
             isViewSeat
             viewLabel={viewLabel}
           />
         </div>
       </main>
+
+      {opened ? (
+        <OutcomeDistribution
+          decision={opened.decision}
+          seat={opened.seat}
+          bids={snapshot.bids}
+          seatNames={replaySeatNames}
+          cardCode={opened.card}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
 
       <footer className="replay-controls">
         <button className="btn-ghost" onClick={resetReplay} disabled={!canStepBack}>重新摊开</button>

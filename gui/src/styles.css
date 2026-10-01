@@ -1218,3 +1218,148 @@ button { cursor: pointer; }
   border: 1px solid rgba(231, 193, 104, 0.24);
   flex-shrink: 0;
 }
+
+/* ── 完整复盘：点开一张牌后的「得墩数 / Nil 打成」分布 ─────────────── */
+/* 平铺手牌默认不吃鼠标事件，能点开的牌要单独放开。 */
+.replay-hand.is-flat .replay-hand__card.is-selectable,
+.slot .pcard.is-selectable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.replay-hand.is-flat .replay-hand__card.is-selectable:hover,
+.slot .pcard.is-selectable:hover {
+  box-shadow: var(--shadow-card), 0 0 0 2px var(--gold), 0 0 14px rgba(231, 193, 104, 0.5);
+  transform: translateY(-3px);
+}
+
+.outcome {
+  width: min(720px, 94vw);
+  text-align: left;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.outcome__q {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.outcome__q > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.outcome__q span { font-size: 0.68rem; color: var(--muted); }
+.outcome__q strong { font-size: 1.2rem; color: var(--gold-soft); font-variant-numeric: tabular-nums; }
+
+.outcome__formula {
+  margin: 0 0 14px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.outcome__title {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.outcome-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 190px;
+  padding: 6px 8px 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.outcome-chart__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+.outcome-chart__pct {
+  font-size: 0.6rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  height: 14px;
+  white-space: nowrap;
+}
+.outcome-chart__track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.outcome-chart__bar {
+  width: 70%;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #6fb0ff, #2f6fb5);
+  transition: height 200ms ease;
+}
+.outcome-chart__col.is-mode .outcome-chart__bar {
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold));
+}
+.outcome-chart__col.is-mode .outcome-chart__pct { color: var(--gold-soft); }
+.outcome-chart__tick {
+  font-size: 0.66rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-top: 3px;
+}
+.outcome__axis {
+  margin: 6px 0 14px;
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.outcome__nil {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.outcome__nil-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 0.78rem;
+}
+.outcome__nil-row strong { font-size: 1rem; font-variant-numeric: tabular-nums; }
+.outcome__nil-row strong.is-made { color: #46d17f; }
+.outcome__nil-row strong.is-broken { color: #ff8080; }
+.outcome__nil-row em { margin-left: auto; color: var(--muted); font-style: normal; font-size: 0.72rem; }
+
+.outcome__note {
+  margin: 0 0 8px;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.outcome__note.is-warn { color: #ffab68; }
+.outcome__close { margin-top: 6px; }
+
+/* 完整复盘：标出「IS 池为空 → 均匀 determinization」的那种决策 */
+.regret-row__flag {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-style: normal;
+  font-size: 0.6rem;
+  color: #2a1200;
+  background: #ffab68;
+  vertical-align: middle;
+}

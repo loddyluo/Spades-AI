@@ -15,6 +15,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import {
+  actionOutcomeDistribution,
+  enumerateFinalOutcomes,
+  qSamplesForCard,
+} from '../src/game.js';
+
+import {
   applyBid,
   applyCard,
   buildReplayRecord,
@@ -76,6 +82,14 @@ function buildAnalysis(record) {
         regret: forced ? 0 : position * 3,
         source: forced ? 'forced' : 'solver',
       }));
+      // Two IS proposals whose Q values are scores a real final standing can
+      // actually produce, so the click-through distribution panel has something
+      // to invert (an unreachable score would simply be dropped).
+      const reachable = [...enumerateFinalOutcomes(bidsFixture).keys()].sort((x, y) => y - x);
+      const proposals = forced ? [] : [
+        { weight: 0.6, q: Object.fromEntries(legal.map((c, i) => [c.code, reachable[i % reachable.length]])) },
+        { weight: 0.4, q: Object.fromEntries(legal.map((c, i) => [c.code, reachable[(i + 3) % reachable.length]])) },
+      ];
       decisions.push({
         playIndex: index,
         trickNumber: play.trickNumber,
@@ -88,7 +102,7 @@ function buildAnalysis(record) {
         playedQ: forced ? null : 20,
         playedRegret: 0,
         actions,
-        proposals: [],
+        proposals,
       });
     }
     hands[play.seat] = hands[play.seat].filter((card) => card.code !== play.card);
@@ -114,6 +128,31 @@ function buildAnalysis(record) {
       worst: [],
     },
   };
+}
+
+/**
+ * The click-through panel is a pure function of the decision, so exercise the
+ * real inversion helpers on a real analysed decision and check the numbers.
+ */
+function panelInvertsACard(analysis) {
+  const decision = analysis.decisions.find(
+    (entry) => !entry.forced && entry.proposals.length > 0 && entry.actions.length > 0,
+  );
+  if (!decision) return false;
+  const card = decision.actions[0].card;
+  const samples = qSamplesForCard(decision, card);
+  if (samples.length === 0) return false;
+  const distribution = actionOutcomeDistribution({
+    bids: bidsFixture,
+    seat: decision.seat,
+    qSamples: samples,
+  });
+  const mass = distribution.trickDistribution.reduce((sum, row) => sum + row.probability, 0);
+  return distribution.coveredWeight > 0
+    && distribution.team === decision.seat % 2
+    && Math.abs(mass - 1) < 1e-9
+    && distribution.trickDistribution.length === 14
+    && Number.isFinite(distribution.meanTricks);
 }
 
 /** `.stage--regret` must define a rectangular `panel` area for the side panel. */
@@ -162,10 +201,12 @@ function fail(message) {
 rmSync(scratch, { recursive: true, force: true });
 mkdirSync(scratch, { recursive: true });
 
+const bidsFixture = ['bid_3', 'bid_3', 'bid_2', 'bid_3'];
 const record = buildLegalRecord();
 // The record must survive the very same importer the GUI uses.
 const snapshot = parseReplayImport(record)[0].snapshot;
 const analysis = buildAnalysis(record);
+analysis.bids = bidsFixture;
 
 writeFileSync(join(scratch, 'fixture.json'), JSON.stringify({ record, analysis }));
 writeFileSync(
@@ -198,6 +239,7 @@ try {
   const fannedCards = (html.match(/--rot:/g) ?? []).length;
   const handCards = (html.match(/replay-hand__card/g) ?? []).length;
   const openIndex = analysis.decisions[0].playIndex;
+  const selectableCards = (html.match(/is-selectable/g) ?? []).length;
   const expectedCards = 4 * (13 - Math.floor(openIndex / 4));
 
   if (analysis.decisions.length !== 36) {
@@ -214,6 +256,13 @@ try {
     fail(`rendered ${handCards} hand cards, expected ${expectedCards}`);
   } else if (!html.includes('regret-panel__summary') || !html.includes('status__text')) {
     fail('side panel summary or status line is missing');
+  } else if (selectableCards < expectedCards - 9 && selectableCards === 0) {
+    fail(
+      'no hand card rendered as a clickable button: the regret screen marks cards '
+      + '`static`, so the `onSelect` branch must come before the static early-return',
+    );
+  } else if (!panelInvertsACard(analysis)) {
+    fail('clicking a card must yield a trick-count / Nil probability distribution');
   } else if (!html.includes('regret-panel__provenance')
     || !html.includes('/repo/configs/8.yaml')
     || !html.includes('无效果')) {
@@ -231,6 +280,7 @@ try {
       + 'escape to the felt and the cards render blank',
     );
   } else {
+    console.log(`[regret-smoke] clickable cards rendered: ${selectableCards}`);
     console.log(
       `[regret-smoke] OK — ${analysis.decisions.length} decisions, `
       + `${rows.length} panel rows, ${badges.length} card badges`,

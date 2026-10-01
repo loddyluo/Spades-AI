@@ -1138,3 +1138,192 @@ def test_persistent_solver_pool_is_reused(monkeypatch) -> None:
     rule_exact_module._shutdown_persistent_solver_pools()
     assert created_pools[0].terminated is True
     assert created_pools[0].joined is True
+
+
+def test_uniform_determinization_fallback_records_per_proposal_q() -> None:
+    """IS 池退化到均匀 determinization 时，逐提案 Q 也必须留下来。
+
+    后 9 墩靠后的决策（剩余牌很少）会走到这条兜底分支；如果只记期望值，
+    完整复盘的「反推终局分布」在这些决策上就没有原料可用。
+    """
+    hands = [
+        [_card(Suit.SPADES, Rank.ACE), _card(Suit.HEARTS, Rank.TWO)],
+        [_card(Suit.SPADES, Rank.KING), _card(Suit.HEARTS, Rank.THREE)],
+        [_card(Suit.SPADES, Rank.QUEEN), _card(Suit.HEARTS, Rank.FOUR)],
+        [_card(Suit.SPADES, Rank.JACK), _card(Suit.HEARTS, Rank.FIVE)],
+    ]
+    state = _state(hands, turn=0)
+    budget = BudgetConfig(thresholds=[], default_top_k=1, default_max_samples=3)
+    player = RuleExactFirst4Player(
+        exact_solver=_RecordingSolver({card.card_id: 12.0 for card in hands[0]}),
+        hyperparam_config=HyperparamConfig(budget=budget),
+        num_workers=1,
+    )
+    player.position = 0
+    player.collect_action_q = True
+    # 强制走「IS 池为空 → 均匀 determinization」这条分支。
+    player._build_is_pool = lambda *args, **kwargs: ([], [])
+
+    player._exact_play(state, list(hands[0]))
+
+    info = player.last_play_info
+    assert info["mode"] == "exact_is_determinized"
+    samples = info["proposal_samples"]
+    assert len(samples) == 3, "fallback 下每份均匀采样都要留一条提案"
+    assert all(abs(entry["weight"] - 1 / 3) < 1e-12 for entry in samples)
+    assert all(
+        set(entry["q"]) == {"AS", "2H"} for entry in samples
+    ), "提案里必须按牌码给出每个合法动作的 Q"
+    assert info["expected_q"] == {"AS": 12.0, "2H": 12.0}
+
+
+def test_equal_magnitude_representative_maps_to_the_group_max() -> None:
+    """求解器只保留等大牌张组内最大的一张，其余要能映射回代表牌。"""
+    hearts = Suit.HEARTS
+
+    def heart(rank: Rank) -> Card:
+        return _card(hearts, rank)
+
+    hand = [heart(Rank.ACE), heart(Rank.KING), heart(Rank.QUEEN)]
+    rep = RuleExactFirst4Player._equal_magnitude_representative
+    assert rep(heart(Rank.QUEEN), hand, {}) == heart(Rank.ACE)
+    assert rep(heart(Rank.KING), hand, {}) == heart(Rank.ACE)
+    # 已经是组内最大 → 无需替换
+    assert rep(heart(Rank.ACE), hand, {}) is None
+    # 同花色只有一张 → 不构成等大组
+    assert rep(heart(Rank.ACE), [heart(Rank.ACE), _card(Suit.SPADES, Rank.TWO)], {}) is None
+    # 中间的点数还在别人手里 → 不等大
+    sparse = [heart(Rank.ACE), heart(Rank.QUEEN)]
+    assert rep(heart(Rank.QUEEN), sparse, {}) is None
+    # 中间的点数已经打出 → 等大
+    assert rep(heart(Rank.QUEEN), sparse, {hearts: {Rank.KING.value}}) == heart(Rank.ACE)
+    # 牌不在手里
+    assert rep(_card(hearts, Rank.TWO), hand, {}) is None
+
+
+def test_merged_card_maps_back_to_the_representative_that_used_to_zero_the_pool() -> None:
+    """第 9 墩起：打出等大牌张里较小的一张，不该把整条提案的权重清零。
+
+    求解器的根动作表只留组内最大的牌（等大牌张过滤），所以查 `action_q` 会
+    落空。旧行为据此把提案作废，IS 池随之清零、静默退回均匀 determinization；
+    现在先映射回代表牌，查得到就照常判"最优 / 非最优"。
+    """
+    hearts = Suit.HEARTS
+    ace, queen = _card(hearts, Rank.ACE), _card(hearts, Rank.QUEEN)
+    rep = RuleExactFirst4Player._equal_magnitude_representative
+
+    # A 与 Q 之间只隔着 K：K 还在别人手里时两者不等大，查不到就不是等大牌。
+    assert rep(queen, [ace, queen], {}) is None
+    # K 已打出时两者等大，Q 必须映射到求解器真正保留的 A。
+    assert rep(queen, [ace, queen], {hearts: {Rank.KING.value}}) == ace
+
+
+class _StubBatchSolver:
+    """只提供批处理路径需要的两个钩子，Q 值由测试注入。"""
+
+    def __init__(self, q_values: dict[int, float]) -> None:
+        self.q_values = dict(q_values)
+
+    @staticmethod
+    def _bid_to_native(value):
+        if value is None or value == "nil":
+            return 0
+        if value == "blind_nil":
+            return 14
+        if isinstance(value, str) and value.startswith("bid_"):
+            return int(value.split("_")[1])
+        return int(value) if isinstance(value, int) else 0
+
+    def pack_native_payload(self, *args, **kwargs) -> tuple:
+        return ()
+
+    def solve_native_with_q_payload(self, payload):  # noqa: D401 - hasattr 探针
+        return dict(self.q_values)
+
+
+class _BatchWeightPlayer(RuleExactFirst4Player):
+    """把整批求解请求换成固定 Q 表，其余逻辑保持原样。"""
+
+    def __init__(self, q_values: dict[int, float], penalty: float) -> None:
+        budget = BudgetConfig(thresholds=[], default_top_k=1, default_max_samples=1)
+        super().__init__(
+            exact_solver=_StubBatchSolver(q_values),
+            hyperparam_config=HyperparamConfig(
+                budget=budget,
+                bad_action_penalty_factor=penalty,
+                bad_action_weight="1.0",      # 求解器那一步固定 ×1，便于隔离
+                trick_num_threshold=4,        # 步 16 起进入求解器判定
+            ),
+            num_workers=1,
+        )
+
+    def _solve_solver_payloads(self, payloads):
+        return [dict(self.exact_solver.q_values) for _ in payloads]
+
+
+def _teammate_step_scenario(teammate_card: Card):
+    """构造 17 步公开历史：第 16 步由搭档领出 `teammate_card`。
+
+    前 16 步恰好 4 墩，其中 ♣7 已经被打出并进入已完成墩，于是搭档手里的
+    ♣8 与 ♣6 构成「等大牌张」组，组内最大的是 ♣8。
+    """
+    def hearts(*ranks): return [_card(Suit.HEARTS, r) for r in ranks]
+    def diamonds(*ranks): return [_card(Suit.DIAMONDS, r) for r in ranks]
+    def clubs(*ranks): return [_card(Suit.CLUBS, r) for r in ranks]
+
+    hands = [
+        hearts(Rank.TWO, Rank.SIX) + diamonds(Rank.TWO, Rank.SIX) + clubs(Rank.TWO, Rank.SIX),
+        hearts(Rank.THREE, Rank.SEVEN) + diamonds(Rank.THREE, Rank.SEVEN) + clubs(Rank.THREE),
+        hearts(Rank.FOUR, Rank.EIGHT) + diamonds(Rank.FOUR, Rank.NINE) + clubs(Rank.SEVEN, Rank.EIGHT, Rank.SIX),
+        hearts(Rank.FIVE, Rank.NINE) + diamonds(Rank.FIVE, Rank.TEN) + clubs(Rank.FIVE),
+    ]
+    sequence = [
+        (0, _card(Suit.HEARTS, Rank.TWO)), (1, _card(Suit.HEARTS, Rank.THREE)),
+        (2, _card(Suit.HEARTS, Rank.FOUR)), (3, _card(Suit.HEARTS, Rank.FIVE)),
+        (1, _card(Suit.DIAMONDS, Rank.THREE)), (2, _card(Suit.DIAMONDS, Rank.FOUR)),
+        (3, _card(Suit.DIAMONDS, Rank.FIVE)), (0, _card(Suit.DIAMONDS, Rank.TWO)),
+        (2, _card(Suit.CLUBS, Rank.SEVEN)), (3, _card(Suit.CLUBS, Rank.FIVE)),
+        (0, _card(Suit.CLUBS, Rank.TWO)), (1, _card(Suit.CLUBS, Rank.THREE)),
+        (3, _card(Suit.HEARTS, Rank.NINE)), (0, _card(Suit.HEARTS, Rank.SIX)),
+        (1, _card(Suit.HEARTS, Rank.SEVEN)), (2, _card(Suit.HEARTS, Rank.EIGHT)),
+        (2, teammate_card),
+    ]
+    teams = [0, 1, 0, 1]
+    state = _state(hands, turn=2, tricks_played=4, tricks_won=[1, 1, 1, 1])
+    state.teams = teams
+    return hands, sequence, state
+
+
+def _teammate_step_weight(teammate_card: Card, penalty: float) -> float:
+    hands, sequence, state = _teammate_step_scenario(teammate_card)
+    ace_like_q = {teammate_card.card_id: 10.0}
+    # 让求解器认为「组内最大那张」是该队最优动作：Q 规则于是给 ×1。
+    best = _card(teammate_card.suit, Rank.EIGHT) if teammate_card.rank is Rank.SIX else teammate_card
+    player = _BatchWeightPlayer({best.card_id: 10.0, teammate_card.card_id: 0.0}, penalty)
+    results = player._compute_importance_weights_slow_batch(
+        [hands],
+        sequence,
+        [1.0],
+        ["bid_2"] * 4,
+        0,          # observer_id = 0 → 搭档是座位 2
+        state,
+    )
+    assert results, "批处理路径应当返回结果"
+    return results[0][0]
+
+
+def test_teammate_non_max_equal_card_is_penalised_at_solver_steps() -> None:
+    """第 16 步起（同一条 >=16 的守卫覆盖第 9 墩之后）搭档打了等大牌张里
+    较小的一张时，在求解器给的 ×x / ×1 之外还要再乘 bad_action_penalty_factor。
+    """
+    six = _card(Suit.CLUBS, Rank.SIX)      # 等大组 {♣8, ♣6} 里的较小者
+    eight = _card(Suit.CLUBS, Rank.EIGHT)  # 组内最大者
+
+    # 同一局面只换这一步出的牌，其余（包括前四墩复现带来的惩罚）完全相同，
+    # 比值就精确隔离出第 16 步的等大牌张惩罚。
+    penalised = _teammate_step_weight(six, 0.81) / _teammate_step_weight(eight, 0.81)
+    assert penalised == pytest.approx(0.81)
+
+    # 把系数设成 1.0（等于关掉这条惩罚）时，两者应当完全相等。
+    neutral = _teammate_step_weight(six, 1.0) / _teammate_step_weight(eight, 1.0)
+    assert neutral == pytest.approx(1.0)

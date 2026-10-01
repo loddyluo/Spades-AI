@@ -1330,6 +1330,228 @@ export function sortHandByRegret(cards, decision) {
 }
 
 /**
+ * Normalise one bid into `{ kind, tricks }`, whichever shape it arrives in.
+ * Accepts the replay record's `{value, type}` objects and the analysis engine's
+ * local strings ("nil" / "blind_nil" / "bid_4").
+ */
+function normalizeBidShape(bid) {
+  if (bid == null) return null;
+  if (typeof bid === 'string') {
+    if (bid === 'nil') return { kind: 'nil', tricks: 0 };
+    if (bid === 'blind_nil') return { kind: 'blind_nil', tricks: 14 };
+    const match = /^bid_(\d+)$/.exec(bid);
+    return match ? { kind: 'normal', tricks: Number.parseInt(match[1], 10) } : null;
+  }
+  const kind = bid.type === 'blind_nil' ? 'blind_nil' : bid.type === 'nil' ? 'nil' : 'normal';
+  if (kind !== 'normal') return { kind, tricks: kind === 'blind_nil' ? 14 : 0 };
+  return Number.isInteger(bid.value) ? { kind: 'normal', tricks: bid.value } : null;
+}
+
+/**
+ * One team's score for a hypothesised final trick split.
+ * Exactly the rule the double-dummy solver's `evaluate_score_diff` applies:
+ * contract = bid*10 minus 9 per overtrick, failed contract = −bid*10,
+ * Nil = ±50, Blind Nil = ±100.
+ */
+function teamScoreForSeats(bids, tricks, seats) {
+  let score = 0;
+  let teamBid = 0;
+  let teamTricks = 0;
+  for (const seat of seats) {
+    teamTricks += tricks[seat];
+    const bid = normalizeBidShape(bids?.[seat]);
+    if (!bid) continue;
+    if (bid.kind === 'blind_nil') score += tricks[seat] === 0 ? 100 : -100;
+    else if (bid.kind === 'nil') score += tricks[seat] === 0 ? 50 : -50;
+    else teamBid += bid.tricks;
+  }
+  if (teamBid > 0) {
+    if (teamTricks >= teamBid) score += teamBid * 10 - (teamTricks - teamBid) * 9;
+    else score -= teamBid * 10;
+  }
+  return score;
+}
+
+/**
+ * Every way the 13 tricks can fall across the four seats, indexed by the score
+ * difference the solver would report for it (team0 − team1).
+ *
+ * This is the lookup table that turns a Q back into a match result: the score
+ * is an integer, so a Q names the final standings that could have produced it —
+ * usually one, occasionally several. 560 splits, cheap enough to build on click.
+ *
+ * Input: the four bids.
+ * Output: Map<score, Array<{ tricks, teamTricks, nilMade }>>.
+ */
+export function enumerateFinalOutcomes(bids) {
+  const byScore = new Map();
+  for (let a = 0; a <= 13; a += 1) {
+    for (let b = 0; a + b <= 13; b += 1) {
+      for (let c = 0; a + b + c <= 13; c += 1) {
+        const tricks = [a, b, c, 13 - a - b - c];
+        const score = teamScoreForSeats(bids, tricks, [0, 2])
+          - teamScoreForSeats(bids, tricks, [1, 3]);
+        if (!byScore.has(score)) byScore.set(score, []);
+        byScore.get(score).push({
+          tricks,
+          teamTricks: [tricks[0] + tricks[2], tricks[1] + tricks[3]],
+          nilMade: tricks.map((taken) => taken === 0),
+        });
+      }
+    }
+  }
+  return byScore;
+}
+
+function samplesFromProposals(decision, cardCode) {
+  if (!decision || !Array.isArray(decision.proposals)) return [];
+  const samples = [];
+  for (const proposal of decision.proposals) {
+    const q = proposal?.q?.[cardCode];
+    if (Number.isFinite(q) && Number.isFinite(proposal.weight)) {
+      samples.push({ weight: proposal.weight, q });
+    }
+  }
+  return samples;
+}
+
+/**
+ * The per-proposal Q values of one card in one analysed decision.
+ *
+ * The solver drops cards it merged as equal-magnitude, so such a card has no
+ * entry of its own in the proposal table. Equivalent cards are worth exactly
+ * the same in every world, so the group representative's samples describe it
+ * too — without this fallback those cards look like they have no data at all.
+ *
+ * Input: a decision and a card code.
+ * Output: [{ weight, q }] — one entry per importance-sampling proposal.
+ */
+export function qSamplesForCard(decision, cardCode) {
+  const direct = samplesFromProposals(decision, cardCode);
+  if (direct.length > 0) return direct;
+  const action = decision?.actions?.find((entry) => entry.card === cardCode);
+  const source = typeof action?.source === 'string' ? action.source : '';
+  if (!source.startsWith('equivalent:')) return [];
+  const representative = source.slice('equivalent:'.length);
+  return representative ? samplesFromProposals(decision, representative) : [];
+}
+
+/**
+ * Invert one action's sampled Q values into a distribution over match results.
+ *
+ * Each importance-sampling proposal is a fully dealt world whose exact
+ * double-dummy value is `q`. Scoring is an integer function of the final trick
+ * split, so every sampled Q names the standings that could have produced it;
+ * grouping the proposals by Q — weighted by their IS weights — yields the
+ * belief distribution over "how many tricks our side actually takes" and over
+ * "our Nil bidder actually made it".
+ *
+ * A Q that several standings can explain splits its weight evenly between them
+ * (maximum entropy: nothing else tells them apart), and the share of weight that
+ * behaved that way is reported so the UI can say so out loud.
+ *
+ * Input: { bids, seat, qSamples: [{ weight, q }] } — `seat` is whose action it
+ * was, which fixes whose "our side" the distribution describes.
+ * Output: see the returned object below.
+ */
+export function actionOutcomeDistribution({ bids, seat, qSamples }) {
+  const samples = (qSamples ?? []).filter(
+    (sample) => sample
+      && Number.isFinite(sample.q)
+      && Number.isFinite(sample.weight)
+      && sample.weight > 0,
+  );
+  const team = seat % 2;
+  const ourSeats = team === 0 ? [0, 2] : [1, 3];
+  const theirSeats = team === 0 ? [1, 3] : [0, 2];
+  const isNil = (s) => {
+    const kind = normalizeBidShape(bids?.[s])?.kind;
+    return kind === 'nil' || kind === 'blind_nil';
+  };
+  const ourNilSeats = ourSeats.filter(isNil);
+  const opponentNilSeats = theirSeats.filter(isNil);
+  // Only an actual Nil bidder's zero matters to the score; a seat that merely
+  // happened to take no tricks is invisible to it.
+  const nilSeats = [0, 1, 2, 3].filter(isNil);
+
+  const byScore = enumerateFinalOutcomes(bids);
+  const trickWeight = new Array(14).fill(0);
+  const nilMadeWeight = new Map(ourNilSeats.map((s) => [s, 0]));
+  let totalWeight = 0;
+  let coveredWeight = 0;
+  let ambiguousWeight = 0;
+  let weightedQ = 0;
+  let matchedSamples = 0;
+
+  for (const sample of samples) {
+    totalWeight += sample.weight;
+    weightedQ += sample.weight * sample.q;
+    const matches = byScore.get(Math.round(sample.q)) ?? [];
+    // Two per-seat splits that agree on everything the score can see — both
+    // team totals and whether each Nil bidder made it — are one observation,
+    // not two. Counting raw splits would silently hand more weight to trick
+    // counts that happen to be reachable in more ways.
+    const hypotheses = [];
+    const seen = new Set();
+    for (const outcome of matches) {
+      const signature = `${outcome.teamTricks[0]}|${outcome.teamTricks[1]}|`
+        + nilSeats.map((nilSeat) => (outcome.nilMade[nilSeat] ? 1 : 0)).join('');
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+      hypotheses.push(outcome);
+    }
+    if (hypotheses.length === 0) continue;
+    coveredWeight += sample.weight;
+    matchedSamples += 1;
+    if (hypotheses.length > 1) ambiguousWeight += sample.weight;
+    const share = sample.weight / hypotheses.length;
+    for (const outcome of hypotheses) {
+      trickWeight[outcome.teamTricks[team]] += share;
+      for (const nilSeat of ourNilSeats) {
+        if (outcome.nilMade[nilSeat]) {
+          nilMadeWeight.set(nilSeat, nilMadeWeight.get(nilSeat) + share);
+        }
+      }
+    }
+  }
+
+  const scale = coveredWeight > 0 ? 1 / coveredWeight : 0;
+  const trickDistribution = trickWeight.map((weight, tricks) => ({
+    tricks,
+    probability: weight * scale,
+  }));
+  const meanTricks = trickDistribution.reduce(
+    (sum, row) => sum + row.tricks * row.probability,
+    0,
+  );
+  const mostLikely = trickDistribution.reduce(
+    (best, row) => (row.probability > best.probability ? row : best),
+    { tricks: 0, probability: 0 },
+  );
+
+  return {
+    team,
+    ourSeats,
+    theirSeats,
+    ourNilSeats,
+    opponentNilSeats,
+    sampleCount: samples.length,
+    matchedSamples,
+    totalWeight,
+    coveredWeight,
+    ambiguityShare: coveredWeight > 0 ? ambiguousWeight / coveredWeight : 0,
+    meanQ: totalWeight > 0 ? weightedQ / totalWeight : null,
+    trickDistribution,
+    meanTricks: coveredWeight > 0 ? meanTricks : null,
+    mostLikelyTricks: coveredWeight > 0 ? mostLikely.tricks : null,
+    nil: ourNilSeats.map((nilSeat) => {
+      const made = (nilMadeWeight.get(nilSeat) ?? 0) * scale;
+      return { seat: nilSeat, madeProbability: made, failedProbability: 1 - made };
+    }),
+  };
+}
+
+/**
  * Normalise an analysis result for the side panel.
  * Input: a completed analysis result (possibly partial).
  * Output: { totalRegret, analyzedActions, totalDecisions, meanRegret, perSeat, worst }.

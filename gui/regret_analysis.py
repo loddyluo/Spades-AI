@@ -660,6 +660,7 @@ def analyze_board(
             "actualCard": actual_card,
             "forced": False,
             "degraded": False,
+            "uniformDeterminization": False,
             "mode": None,
             "samples": None,
             "legalCards": [],
@@ -756,7 +757,11 @@ def analyze_board(
                 record["playedQ"] = action.get("q")
                 record["playedRegret"] = action.get("regret")
         if collect_proposals:
-            record["proposals"] = info.get("proposal_samples") or []
+            samples = info.get("proposal_samples") or []
+            record["proposals"] = samples
+            # IS 池为空时 pipeline 会退回均匀 determinization；如实标出来，
+            # 免得把这些遗憾当成加权信念下的结论。
+            record["uniformDeterminization"] = is_uniform_determinization(samples)
 
         decisions.append(record)
         report()
@@ -769,6 +774,23 @@ def analyze_board(
         "failures": failures,
         "summary": summarize(decisions),
     }
+
+
+def is_uniform_determinization(samples: Sequence[dict[str, Any]]) -> bool:
+    """判断这批采样是不是「IS 池为空 → 均匀 determinization」兜底出来的。
+
+    重要性采样的权重正比于每个世界在叫牌似然下的后验，一般各不相等；
+    兜底路径下每份采样的权重都恰好是 1/K。IS 池为空意味着这些遗憾数字
+    建立在均匀信念而不是加权信念上，值得在界面上说明。
+    """
+    if len(samples) < 2:
+        return False
+    first = samples[0].get("weight")
+    if not isinstance(first, (int, float)) or isinstance(first, bool) or first <= 0:
+        return False
+    if any(abs(float(sample.get("weight", 0.0)) - float(first)) > 1e-12 for sample in samples):
+        return False
+    return abs(float(first) * len(samples) - 1.0) < 1e-9
 
 
 def _progress_point(point: dict[str, Any]) -> dict[str, Any]:

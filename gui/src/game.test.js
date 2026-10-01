@@ -22,6 +22,9 @@ import {
   getLegalCards,
   parseReplayImport,
   REGRET_EPSILON,
+  actionOutcomeDistribution,
+  enumerateFinalOutcomes,
+  qSamplesForCard,
   regretBadges,
   regretDecisionAt,
   regretSummary,
@@ -1031,4 +1034,205 @@ test('regretBadges treats float noise as the best action', () => {
   assert.equal(badges.KS.best, true, 'a 1e-13 difference is not a real loss');
   assert.equal(badges.QS.best, false);
   assert.ok(REGRET_EPSILON === 1e-9);
+});
+
+/* ── 把期望 Q 反推成「我方得墩数 / Nil 打成」的分布 ─────────────────── */
+
+// 用户给的例子：我方（队 0，座位 0+2）叫 5，对方（队 1，座位 1+3）叫 6。
+const EXAMPLE_BIDS = ['bid_3', 'bid_3', 'bid_2', 'bid_3'];
+
+function tricksForQ(q, bids = EXAMPLE_BIDS, team = 0) {
+  const outcomes = enumerateFinalOutcomes(bids).get(q) ?? [];
+  return [...new Set(outcomes.map((entry) => entry.teamTricks[team]))].sort((a, b) => a - b);
+}
+
+test('Q inverts back to the trick count the user worked out by hand', () => {
+  // 我方叫 5 / 对方叫 6：−10 → 6 墩，+83 → 8 墩，+74 → 9 墩。
+  assert.deepEqual(tricksForQ(-10), [6]);
+  assert.deepEqual(tricksForQ(83), [8]);
+  assert.deepEqual(tricksForQ(74), [9]);
+});
+
+test('the same Q inverts to the other side symmetrically', () => {
+  // 队 1 的 6 墩就是队 0 的 7 墩。
+  assert.deepEqual(tricksForQ(-10, EXAMPLE_BIDS, 1), [7]);
+});
+
+test('enumerateFinalOutcomes covers every split exactly once', () => {
+  const outcomes = [...enumerateFinalOutcomes(EXAMPLE_BIDS).values()].flat();
+  assert.equal(outcomes.length, 560); // C(16,3) ways to split 13 tricks
+  assert.ok(outcomes.every((entry) => entry.tricks.reduce((a, b) => a + b, 0) === 13));
+});
+
+test('a one-sided bid total makes the Q map strictly invertible', () => {
+  // 两个队合计叫牌 5+6 = 11 < 13，至少一队必然打成，Q 与墩数一一对应。
+  const byScore = enumerateFinalOutcomes(EXAMPLE_BIDS);
+  const seen = new Map();
+  for (const [q, outcomes] of byScore) {
+    const tricks = [...new Set(outcomes.map((entry) => entry.teamTricks[0]))];
+    assert.equal(tricks.length, 1, `Q=${q} 应当是唯一的`);
+    seen.set(q, tricks[0]);
+  }
+  assert.equal(seen.size, byScore.size);
+});
+
+test('the distribution weights proposals by their importance-sampling weight', () => {
+  const distribution = actionOutcomeDistribution({
+    bids: EXAMPLE_BIDS,
+    seat: 0,
+    qSamples: [{ weight: 0.75, q: 83 }, { weight: 0.25, q: -10 }],
+  });
+  assert.equal(distribution.team, 0);
+  assert.equal(distribution.sampleCount, 2);
+  assert.ok(Math.abs(distribution.meanTricks - (0.75 * 8 + 0.25 * 6)) < 1e-9);
+  assert.equal(distribution.mostLikelyTricks, 8);
+  const byTricks = new Map(distribution.trickDistribution.map((row) => [row.tricks, row.probability]));
+  assert.ok(Math.abs(byTricks.get(8) - 0.75) < 1e-12);
+  assert.ok(Math.abs(byTricks.get(6) - 0.25) < 1e-12);
+  const mass = distribution.trickDistribution.reduce((sum, row) => sum + row.probability, 0);
+  assert.ok(Math.abs(mass - 1) < 1e-12);
+});
+
+test('numbers that cannot be a final score are dropped and reported', () => {
+  const distribution = actionOutcomeDistribution({
+    bids: EXAMPLE_BIDS,
+    seat: 0,
+    qSamples: [{ weight: 0.5, q: 83 }, { weight: 0.5, q: 40 }], // 40 不可能出现
+  });
+  assert.equal(distribution.matchedSamples, 1);
+  assert.ok(Math.abs(distribution.coveredWeight - 0.5) < 1e-12);
+  assert.ok(Math.abs(distribution.totalWeight - 1) < 1e-12);
+  // 分布只在能解释的那部分权重上归一化。
+  const byTricks = new Map(distribution.trickDistribution.map((row) => [row.tricks, row.probability]));
+  assert.ok(Math.abs(byTricks.get(8) - 1) < 1e-12);
+});
+
+test('an ambiguous Q splits its weight evenly and says so', () => {
+  // 双方都叫到很高时，同一个 Q 可能对应多种终局。
+  const bids = ['bid_7', 'bid_7', 'bid_7', 'bid_7'];
+  const byScore = enumerateFinalOutcomes(bids);
+  const ambiguous = [...byScore.entries()].find(([, outcomes]) => (
+    new Set(outcomes.map((entry) => entry.teamTricks[0])).size > 1
+  ));
+  if (!ambiguous) {
+    // 这一副叫牌下 Q 恰好仍可逆，就没有可断言的歧义，跳过。
+    return;
+  }
+  const [q, outcomes] = ambiguous;
+  const distribution = actionOutcomeDistribution({
+    bids, seat: 0, qSamples: [{ weight: 1, q }],
+  });
+  const distinct = new Set(outcomes.map((entry) => entry.teamTricks[0])).size;
+  assert.ok(distribution.ambiguityShare > 0);
+  const byTricks = new Map(distribution.trickDistribution.map((row) => [row.tricks, row.probability]));
+  const covered = [...byTricks.values()].filter((value) => value > 0);
+  assert.equal(covered.length, distinct);
+  for (const probability of covered) assert.ok(Math.abs(probability - 1 / distinct) < 1e-12);
+});
+
+test('our Nil bidder gets a made/broken probability from the same samples', () => {
+  // 座位 2 叫 Nil，队友（座位 0）叫 3；队 0 总分 3 墩即可打成。
+  const bids = ['bid_3', 'bid_4', 'nil', 'bid_2'];
+  const byScore = enumerateFinalOutcomes(bids);
+  const sample = (q) => actionOutcomeDistribution({ bids, seat: 0, qSamples: [{ weight: 1, q }] });
+
+  const made = [...byScore.entries()].find(([, outcomes]) => (
+    outcomes.every((entry) => entry.nilMade[2])
+  ));
+  const broken = [...byScore.entries()].find(([, outcomes]) => (
+    outcomes.every((entry) => !entry.nilMade[2])
+  ));
+
+  if (made) {
+    const distribution = sample(made[0]);
+    assert.deepEqual(distribution.ourNilSeats, [2]);
+    assert.ok(Math.abs(distribution.nil[0].madeProbability - 1) < 1e-12);
+  }
+  if (broken) {
+    const distribution = sample(broken[0]);
+    assert.ok(Math.abs(distribution.nil[0].madeProbability) < 1e-12);
+    assert.ok(Math.abs(distribution.nil[0].failedProbability - 1) < 1e-12);
+  }
+});
+
+test('no Nil on our side means no Nil distribution', () => {
+  const distribution = actionOutcomeDistribution({
+    bids: EXAMPLE_BIDS,
+    seat: 0,
+    qSamples: [{ weight: 1, q: 83 }],
+  });
+  assert.deepEqual(distribution.ourNilSeats, []);
+  assert.deepEqual(distribution.nil, []);
+});
+
+test('the opponent Nil is marginalized, not reported as ours', () => {
+  const bids = ['bid_3', 'nil', 'bid_2', 'bid_3'];
+  const distribution = actionOutcomeDistribution({
+    bids, seat: 0, qSamples: [{ weight: 1, q: 83 }],
+  });
+  assert.deepEqual(distribution.ourNilSeats, []);
+  assert.deepEqual(distribution.opponentNilSeats, [1]);
+  assert.equal(distribution.nil.length, 0);
+});
+
+test('qSamplesForCard falls back to the equivalent representative', () => {
+  // 求解器把等大牌张合并掉了：这张牌自己在提案表里没有条目，
+  // 但代表牌在同一个世界里与它严格等值，所以直接借用它的逐提案 Q。
+  const decision = {
+    actions: [
+      { card: 'KH', q: 160, source: 'solver' },
+      { card: 'QH', q: 160, source: 'equivalent:KH' },
+      { card: '2C', q: 40, source: 'solver' },
+    ],
+    proposals: [
+      { weight: 0.6, q: { KH: 160, '2C': 40 } },
+      { weight: 0.4, q: { KH: 100, '2C': 20 } },
+    ],
+  };
+  assert.deepEqual(qSamplesForCard(decision, 'QH'), [
+    { weight: 0.6, q: 160 },
+    { weight: 0.4, q: 100 },
+  ]);
+  // 有自己条目的牌仍然走自己的数据。
+  assert.deepEqual(qSamplesForCard(decision, 'KH'), [
+    { weight: 0.6, q: 160 },
+    { weight: 0.4, q: 100 },
+  ]);
+  // 既没有条目、来源也不是等价牌的，才是真的没有。
+  assert.deepEqual(
+    qSamplesForCard({ actions: [{ card: 'AS', q: null, source: 'forced' }], proposals: [] }, 'AS'),
+    [],
+  );
+});
+
+test('qSamplesForCard reads one card out of the per-proposal table', () => {
+  const decision = {
+    proposals: [
+      { weight: 0.5, q: { AS: 83, KS: 74 } },
+      { weight: 0.5, q: { AS: -10 } },
+    ],
+  };
+  assert.deepEqual(qSamplesForCard(decision, 'AS'), [
+    { weight: 0.5, q: 83 },
+    { weight: 0.5, q: -10 },
+  ]);
+  assert.deepEqual(qSamplesForCard(decision, 'KS'), [{ weight: 0.5, q: 74 }]);
+  assert.deepEqual(qSamplesForCard(decision, 'QS'), []);
+  assert.deepEqual(qSamplesForCard(null, 'AS'), []);
+});
+
+test('the distribution accepts both bid shapes in the record', () => {
+  const objectBids = [
+    { value: 3, type: 'normal' },
+    { value: 3, type: 'normal' },
+    { value: 2, type: 'normal' },
+    { value: 3, type: 'normal' },
+  ];
+  const fromObjects = actionOutcomeDistribution({
+    bids: objectBids, seat: 0, qSamples: [{ weight: 1, q: 83 }],
+  });
+  const fromStrings = actionOutcomeDistribution({
+    bids: EXAMPLE_BIDS, seat: 0, qSamples: [{ weight: 1, q: 83 }],
+  });
+  assert.deepEqual(fromObjects.trickDistribution, fromStrings.trickDistribution);
 });

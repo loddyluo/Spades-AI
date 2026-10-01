@@ -710,12 +710,25 @@ class RuleExactFirst4Player(AIPlayer):
                             for p in range(4)
                         },
                     })
+                if collect_q and result:
+                    # 均匀 determinization 下每份采样的权重都是 1/K。这一支也要
+                    # 留下逐提案 Q：IS 池在剩余牌很少时会退化到这里，若只记
+                    # 期望值，后 9 墩靠后的那些决策就没有遗憾分布可用。
+                    proposal_samples.append({
+                        "weight": 1.0 / K,
+                        "q": {
+                            card_to_compact_code(
+                                id_to_card.get(cid, Card(Suit.SPADES, Rank.TWO))
+                            ): round(float(q), 6)
+                            for cid, q in result.items()
+                        },
+                    })
                 for cid, q in result.items():
                     agg_q[cid] = agg_q.get(cid, 0.0) + float(q)
             for k in agg_q:
                 agg_q[k] /= max(1, counts)
             if collect_q:
-                # 均匀 determinization fallback 下权重是 1/K。
+                # 均匀 determinization fallback 下期望值就是各次采样的均值。
                 for cid, q in agg_q.items():
                     expected_q[cid] = float(q)
             n_samples_used = counts
@@ -1619,6 +1632,46 @@ class RuleExactFirst4Player(AIPlayer):
         return False
 
     @staticmethod
+    def _equal_magnitude_representative(
+        card: Card, hand: list[Card],
+        played_ranks_by_suit: dict[Suit, set[int]],
+    ) -> Card | None:
+        """返回 `card` 所在等大牌张组的「代表牌」（组内最大那张）。
+
+        求解器在根节点会做等大牌张过滤，每组只保留最大的一张，所以打出组内
+        较小的牌时，根动作表里根本查不到它。等大牌在双明手意义下完全等值，
+        判定动作好坏时用代表牌的 Q 即可。已经就是组内最大（或同花色只有
+        一张）时返回 None，表示不需要替换。
+        """
+        if not RuleExactFirst4Player._card_has_larger_equal_magnitude(
+            card, hand, played_ranks_by_suit
+        ):
+            return None
+
+        suit = card.suit
+        played = played_ranks_by_suit.get(suit, set())
+        suit_cards = [c for c in hand if c.suit == suit]
+        if len(suit_cards) <= 1:
+            return None
+        suit_cards.sort(key=lambda c: c.rank.value, reverse=True)
+
+        # 与 _card_has_larger_equal_magnitude 同一套分组方式：相邻两张之间
+        # 的点数全部已打出则属于同一组，组内最大的那张就是求解器保留的牌。
+        group: list[Card] = [suit_cards[0]]
+        for index in range(1, len(suit_cards)):
+            previous_rank = suit_cards[index - 1].rank.value
+            current_rank = suit_cards[index].rank.value
+            if all(r in played for r in range(current_rank + 1, previous_rank)):
+                group.append(suit_cards[index])
+            else:
+                if any(candidate.card_id == card.card_id for candidate in group):
+                    return group[0]
+                group = [suit_cards[index]]
+        if any(candidate.card_id == card.card_id for candidate in group):
+            return group[0]
+        return None
+
+    @staticmethod
     def _enforce_largest_equal_magnitude(
         card: Card, hand: list[Card], legal_cards: list[Card],
         played_ranks_by_suit: dict[Suit, set[int]],
@@ -2309,6 +2362,22 @@ class RuleExactFirst4Player(AIPlayer):
                     bad_count = len(action_q) - good_count
                     q_val = action_q.get(card.card_id)
                     if q_val is None:
+                        # 根动作表已把等大牌张合并成组内最大那张，打出组内较小的
+                        # 牌时查不到；等大牌等值，改用代表牌的 Q 判定，而不是作废
+                        # 整条提案（否则这一步会把 IS 池清零）。
+                        representative = self._equal_magnitude_representative(
+                            card,
+                            [
+                                candidate
+                                for candidate in proposals[proposal_index][player]
+                                if hand_bits[proposal_index][player]
+                                & (1 << candidate.card_id)
+                            ],
+                            completed_ranks_by_suit,
+                        )
+                        if representative is not None:
+                            q_val = action_q.get(representative.card_id)
+                    if q_val is None:
                         valid[proposal_index] = False
                         weights[proposal_index] = 0.0
                         continue
@@ -2597,6 +2666,13 @@ class RuleExactFirst4Player(AIPlayer):
 
                     # 直接用 card_id 查找（避免 Card 对象创建和匹配）
                     q_val = action_q.get(card.card_id)
+                    if q_val is None:
+                        # 同上：等大牌张被求解器合并了，用代表牌的 Q 判定。
+                        representative = self._equal_magnitude_representative(
+                            card, hand, completed_ranks_by_suit,
+                        )
+                        if representative is not None:
+                            q_val = action_q.get(representative.card_id)
                     if q_val is None:
                         return 0.0, None  # 该动作在 proposal 下不合法
 

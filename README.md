@@ -188,6 +188,21 @@ non-playable cards marked `×`), badges the card already on the table, and lists
 every decision — with the per-action Q table and the per-proposal Q values — in
 the side panel.
 
+**Clicking a card** (from trick 5 on, any legal card that has a Q) opens the
+inverse view: what that card's sampled Q values imply about the *result*. Each
+importance-sampling proposal is a fully dealt world with an exact double-dummy
+value, and scoring is an integer function of the final trick split, so every
+sampled Q names the standings that could have produced it. Grouping the
+proposals by Q and weighting them by their IS weights yields a distribution over
+**how many tricks our side actually takes** (0–13) and, when our side has a Nil
+bidder, over **whether that Nil made**. Example of the inversion, for bids 5 vs
+6: `Q = −10 → 6 tricks`, `Q = +83 → 8`, `Q = +74 → 9`.
+
+Two honesty notes the panel prints: standings that agree on everything the score
+can see (both team totals and each Nil bidder's outcome) count once rather than
+once per per-seat split; and a Q that several such standings can explain splits
+its weight evenly between them, with the share that behaved that way reported.
+
 ### Evaluation — rl_exact vs DDS
 
 ```bash
@@ -431,7 +446,7 @@ python rl/both_eval.py --num-games 1500 --seed 61 --num-workers 30 \
 | `regret_analysis.py` | 完整复盘 engine: validates a replay record, rebuilds each last-nine-trick decision from the acting seat's perspective, drives the production pipeline with `collect_action_q`, and turns expected Q into expected regret |
 | `regret_jobs.py` | Stdlib-only on-disk job store for the 完整复盘 child process (progress + result survive round-robin load balancing across backend workers) |
 | `game_server.py` | Authoritative WebSocket game server. Uses the same `RuleExactFirst4NilPlayer` play pipeline directly |
-| `scripts/regret-render-smoke.mjs` | SSR smoke test for the 完整复盘 screen (`npm run smoke`) — builds a legal record, synthesizes an analysis, and asserts the card badges and side panel really render |
+| `scripts/regret-render-smoke.mjs` | SSR smoke test for the 完整复盘 screen (`npm run smoke`) — builds a legal record, synthesizes an analysis, and asserts the card badges, the side panel and the Q→result inversion really work |
 | `src/game.js` | React-based card game UI with drag-to-play, animations, dual-mode (play alone or vs AI) |
 | `src/styles.css` | Card table styling |
 | `vite.config.js` | Vite dev server config |

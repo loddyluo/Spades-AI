@@ -668,3 +668,59 @@ def test_an_exported_bundle_can_be_analysed_end_to_end(tmp_path):
 
     result = analyze_board(parse_replay_record(json.loads(path.read_text())), _stub_decision)
     assert len(result["decisions"]) == 36
+
+
+# ────────────────────────────────────────────────────────────────────────
+# 反推终局：Q → 我方得墩数（Python 侧只做一次最小一致性检查，
+# 真正的反推在前端 game.js 里，配套测试在 game.test.js）
+# ────────────────────────────────────────────────────────────────────────
+def test_analysis_keeps_the_per_proposal_q_needed_for_the_inversion():
+    """每个决策都要留下逐提案的 Q，前端才能把 Q 反推成终局分布。"""
+    board = parse_replay_record(build_legal_record())
+    result = analyze_board(board, _stub_decision)
+    analyzed = [d for d in result["decisions"] if not d["forced"]]
+    assert analyzed, "至少要有可分析的决策"
+    for decision in analyzed:
+        assert decision["proposals"], "逐提案 Q 不能为空"
+        assert all("weight" in p and "q" in p for p in decision["proposals"])
+        assert all(
+            action["card"] in decision["proposals"][0]["q"]
+            for action in decision["actions"]
+            if action["q"] is not None
+        )
+
+
+def test_uniform_determinization_fallback_is_flagged():
+    """IS 池为空时 pipeline 退回均匀采样，必须在结果里标出来。"""
+    from gui.regret_analysis import is_uniform_determinization
+
+    assert is_uniform_determinization([{"weight": 0.25}] * 4) is True
+    assert is_uniform_determinization([{"weight": 0.6}, {"weight": 0.4}]) is False
+    assert is_uniform_determinization([{"weight": 0.5}]) is False
+    assert is_uniform_determinization([{"weight": 0.34}, {"weight": 0.33}, {"weight": 0.33}]) is False
+    assert is_uniform_determinization([]) is False
+    assert is_uniform_determinization([{"weight": 0.0}, {"weight": 0.0}]) is False
+
+
+def test_analysis_flags_the_fallback_decisions():
+    board = parse_replay_record(build_legal_record())
+
+    def uniform_decision(payload):
+        out = _stub_decision(payload)
+        count = len(out["info"]["expected_q"])
+        out["info"]["proposal_samples"] = [
+            {"weight": 1.0 / count, "q": dict(out["info"]["expected_q"])}
+        ] * count
+        return out
+
+    result = analyze_board(board, uniform_decision)
+    analyzed = [d for d in result["decisions"] if not d["forced"]]
+    assert analyzed
+    assert all(d["uniformDeterminization"] is True for d in analyzed)
+
+    weighted = analyze_board(board, _stub_decision)
+    assert all(
+        d["uniformDeterminization"] is False
+        for d in weighted["decisions"]
+        if not d["forced"]
+    )
